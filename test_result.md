@@ -101,3 +101,154 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Herbicides MVP - мобильный справочник по гербицидам на основе официального реестра РФ. Поиск гербицидов, просмотр карточки препарата, сравнение 2 гербицидов."
+
+backend:
+  - task: "Health check endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/health returns healthy status with database connection and records count"
+
+  - task: "Import Excel endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/admin/import-excel successfully imports 3232 records from Excel"
+
+  - task: "Search herbicides endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/herbicides/search with q, only_active, limit params works"
+      - working: true
+        agent: "testing"
+        comment: "Comprehensive testing completed: Basic search (limit=5) returned 5 products, Russian text search (пшеница, кукуруза, соя) all returned 10 results each, only_active filter working correctly with 10 active results. All search scenarios working perfectly."
+
+  - task: "Get product card endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/herbicides/{product_key} returns product info with applications"
+      - working: true
+        agent: "testing"
+        comment: "Product card endpoint fully tested: Successfully retrieves product details with applications list, URL encoding for product_key (containing | character) works correctly, returns proper 404 for invalid keys. All functionality working as expected."
+
+  - task: "Compare herbicides endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/herbicides/compare compares two products"
+      - working: true
+        agent: "testing"
+        comment: "Compare endpoint thoroughly tested: Successfully compares two different products, returns proper comparison data with common/unique crops analysis, handles invalid product keys with 404 errors. All comparison functionality working correctly."
+
+  - task: "Stats endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/stats returns database statistics"
+
+frontend:
+  - task: "Home screen with search"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Home screen with stats, search input, filter toggle and results list"
+
+  - task: "Product detail screen"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/product/[key].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Product card with expandable applications list"
+
+  - task: "Compare screen"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/compare.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Side-by-side comparison of two products"
+
+  - task: "Zustand store for compare selection"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/store/herbicideStore.ts"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Store for managing selected products for comparison"
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "Backend и Frontend MVP реализованы. Все основные функции работают: поиск, карточка препарата, сравнение. Данные из Excel импортированы (3232 записи, 956 уникальных препаратов)."
+  - agent: "testing"
+    message: "Backend API testing completed successfully. All 3 priority endpoints tested comprehensively: Search (with Russian text queries пшеница/кукуруза/соя, only_active filter), Product Card (with URL encoding), and Compare (with error handling). All tests passed including edge cases. Database contains 3232 records, 956 unique products, 2754 active registrations. Backend is fully functional and ready for production."
