@@ -107,69 +107,84 @@ export default function HomeScreen() {
   const renderItem = ({ item }: { item: SearchResult }) => {
     const active = isActive(item.registration_status);
     const isSelected = selectedForCompare.includes(item.product_key);
+    const canSelect = selectedForCompare.length < 2 || isSelected;
     
     return (
-      <TouchableOpacity
-        style={[
-          styles.card,
-          isSelected && styles.cardSelected,
-        ]}
-        onPress={() => router.push(`/product/${encodeURIComponent(item.product_key)}`)}
-        onLongPress={() => toggleSelection(item.product_key)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardTitleRow}>
-            <Text style={styles.productName} numberOfLines={1}>{item.product_name}</Text>
-            {item.formulation && (
-              <View style={styles.formulationBadge}>
-                <Text style={styles.formulationText}>{item.formulation}</Text>
-              </View>
-            )}
-          </View>
-          <View style={[
-            styles.statusBadge,
-            active ? styles.statusActive : styles.statusInactive
-          ]}>
+      <View style={[styles.card, isSelected && styles.cardSelected]}>
+        <TouchableOpacity
+          style={styles.cardContent}
+          onPress={() => router.push(`/product/${encodeURIComponent(item.product_key)}`)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.cardHeader}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.productName} numberOfLines={1}>{item.product_name}</Text>
+              {item.formulation && (
+                <View style={styles.formulationBadge}>
+                  <Text style={styles.formulationText}>{item.formulation}</Text>
+                </View>
+              )}
+            </View>
             <View style={[
-              styles.statusDot,
-              active ? styles.statusDotActive : styles.statusDotInactive
-            ]} />
-            <Text style={[
-              styles.statusText,
-              active ? styles.statusTextActive : styles.statusTextInactive
+              styles.statusBadge,
+              active ? styles.statusActive : styles.statusInactive
             ]}>
-              {active ? 'Действует' : 'Не действует'}
+              <View style={[
+                styles.statusDot,
+                active ? styles.statusDotActive : styles.statusDotInactive
+              ]} />
+              <Text style={[
+                styles.statusText,
+                active ? styles.statusTextActive : styles.statusTextInactive
+              ]}>
+                {active ? 'Действует' : 'Не действует'}
+              </Text>
+            </View>
+          </View>
+
+          {item.active_substances_raw && (
+            <Text style={styles.substances} numberOfLines={2}>
+              {item.active_substances_raw}
             </Text>
-          </View>
-        </View>
+          )}
 
-        {item.active_substances_raw && (
-          <Text style={styles.substances} numberOfLines={2}>
-            {item.active_substances_raw}
-          </Text>
-        )}
-
-        {item.manufacturer && (
-          <View style={styles.manufacturerRow}>
-            <Ionicons name="business-outline" size={14} color="#9CA3AF" />
-            <Text style={styles.manufacturer} numberOfLines={1}>{item.manufacturer}</Text>
-          </View>
-        )}
+          {item.manufacturer && (
+            <View style={styles.manufacturerRow}>
+              <Ionicons name="business-outline" size={14} color="#9CA3AF" />
+              <Text style={styles.manufacturer} numberOfLines={1}>{item.manufacturer}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
         <View style={styles.cardFooter}>
           <View style={styles.applicationsCount}>
             <Ionicons name="layers-outline" size={14} color="#6B7280" />
             <Text style={styles.applicationsText}>{item.applications_count} применений</Text>
           </View>
-          {isSelected && (
-            <View style={styles.selectedBadge}>
-              <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-              <Text style={styles.selectedText}>Выбрано</Text>
-            </View>
-          )}
+          <TouchableOpacity 
+            style={[
+              styles.compareSelectButton,
+              isSelected && styles.compareSelectButtonActive,
+              !canSelect && !isSelected && styles.compareSelectButtonDisabled
+            ]}
+            onPress={() => toggleSelection(item.product_key)}
+            disabled={!canSelect && !isSelected}
+          >
+            <Ionicons 
+              name={isSelected ? "checkmark-circle" : "add-circle-outline"} 
+              size={18} 
+              color={isSelected ? "#FFFFFF" : (!canSelect ? "#D1D5DB" : "#3B82F6")} 
+            />
+            <Text style={[
+              styles.compareSelectText,
+              isSelected && styles.compareSelectTextActive,
+              !canSelect && !isSelected && styles.compareSelectTextDisabled
+            ]}>
+              {isSelected ? 'Выбрано' : 'Сравнить'}
+            </Text>
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -615,6 +630,39 @@ const styles = StyleSheet.create({
     color: '#10B981',
     fontWeight: '500',
     marginLeft: 4,
+  },
+  cardContent: {
+    flex: 1,
+  },
+  compareSelectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  compareSelectButtonActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  compareSelectButtonDisabled: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
+  },
+  compareSelectText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#3B82F6',
+    marginLeft: 4,
+  },
+  compareSelectTextActive: {
+    color: '#FFFFFF',
+  },
+  compareSelectTextDisabled: {
+    color: '#D1D5DB',
   },
   loadingContainer: {
     flex: 1,
