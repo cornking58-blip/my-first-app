@@ -14,6 +14,17 @@ import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
+// Logo Component
+const Logo = () => (
+  <View style={styles.logoContainer}>
+    <Text style={styles.logoText}>
+      <Text style={styles.logoB}>b</Text>
+      <Text style={styles.logoAI}>AI</Text>
+      <Text style={styles.logoKov}>kov</Text>
+    </Text>
+  </View>
+);
+
 interface Application {
   crop: string | null;
   target_object: string | null;
@@ -115,7 +126,7 @@ export default function ProductDetailScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>Карточка препарата</Text>
+        <Logo />
         <View style={{ width: 40 }} />
       </View>
 
@@ -294,6 +305,24 @@ const styles = StyleSheet.create({
     color: '#111827',
     flex: 1,
     textAlign: 'center',
+  },
+  logoContainer: {
+    alignItems: 'center',
+  },
+  logoText: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  logoB: {
+    color: '#374151',
+  },
+  logoAI: {
+    color: '#3B82F6',
+    fontWeight: '900',
+  },
+  logoKov: {
+    color: '#374151',
   },
   content: {
     flex: 1,

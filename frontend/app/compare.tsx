@@ -18,6 +18,17 @@ import { useHerbicideStore } from '../src/store/herbicideStore';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
+// Logo Component
+const Logo = () => (
+  <View style={styles.logoContainer}>
+    <Text style={styles.logoText}>
+      <Text style={styles.logoB}>b</Text>
+      <Text style={styles.logoAI}>AI</Text>
+      <Text style={styles.logoKov}>kov</Text>
+    </Text>
+  </View>
+);
+
 interface Substance {
   name: string;
   concentration: number;
@@ -153,7 +164,7 @@ export default function CompareScreen() {
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color="#111827" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Сравнение ДВ</Text>
+          <Logo />
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.loadingContainer}>
@@ -171,7 +182,7 @@ export default function CompareScreen() {
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color="#111827" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Сравнение</Text>
+          <Logo />
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.errorContainer}>
@@ -197,7 +208,7 @@ export default function CompareScreen() {
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color="#111827" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Сравнение ДВ</Text>
+          <Logo />
           <View style={{ width: 40 }} />
         </View>
 
@@ -561,6 +572,24 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  logoContainer: {
+    alignItems: 'center',
+  },
+  logoText: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  logoB: {
+    color: '#374151',
+  },
+  logoAI: {
+    color: '#3B82F6',
+    fontWeight: '900',
+  },
+  logoKov: {
+    color: '#374151',
   },
   productHeaders: {
     flexDirection: 'row',
