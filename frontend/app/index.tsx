@@ -6,13 +6,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  ScrollView,
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
   Keyboard,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
@@ -31,9 +30,19 @@ interface SearchResult {
   applications_count: number;
 }
 
+// Logo Component
+const Logo = () => (
+  <View style={styles.logoContainer}>
+    <Text style={styles.logoText}>
+      <Text style={styles.logoB}>b</Text>
+      <Text style={styles.logoAI}>AI</Text>
+      <Text style={styles.logoKov}>kov</Text>
+    </Text>
+  </View>
+);
+
 export default function HomeScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -170,12 +179,12 @@ export default function HomeScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
       >
-        {/* Header */}
+        {/* Header with Logo */}
         <View style={styles.header}>
           <View style={styles.titleRow}>
             <View>
-              <Text style={styles.title}>Гербициды</Text>
-              <Text style={styles.subtitle}>Справочник препаратов РФ</Text>
+              <Logo />
+              <Text style={styles.subtitle}>Справочник гербицидов РФ</Text>
             </View>
           </View>
 
@@ -325,11 +334,23 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
-    letterSpacing: -0.5,
+  logoContainer: {
+    marginBottom: 2,
+  },
+  logoText: {
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -1,
+  },
+  logoB: {
+    color: '#374151',
+  },
+  logoAI: {
+    color: '#3B82F6',
+    fontWeight: '900',
+  },
+  logoKov: {
+    color: '#374151',
   },
   subtitle: {
     fontSize: 14,
@@ -477,11 +498,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },

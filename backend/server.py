@@ -4,9 +4,10 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import re
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 import uuid
 from datetime import datetime
 import pandas as pd
@@ -41,7 +42,7 @@ class HerbicideRecord(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     record_id: Optional[int] = None
     product_name: str
-    product_key: str  # product_name + registration_number
+    product_key: str
     formulation: Optional[str] = None
     active_substances_raw: Optional[str] = None
     manufacturer: Optional[str] = None
@@ -89,6 +90,13 @@ class CompareRequest(BaseModel):
     right_key: str
 
 
+class AdvancedCompareRequest(BaseModel):
+    left_key: str
+    right_key: str
+    left_price: Optional[float] = None  # Price per L/kg
+    right_price: Optional[float] = None  # Price per L/kg
+
+
 class SearchResult(BaseModel):
     product_key: str
     product_name: str
@@ -97,6 +105,166 @@ class SearchResult(BaseModel):
     manufacturer: Optional[str] = None
     registration_status: Optional[str] = None
     applications_count: int = 0
+
+
+# ==================== ACTIVE SUBSTANCE PARSER ====================
+
+def parse_active_substances(raw: Optional[str]) -> List[Dict]:
+    """
+    Parse active substances from raw string.
+    Examples:
+    - "(360 г/л Глифосат кислоты (изопропиламинная соль))"
+    - "(140 г/л феноксапроп-П-этил + 47 г/л антидот - клоквинтосет-мексил)"
+    - "(750 г/кг трибенурон-метил)"
+    
+    Returns list of dicts with:
+    - name: substance name
+    - concentration: numeric value
+    - unit: г/л or г/кг
+    - is_antidote: whether it's an antidote
+    """
+    if not raw:
+        return []
+    
+    substances = []
+    
+    # Remove outer parentheses
+    text = raw.strip()
+    if text.startswith('('):
+        text = text[1:]
+    if text.endswith(')'):
+        text = text[:-1]
+    
+    # Split by + to get individual components
+    parts = re.split(r'\s*\+\s*', text)
+    
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        
+        # Check if it's an antidote
+        is_antidote = 'антидот' in part.lower()
+        
+        # Pattern: number unit name
+        # e.g., "360 г/л Глифосат кислоты"
+        # e.g., "47 г/л антидот - клоквинтосет-мексил"
+        match = re.match(r'(\d+(?:[.,]\d+)?)\s*(г/л|г/кг)\s*(.+)', part)
+        
+        if match:
+            concentration_str = match.group(1).replace(',', '.')
+            unit = match.group(2)
+            name = match.group(3).strip()
+            
+            # Clean up the name - remove "антидот -" prefix
+            name = re.sub(r'^антидот\s*[-–]?\s*', '', name, flags=re.IGNORECASE)
+            
+            # Remove trailing parentheses content that's part of the name
+            # Keep it as part of the substance name
+            
+            try:
+                concentration = float(concentration_str)
+            except:
+                concentration = 0
+            
+            substances.append({
+                "name": name.strip(),
+                "concentration": concentration,
+                "unit": unit,
+                "is_antidote": is_antidote
+            })
+    
+    return substances
+
+
+def normalize_substance_name(name: str) -> str:
+    """Normalize substance name for comparison"""
+    # Convert to lowercase and remove extra spaces
+    normalized = name.lower().strip()
+    
+    # Remove common suffixes/variations
+    normalized = re.sub(r'\s*\(.*?\)\s*', ' ', normalized)  # Remove parentheses content
+    normalized = re.sub(r'\s+', ' ', normalized)  # Normalize spaces
+    normalized = normalized.strip()
+    
+    return normalized
+
+
+def get_substance_category(name: str) -> str:
+    """
+    Determine the functional category/mechanism of a substance.
+    This is a simplified categorization based on common herbicide groups.
+    """
+    name_lower = name.lower()
+    
+    # Hormonal herbicides (auxin-like)
+    if any(x in name_lower for x in ['2,4-д', '2,4-d', 'дикамба', 'клопиралид', 'пиклорам', 'аминопиралид']):
+        return "Ауксиноподобные (гормональные)"
+    
+    # ALS inhibitors
+    if any(x in name_lower for x in ['сульфонилмочевин', 'трибенурон', 'метсульфурон', 'тифенсульфурон', 
+                                      'римсульфурон', 'никосульфурон', 'просульфурон', 'флорасулам',
+                                      'имазетапир', 'имазамокс', 'имазапир']):
+        return "Ингибиторы ALS (сульфонилмочевины)"
+    
+    # ACCase inhibitors (graminicides)
+    if any(x in name_lower for x in ['феноксапроп', 'хизалофоп', 'галоксифоп', 'клетодим', 
+                                      'пиноксаден', 'флуазифоп', 'пропаквизафоп']):
+        return "Ингибиторы ACCase (граминициды)"
+    
+    # Glyphosate
+    if 'глифосат' in name_lower:
+        return "Глифосаты (EPSP-ингибиторы)"
+    
+    # PPO inhibitors
+    if any(x in name_lower for x in ['карфентразон', 'оксифлуорфен', 'фомесафен', 'лактофен']):
+        return "Ингибиторы PPO"
+    
+    # PSII inhibitors
+    if any(x in name_lower for x in ['метрибузин', 'тербутилазин', 'атразин', 'прометрин']):
+        return "Ингибиторы фотосистемы II"
+    
+    # Pre-emergence herbicides
+    if any(x in name_lower for x in ['метолахлор', 'с-метолахлор', 'ацетохлор', 'пропизохлор', 'диметенамид']):
+        return "Хлорацетамиды (почвенные)"
+    
+    # HPPD inhibitors
+    if any(x in name_lower for x in ['мезотрион', 'темботрион', 'топрамезон', 'изоксафлютол']):
+        return "Ингибиторы HPPD"
+    
+    # Antidotes/safeners
+    if any(x in name_lower for x in ['клоквинтосет', 'мефенпир', 'изоксадифен', 'ципросульфамид']):
+        return "Антидот (сэйфнер)"
+    
+    return "Другие"
+
+
+def parse_rate_max(rate_raw: Optional[str]) -> Optional[float]:
+    """
+    Parse the maximum application rate from raw string.
+    Examples:
+    - "0,6-0,8" -> 0.8
+    - "1,5" -> 1.5
+    - "0,4-0,6" -> 0.6
+    """
+    if not rate_raw:
+        return None
+    
+    # Find all numbers in the string
+    numbers = re.findall(r'(\d+(?:[.,]\d+)?)', rate_raw)
+    
+    if not numbers:
+        return None
+    
+    # Convert to floats and get max
+    rates = []
+    for n in numbers:
+        try:
+            rates.append(float(n.replace(',', '.')))
+        except:
+            pass
+    
+    return max(rates) if rates else None
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -132,7 +300,6 @@ def is_active_status(status: Optional[str]) -> bool:
 async def health_check():
     """Health check endpoint"""
     try:
-        # Check MongoDB connection
         await db.command("ping")
         records_count = await db.herbicide_records.count_documents({})
         return {
@@ -154,13 +321,9 @@ async def health_check():
 async def import_excel(file: UploadFile = File(...)):
     """Import herbicide data from Excel file"""
     try:
-        # Read the uploaded file
         contents = await file.read()
-        
-        # Parse Excel
         df = pd.read_excel(io.BytesIO(contents), sheet_name='herbicides_raw', header=3)
         
-        # Clear existing data
         await db.herbicide_records.delete_many({})
         
         records = []
@@ -199,11 +362,9 @@ async def import_excel(file: UploadFile = File(...)):
             }
             records.append(record)
         
-        # Insert all records
         if records:
             await db.herbicide_records.insert_many(records)
         
-        # Log the import
         import_batch = {
             "id": str(uuid.uuid4()),
             "filename": file.filename,
@@ -213,7 +374,6 @@ async def import_excel(file: UploadFile = File(...)):
         }
         await db.import_batches.insert_one(import_batch)
         
-        # Count unique products
         unique_products = await db.herbicide_records.distinct("product_key")
         
         return {
@@ -238,7 +398,6 @@ async def search_herbicides(
     try:
         pipeline = []
         
-        # Build search filter
         if q and q.strip():
             search_regex = {"$regex": q.strip(), "$options": "i"}
             pipeline.append({
@@ -253,13 +412,11 @@ async def search_herbicides(
                 }
             })
         
-        # Filter for active only
         if only_active:
             pipeline.append({
                 "$match": {"registration_status": "Действует"}
             })
         
-        # Group by product_key to get unique products
         pipeline.extend([
             {
                 "$group": {
@@ -300,7 +457,6 @@ async def search_herbicides(
 async def get_herbicide(product_key: str):
     """Get a single herbicide product with all its applications"""
     try:
-        # Find all records for this product
         records = await db.herbicide_records.find(
             {"product_key": product_key}
         ).to_list(length=1000)
@@ -308,10 +464,8 @@ async def get_herbicide(product_key: str):
         if not records:
             raise HTTPException(status_code=404, detail="Product not found")
         
-        # Get the first record for product info
         first_record = records[0]
         
-        # Build applications list
         applications = []
         for r in records:
             app = {
@@ -324,7 +478,6 @@ async def get_herbicide(product_key: str):
                 "reentry_period_mech": r.get("reentry_period_mech"),
                 "restrictions": r.get("restrictions")
             }
-            # Only add if has some data
             if any(v for v in app.values() if v and v != "нет данных"):
                 applications.append(app)
         
@@ -350,9 +503,8 @@ async def get_herbicide(product_key: str):
 
 @api_router.post("/herbicides/compare")
 async def compare_herbicides(request: CompareRequest):
-    """Compare two herbicide products"""
+    """Compare two herbicide products (basic)"""
     try:
-        # Get both products
         left_records = await db.herbicide_records.find(
             {"product_key": request.left_key}
         ).to_list(length=1000)
@@ -368,14 +520,8 @@ async def compare_herbicides(request: CompareRequest):
         
         def build_product_info(records):
             first = records[0]
-            
-            # Collect all unique crops
             crops = list(set(r.get("crop") for r in records if r.get("crop")))
-            
-            # Collect all unique targets
             targets = list(set(r.get("target_object") for r in records if r.get("target_object")))
-            
-            # Collect all rates
             rates = list(set(r.get("rate_raw") for r in records if r.get("rate_raw")))
             
             return {
@@ -397,7 +543,6 @@ async def compare_herbicides(request: CompareRequest):
         left_info = build_product_info(left_records)
         right_info = build_product_info(right_records)
         
-        # Find common and unique crops
         left_crops = set(left_info["crops"])
         right_crops = set(right_info["crops"])
         
@@ -418,6 +563,242 @@ async def compare_herbicides(request: CompareRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@api_router.post("/herbicides/compare-advanced")
+async def compare_herbicides_advanced(request: AdvancedCompareRequest):
+    """
+    Advanced comparison of two herbicides with active substance analysis.
+    
+    Compares:
+    1. Identical active substances by name
+    2. Concentration comparison
+    3. Per hectare at max application rate
+    4. Similar substances by functional category
+    5. Price analysis (if prices provided)
+    """
+    try:
+        # Fetch product records
+        left_records = await db.herbicide_records.find(
+            {"product_key": request.left_key}
+        ).to_list(length=1000)
+        
+        right_records = await db.herbicide_records.find(
+            {"product_key": request.right_key}
+        ).to_list(length=1000)
+        
+        if not left_records:
+            raise HTTPException(status_code=404, detail="Left product not found")
+        if not right_records:
+            raise HTTPException(status_code=404, detail="Right product not found")
+        
+        left_first = left_records[0]
+        right_first = right_records[0]
+        
+        # Parse active substances
+        left_substances = parse_active_substances(left_first.get("active_substances_raw"))
+        right_substances = parse_active_substances(right_first.get("active_substances_raw"))
+        
+        # Filter out antidotes for main comparison
+        left_active = [s for s in left_substances if not s["is_antidote"]]
+        right_active = [s for s in right_substances if not s["is_antidote"]]
+        
+        left_antidotes = [s for s in left_substances if s["is_antidote"]]
+        right_antidotes = [s for s in right_substances if s["is_antidote"]]
+        
+        # Get max application rates
+        left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
+        right_rates = [r.get("rate_raw") for r in right_records if r.get("rate_raw")]
+        
+        left_max_rate = max([parse_rate_max(r) for r in left_rates if parse_rate_max(r)], default=None)
+        right_max_rate = max([parse_rate_max(r) for r in right_rates if parse_rate_max(r)], default=None)
+        
+        # 1. Find identical substances
+        identical_substances = []
+        for l_sub in left_active:
+            l_name_norm = normalize_substance_name(l_sub["name"])
+            for r_sub in right_active:
+                r_name_norm = normalize_substance_name(r_sub["name"])
+                if l_name_norm == r_name_norm or l_name_norm in r_name_norm or r_name_norm in l_name_norm:
+                    # Calculate per hectare at max rate
+                    l_per_ha = (l_sub["concentration"] * left_max_rate) if left_max_rate else None
+                    r_per_ha = (r_sub["concentration"] * right_max_rate) if right_max_rate else None
+                    
+                    identical_substances.append({
+                        "name": l_sub["name"],
+                        "left_concentration": l_sub["concentration"],
+                        "left_unit": l_sub["unit"],
+                        "right_concentration": r_sub["concentration"],
+                        "right_unit": r_sub["unit"],
+                        "left_per_ha": round(l_per_ha, 2) if l_per_ha else None,
+                        "right_per_ha": round(r_per_ha, 2) if r_per_ha else None,
+                        "winner": "left" if (l_per_ha and r_per_ha and l_per_ha > r_per_ha) else 
+                                  ("right" if (l_per_ha and r_per_ha and r_per_ha > l_per_ha) else "equal")
+                    })
+        
+        # 2. Find similar by category (different substance, same mechanism)
+        similar_by_category = []
+        
+        # Get categories for all substances
+        left_categories = {s["name"]: get_substance_category(s["name"]) for s in left_active}
+        right_categories = {s["name"]: get_substance_category(s["name"]) for s in right_active}
+        
+        # Group by category
+        left_by_category = {}
+        for s in left_active:
+            cat = get_substance_category(s["name"])
+            if cat not in left_by_category:
+                left_by_category[cat] = []
+            left_by_category[cat].append(s)
+        
+        right_by_category = {}
+        for s in right_active:
+            cat = get_substance_category(s["name"])
+            if cat not in right_by_category:
+                right_by_category[cat] = []
+            right_by_category[cat].append(s)
+        
+        # Find common categories with different substances
+        for cat in left_by_category:
+            if cat in right_by_category and cat != "Другие":
+                left_names = set(normalize_substance_name(s["name"]) for s in left_by_category[cat])
+                right_names = set(normalize_substance_name(s["name"]) for s in right_by_category[cat])
+                
+                # If substances are different but category is same
+                if not (left_names & right_names):
+                    similar_by_category.append({
+                        "category": cat,
+                        "left_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
+                                           for s in left_by_category[cat]],
+                        "right_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
+                                            for s in right_by_category[cat]]
+                    })
+        
+        # 3. Unique substances (only in one product)
+        identical_names_left = set(normalize_substance_name(s["name"]) for s in [i for i in identical_substances])
+        identical_names_right = identical_names_left
+        
+        left_unique = []
+        for s in left_active:
+            name_norm = normalize_substance_name(s["name"])
+            if not any(name_norm == normalize_substance_name(i["name"]) or 
+                      name_norm in normalize_substance_name(i["name"]) or
+                      normalize_substance_name(i["name"]) in name_norm
+                      for i in identical_substances):
+                per_ha = (s["concentration"] * left_max_rate) if left_max_rate else None
+                left_unique.append({
+                    **s,
+                    "category": get_substance_category(s["name"]),
+                    "per_ha": round(per_ha, 2) if per_ha else None
+                })
+        
+        right_unique = []
+        for s in right_active:
+            name_norm = normalize_substance_name(s["name"])
+            if not any(name_norm == normalize_substance_name(i["name"]) or 
+                      name_norm in normalize_substance_name(i["name"]) or
+                      normalize_substance_name(i["name"]) in name_norm
+                      for i in identical_substances):
+                per_ha = (s["concentration"] * right_max_rate) if right_max_rate else None
+                right_unique.append({
+                    **s,
+                    "category": get_substance_category(s["name"]),
+                    "per_ha": round(per_ha, 2) if per_ha else None
+                })
+        
+        # 4. Total concentration sums
+        left_total_concentration = sum(s["concentration"] for s in left_active)
+        right_total_concentration = sum(s["concentration"] for s in right_active)
+        
+        left_total_per_ha = (left_total_concentration * left_max_rate) if left_max_rate else None
+        right_total_per_ha = (right_total_concentration * right_max_rate) if right_max_rate else None
+        
+        # 5. Price analysis
+        price_analysis = None
+        if request.left_price or request.right_price:
+            price_analysis = {
+                "left_price_per_unit": request.left_price,
+                "right_price_per_unit": request.right_price,
+                "left_cost_per_ha": round(request.left_price * left_max_rate, 2) if request.left_price and left_max_rate else None,
+                "right_cost_per_ha": round(request.right_price * right_max_rate, 2) if request.right_price and right_max_rate else None,
+                "left_cost_per_gram_ai": None,
+                "right_cost_per_gram_ai": None,
+                "substances_cost": []
+            }
+            
+            # Cost per gram of active ingredient
+            if request.left_price and left_total_concentration > 0:
+                # Price per L or kg / concentration in g/L or g/kg = price per gram
+                price_analysis["left_cost_per_gram_ai"] = round(request.left_price / left_total_concentration, 4)
+            
+            if request.right_price and right_total_concentration > 0:
+                price_analysis["right_cost_per_gram_ai"] = round(request.right_price / right_total_concentration, 4)
+            
+            # Per-substance cost analysis
+            for s in left_active:
+                if request.left_price and s["concentration"] > 0:
+                    cost_per_g = request.left_price / s["concentration"] if s["concentration"] > 0 else None
+                    cost_per_ha = (s["concentration"] * left_max_rate * request.left_price / 1000) if left_max_rate else None
+                    price_analysis["substances_cost"].append({
+                        "side": "left",
+                        "name": s["name"],
+                        "concentration": s["concentration"],
+                        "cost_contribution_pct": round(s["concentration"] / left_total_concentration * 100, 1) if left_total_concentration > 0 else 0
+                    })
+            
+            for s in right_active:
+                if request.right_price and s["concentration"] > 0:
+                    cost_per_g = request.right_price / s["concentration"] if s["concentration"] > 0 else None
+                    cost_per_ha = (s["concentration"] * right_max_rate * request.right_price / 1000) if right_max_rate else None
+                    price_analysis["substances_cost"].append({
+                        "side": "right",
+                        "name": s["name"],
+                        "concentration": s["concentration"],
+                        "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
+                    })
+        
+        # Build response
+        return {
+            "left": {
+                "product_key": left_first.get("product_key"),
+                "product_name": left_first.get("product_name"),
+                "formulation": left_first.get("formulation"),
+                "active_substances_raw": left_first.get("active_substances_raw"),
+                "registration_status": left_first.get("registration_status"),
+                "max_rate": left_max_rate,
+                "substances": left_active,
+                "antidotes": left_antidotes,
+                "total_concentration": left_total_concentration,
+                "total_per_ha": round(left_total_per_ha, 2) if left_total_per_ha else None,
+                "substance_count": len(left_active)
+            },
+            "right": {
+                "product_key": right_first.get("product_key"),
+                "product_name": right_first.get("product_name"),
+                "formulation": right_first.get("formulation"),
+                "active_substances_raw": right_first.get("active_substances_raw"),
+                "registration_status": right_first.get("registration_status"),
+                "max_rate": right_max_rate,
+                "substances": right_active,
+                "antidotes": right_antidotes,
+                "total_concentration": right_total_concentration,
+                "total_per_ha": round(right_total_per_ha, 2) if right_total_per_ha else None,
+                "substance_count": len(right_active)
+            },
+            "analysis": {
+                "identical_substances": identical_substances,
+                "similar_by_category": similar_by_category,
+                "left_unique_substances": left_unique,
+                "right_unique_substances": right_unique
+            },
+            "price_analysis": price_analysis
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Advanced compare failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @api_router.get("/stats")
 async def get_stats():
     """Get database statistics"""
@@ -426,7 +807,6 @@ async def get_stats():
         unique_products = await db.herbicide_records.distinct("product_key")
         active_count = await db.herbicide_records.count_documents({"registration_status": "Действует"})
         
-        # Get counts by status
         status_pipeline = [
             {"$group": {"_id": "$registration_status", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}}
