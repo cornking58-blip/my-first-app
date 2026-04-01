@@ -10,9 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import axios from 'axios';
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { api } from '../../src/api';
 
 // Logo Component
 const Logo = () => (
@@ -68,7 +66,7 @@ export default function ProductDetailScreen() {
     setError(null);
     
     try {
-      const response = await axios.get(`${API_URL}/api/herbicides/${encodeURIComponent(key)}`);
+      const response = await api.get(`/api/herbicides/${encodeURIComponent(key)}`);
       setProduct(response.data);
     } catch (err) {
       console.error('Failed to fetch product:', err);

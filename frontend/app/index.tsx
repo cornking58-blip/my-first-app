@@ -15,10 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
-import axios from 'axios';
 import { useHerbicideStore } from '../src/store/herbicideStore';
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { api } from '../src/api';
 
 interface SearchResult {
   product_key: string;
@@ -53,7 +51,7 @@ export default function HomeScreen() {
 
   const fetchStats = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/stats`);
+      const response = await api.get('/api/stats');
       setStats(response.data);
     } catch (error) {
       console.error('Failed to fetch stats:', error);
@@ -68,7 +66,7 @@ export default function HomeScreen() {
       if (active) params.append('only_active', 'true');
       params.append('limit', '50');
 
-      const response = await axios.get(`${API_URL}/api/herbicides/search?${params.toString()}`);
+      const response = await api.get(`/api/herbicides/search?${params.toString()}`);
       setResults(response.data);
     } catch (error) {
       console.error('Search failed:', error);

@@ -13,10 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import axios from 'axios';
 import { useHerbicideStore } from '../src/store/herbicideStore';
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+import { api } from '../src/api';
 
 // Logo Component
 const Logo = () => (
@@ -129,7 +127,7 @@ export default function CompareScreen() {
       if (lPrice !== undefined) body.left_price = lPrice;
       if (rPrice !== undefined) body.right_price = rPrice;
       
-      const response = await axios.post(`${API_URL}/api/herbicides/compare-advanced`, body);
+      const response = await api.post('/api/herbicides/compare-advanced', body);
       setCompareData(response.data);
     } catch (err) {
       console.error('Compare failed:', err);
