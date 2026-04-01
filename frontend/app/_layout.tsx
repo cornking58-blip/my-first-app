@@ -16,6 +16,7 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="product/[key]" />
         <Stack.Screen name="compare" />
+        <Stack.Screen name="hotel" />
       </Stack>
     </SafeAreaProvider>
   );
