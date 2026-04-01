@@ -1,4 +1,5 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Query
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Query, Request
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -9,7 +10,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
+import secrets
 import pandas as pd
 import io
 
@@ -24,6 +26,54 @@ db = client[os.environ.get('DB_NAME', 'herbicides_db')]
 
 # Create the main app
 app = FastAPI(title="Herbicides API", version="1.0.0")
+
+# Пути, которые доступны БЕЗ токена
+PUBLIC_PATHS = {
+    "/api/health",
+    "/api/admin/generate-demo-link",
+}
+
+
+@app.middleware("http")
+async def verify_token_middleware(request: Request, call_next):
+    """
+    Проверяет токен для всех /api/* путей, кроме PUBLIC_PATHS.
+    Токен передаётся как query-параметр: ?token=xxx
+    или в заголовке: X-Demo-Token: xxx
+    """
+    path = request.url.path
+
+    # Не трогаем не-API пути и публичные эндпоинты
+    if not path.startswith("/api/") or path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    # Извлекаем токен из query-параметра или заголовка
+    token = request.query_params.get("token") or request.headers.get("X-Demo-Token")
+
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Требуется токен доступа. Получите демо-ссылку у администратора."}
+        )
+
+    # Ищем токен в базе данных
+    token_doc = await db.access_tokens.find_one({"token": token})
+    if not token_doc:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Недействительный токен."}
+        )
+
+    # Проверяем срок действия
+    expires_at = token_doc.get("expires_at")
+    if expires_at and expires_at < datetime.utcnow():
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Срок действия токена истёк. Запросите новую ссылку."}
+        )
+
+    return await call_next(request)
+
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -822,6 +872,36 @@ async def get_stats():
     except Exception as e:
         logger.error(f"Stats failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/admin/generate-demo-link")
+async def generate_demo_link(
+    hours: int = Query(default=24, description="Срок действия токена в часах"),
+    admin_key: str = Query(..., description="Ключ администратора")
+):
+    """Создать демо-ссылку с временным токеном доступа"""
+    expected_key = os.environ.get("ADMIN_KEY", "admin123")
+    if admin_key != expected_key:
+        raise HTTPException(status_code=403, detail="Неверный ключ администратора")
+
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(hours=hours)
+
+    await db.access_tokens.insert_one({
+        "token": token,
+        "created_at": datetime.utcnow(),
+        "expires_at": expires_at,
+        "hours": hours
+    })
+
+    logger.info(f"Demo token created, expires at {expires_at.isoformat()}")
+
+    return {
+        "token": token,
+        "expires_at": expires_at.isoformat(),
+        "valid_hours": hours,
+        "demo_link": f"?token={token}"
+    }
 
 
 # Include the router in the main app
