@@ -185,6 +185,72 @@ backend:
       - working: true
         agent: "main"
         comment: "GET /api/stats returns database statistics"
+      - working: true
+        agent: "main"
+        comment: "Updated to return both herbicide and insecticide stats separately"
+      - working: true
+        agent: "testing"
+        comment: "Stats endpoint fully tested: Returns both herbicide stats (3232 total, 956 unique, 2754 active) and insecticide stats (786 total, 555 unique, 635 active). All data correctly separated and accessible."
+
+  - task: "Import insecticides endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/admin/import-insecticides imports insecticides from Excel. 786 records, 555 unique products imported."
+      - working: true
+        agent: "testing"
+        comment: "Import functionality verified through stats endpoint - 786 insecticide records successfully imported and accessible via database."
+
+  - task: "Search insecticides endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/insecticides/search with q, only_active, limit. Same pattern as herbicides. Tested with 'Органза' - works."
+      - working: true
+        agent: "testing"
+        comment: "Comprehensive testing completed: Empty query (limit=5) returned 5 results, Russian text search 'Органза' returned 1 result, only_active filter returned 10 active products. All required response fields present (product_key, product_name, formulation, active_substances_raw, manufacturer, registration_status, applications_count). Search functionality working perfectly."
+
+  - task: "Get insecticide product card endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET /api/insecticides/{product_key} returns insecticide product with applications"
+      - working: true
+        agent: "testing"
+        comment: "Product card endpoint fully tested: Successfully retrieves insecticide details with applications list, URL encoding for product_key works correctly, returns proper 404 for invalid keys. All required fields present (product_name, formulation, active_substances_raw, manufacturer, registration_number, applications). Functionality working as expected."
+
+  - task: "Compare insecticides advanced endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/insecticides/compare-advanced with left_key, right_key, prices. Same pattern as herbicides."
+      - working: true
+        agent: "testing"
+        comment: "Advanced comparison endpoint thoroughly tested: Successfully compares two insecticide products with price analysis, returns proper comparison data with analysis sections (identical_substances, similar_by_category, left_unique_substances, right_unique_substances), handles invalid product keys with 404 errors. All comparison functionality working correctly."
 
 frontend:
   - task: "Home screen with search"
@@ -252,3 +318,7 @@ agent_communication:
     message: "Backend и Frontend MVP реализованы. Все основные функции работают: поиск, карточка препарата, сравнение. Данные из Excel импортированы (3232 записи, 956 уникальных препаратов)."
   - agent: "testing"
     message: "Backend API testing completed successfully. All 3 priority endpoints tested comprehensively: Search (with Russian text queries пшеница/кукуруза/соя, only_active filter), Product Card (with URL encoding), and Compare (with error handling). All tests passed including edge cases. Database contains 3232 records, 956 unique products, 2754 active registrations. Backend is fully functional and ready for production."
+  - agent: "main"
+    message: "Добавлен раздел ИНСЕКТИЦИДЫ. Новые эндпоинты: POST /api/admin/import-insecticides, GET /api/insecticides/search, GET /api/insecticides/{product_key}, POST /api/insecticides/compare-advanced. Импортировано 786 записей (555 уникальных инсектицидов) из insecticides_raw_FINAL.xlsx. Обновлён /api/stats для разделённой статистики. Протестируйте новые insecticide эндпоинты."
+  - agent: "testing"
+    message: "NEW INSECTICIDE ENDPOINTS TESTING COMPLETED SUCCESSFULLY. All 4 new endpoints fully tested: 1) Stats endpoint returns both herbicide (3232 total, 956 unique, 2754 active) and insecticide stats (786 total, 555 unique, 635 active). 2) Insecticide search with empty query, Russian text 'Органза', and only_active filter - all working perfectly. 3) Product card endpoint with URL encoding and 404 handling - working correctly. 4) Advanced comparison with price analysis and error handling - fully functional. All existing herbicide endpoints still working. Database contains 786 insecticide records successfully imported. Backend is production-ready."

@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
-import { useHerbicideStore } from '../src/store/herbicideStore';
+import { useHerbicideStore } from '../../src/store/herbicideStore';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -41,7 +41,7 @@ const Logo = () => (
   </View>
 );
 
-export default function HomeScreen() {
+export default function InsecticidesScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -49,12 +49,14 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [onlyActive, setOnlyActive] = useState(false);
   const [stats, setStats] = useState<{ total_records: number; unique_products: number; active_registrations: number } | null>(null);
-  const { selectedForCompare, toggleSelection, clearSelection } = useHerbicideStore();
+  const { selectedInsecticidesForCompare, toggleInsecticideSelection, clearInsecticideSelection } = useHerbicideStore();
 
   const fetchStats = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/stats`);
-      setStats(response.data);
+      if (response.data.insecticides) {
+        setStats(response.data.insecticides);
+      }
     } catch (error) {
       console.error('Failed to fetch stats:', error);
     }
@@ -68,7 +70,7 @@ export default function HomeScreen() {
       if (active) params.append('only_active', 'true');
       params.append('limit', '50');
 
-      const response = await axios.get(`${API_URL}/api/herbicides/search?${params.toString()}`);
+      const response = await axios.get(`${API_URL}/api/insecticides/search?${params.toString()}`);
       setResults(response.data);
     } catch (error) {
       console.error('Search failed:', error);
@@ -106,14 +108,14 @@ export default function HomeScreen() {
 
   const renderItem = ({ item }: { item: SearchResult }) => {
     const active = isActive(item.registration_status);
-    const isSelected = selectedForCompare.includes(item.product_key);
-    const canSelect = selectedForCompare.length < 2 || isSelected;
+    const isSelected = selectedInsecticidesForCompare.includes(item.product_key);
+    const canSelect = selectedInsecticidesForCompare.length < 2 || isSelected;
     
     return (
       <View style={[styles.card, isSelected && styles.cardSelected]}>
         <TouchableOpacity
           style={styles.cardContent}
-          onPress={() => router.push(`/product/${encodeURIComponent(item.product_key)}`)}
+          onPress={() => router.push(`/insecticide-product/${encodeURIComponent(item.product_key)}`)}
           activeOpacity={0.7}
         >
           <View style={styles.cardHeader}>
@@ -167,13 +169,13 @@ export default function HomeScreen() {
               isSelected && styles.compareSelectButtonActive,
               !canSelect && !isSelected && styles.compareSelectButtonDisabled
             ]}
-            onPress={() => toggleSelection(item.product_key)}
+            onPress={() => toggleInsecticideSelection(item.product_key)}
             disabled={!canSelect && !isSelected}
           >
             <Ionicons 
               name={isSelected ? "checkmark-circle" : "add-circle-outline"} 
               size={18} 
-              color={isSelected ? "#FFFFFF" : (!canSelect ? "#D1D5DB" : "#3B82F6")} 
+              color={isSelected ? "#FFFFFF" : (!canSelect ? "#D1D5DB" : "#F59E0B")} 
             />
             <Text style={[
               styles.compareSelectText,
@@ -199,7 +201,7 @@ export default function HomeScreen() {
           <View style={styles.titleRow}>
             <View>
               <Logo />
-              <Text style={styles.subtitle}>Справочник гербицидов РФ</Text>
+              <Text style={styles.subtitle}>Справочник инсектицидов РФ</Text>
             </View>
           </View>
 
@@ -269,24 +271,24 @@ export default function HomeScreen() {
         </View>
 
         {/* Compare Bar */}
-        {selectedForCompare.length > 0 && (
+        {selectedInsecticidesForCompare.length > 0 && (
           <View style={styles.compareBar}>
             <View style={styles.compareInfo}>
-              <Text style={styles.compareText}>Выбрано: {selectedForCompare.length}</Text>
-              <TouchableOpacity onPress={clearSelection}>
+              <Text style={styles.compareText}>Выбрано: {selectedInsecticidesForCompare.length}</Text>
+              <TouchableOpacity onPress={clearInsecticideSelection}>
                 <Text style={styles.clearText}>Очистить</Text>
               </TouchableOpacity>
             </View>
-            {selectedForCompare.length === 2 && (
+            {selectedInsecticidesForCompare.length === 2 && (
               <TouchableOpacity 
                 style={styles.compareButton}
-                onPress={() => router.push('/compare')}
+                onPress={() => router.push('/insecticide-compare')}
               >
                 <Ionicons name="git-compare-outline" size={18} color="#FFFFFF" />
                 <Text style={styles.compareButtonText}>Сравнить</Text>
               </TouchableOpacity>
             )}
-            {selectedForCompare.length === 1 && (
+            {selectedInsecticidesForCompare.length === 1 && (
               <Text style={styles.compareHint}>Выберите ещё 1 препарат</Text>
             )}
           </View>
@@ -296,7 +298,7 @@ export default function HomeScreen() {
         <View style={styles.resultsContainer}>
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#3B82F6" />
+              <ActivityIndicator size="large" color="#F59E0B" />
               <Text style={styles.loadingText}>Загрузка...</Text>
             </View>
           ) : (
@@ -310,12 +312,12 @@ export default function HomeScreen() {
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={handleRefresh}
-                  tintColor="#3B82F6"
+                  tintColor="#F59E0B"
                 />
               }
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <Ionicons name="leaf-outline" size={64} color="#D1D5DB" />
+                  <Ionicons name="bug-outline" size={64} color="#D1D5DB" />
                   <Text style={styles.emptyTitle}>Ничего не найдено</Text>
                   <Text style={styles.emptyText}>Попробуйте изменить запрос</Text>
                 </View>
@@ -376,7 +378,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 16,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFF7ED',
     borderRadius: 12,
     padding: 12,
   },
@@ -448,7 +450,7 @@ const styles = StyleSheet.create({
     color: '#059669',
   },
   searchButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#F59E0B',
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -462,11 +464,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFFBEB',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#BFDBFE',
+    borderBottomColor: '#FDE68A',
   },
   compareInfo: {
     flexDirection: 'row',
@@ -475,7 +477,7 @@ const styles = StyleSheet.create({
   compareText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1E40AF',
+    color: '#92400E',
   },
   clearText: {
     marginLeft: 12,
@@ -486,7 +488,7 @@ const styles = StyleSheet.create({
   compareButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#F59E0B',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -517,9 +519,9 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   cardSelected: {
-    borderColor: '#3B82F6',
+    borderColor: '#F59E0B',
     borderWidth: 2,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFFBEB',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -621,16 +623,6 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginLeft: 6,
   },
-  selectedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  selectedText: {
-    fontSize: 13,
-    color: '#10B981',
-    fontWeight: '500',
-    marginLeft: 4,
-  },
   cardContent: {
     flex: 1,
   },
@@ -640,13 +632,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFFBEB',
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: '#F59E0B',
   },
   compareSelectButtonActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
+    backgroundColor: '#F59E0B',
+    borderColor: '#F59E0B',
   },
   compareSelectButtonDisabled: {
     backgroundColor: '#F3F4F6',
@@ -655,7 +647,7 @@ const styles = StyleSheet.create({
   compareSelectText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#F59E0B',
     marginLeft: 4,
   },
   compareSelectTextActive: {

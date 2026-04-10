@@ -13,9 +13,11 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: '#FFFFFF' },
         }}
       >
-        <Stack.Screen name="index" />
+        <Stack.Screen name="(tabs)" />
         <Stack.Screen name="product/[key]" />
         <Stack.Screen name="compare" />
+        <Stack.Screen name="insecticide-product/[key]" />
+        <Stack.Screen name="insecticide-compare" />
       </Stack>
     </SafeAreaProvider>
   );
