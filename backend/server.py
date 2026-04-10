@@ -1182,9 +1182,400 @@ async def compare_insecticides_advanced(request: AdvancedCompareRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
+# ==================== SEED TREATMENT ENDPOINTS ====================
+
+@api_router.post("/admin/import-seed-treatments")
+async def import_seed_treatments(file: UploadFile = File(...)):
+    """Import seed treatment data from Excel file"""
+    try:
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents), sheet_name='seed_treatments_raw', header=3)
+        
+        await db.seed_treatment_records.delete_many({})
+        
+        records = []
+        for idx, row in df.iterrows():
+            product_name = clean_value(row.get('product_name'))
+            if not product_name:
+                continue
+            
+            registration_number = clean_value(row.get('registration_number'))
+            product_key = create_product_key(product_name, registration_number)
+            
+            record = {
+                "id": str(uuid.uuid4()),
+                "record_id": int(row.get('record_id')) if pd.notna(row.get('record_id')) else None,
+                "product_name": product_name,
+                "product_key": product_key,
+                "formulation": clean_value(row.get('formulation')),
+                "active_substances_raw": clean_value(row.get('active_substances_raw')),
+                "manufacturer": clean_value(row.get('manufacturer')),
+                "registration_number": registration_number,
+                "registration_start_date": clean_value(row.get('registration_start_date')),
+                "registration_end_date": clean_value(row.get('registration_end_date')),
+                "registration_status": clean_value(row.get('registration_status')),
+                "rate_raw": clean_value(row.get('rate_raw')),
+                "crop": clean_value(row.get('crop')),
+                "target_object": clean_value(row.get('target_object')),
+                "application_method": clean_value(row.get('application_method')),
+                "waiting_period": clean_value(row.get('waiting_period')),
+                "reentry_period_manual": clean_value(row.get('reentry_period_manual')),
+                "reentry_period_mech": clean_value(row.get('reentry_period_mech')),
+                "restrictions": clean_value(row.get('restrictions')),
+                "source_page": clean_value(row.get('source_page')),
+                "source_type": clean_value(row.get('source_type')),
+                "notes": clean_value(row.get('notes')),
+                "pesticide_type": clean_value(row.get('pesticide_type')),
+                "created_at": datetime.utcnow()
+            }
+            records.append(record)
+        
+        if records:
+            await db.seed_treatment_records.insert_many(records)
+        
+        import_batch = {
+            "id": str(uuid.uuid4()),
+            "filename": file.filename,
+            "records_imported": len(records),
+            "import_date": datetime.utcnow(),
+            "status": "completed",
+            "type": "seed_treatments"
+        }
+        await db.import_batches.insert_one(import_batch)
+        
+        unique_products = await db.seed_treatment_records.distinct("product_key")
+        
+        return {
+            "message": "Seed treatment import successful",
+            "records_imported": len(records),
+            "unique_products": len(unique_products),
+            "filename": file.filename
+        }
+        
+    except Exception as e:
+        logger.error(f"Seed treatment import failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/seed-treatments/search")
+async def search_seed_treatments(
+    q: str = Query(default="", description="Search query"),
+    only_active: bool = Query(default=False, description="Show only active registrations"),
+    limit: int = Query(default=50, le=200, description="Maximum results")
+):
+    """Search seed treatments by name, crop, target, or active substances"""
+    try:
+        pipeline = []
+        
+        if q and q.strip():
+            search_regex = {"$regex": q.strip(), "$options": "i"}
+            pipeline.append({
+                "$match": {
+                    "$or": [
+                        {"product_name": search_regex},
+                        {"crop": search_regex},
+                        {"target_object": search_regex},
+                        {"active_substances_raw": search_regex},
+                        {"manufacturer": search_regex}
+                    ]
+                }
+            })
+        
+        if only_active:
+            pipeline.append({
+                "$match": {"registration_status": "Действует"}
+            })
+        
+        pipeline.extend([
+            {
+                "$group": {
+                    "_id": "$product_key",
+                    "product_name": {"$first": "$product_name"},
+                    "formulation": {"$first": "$formulation"},
+                    "active_substances_raw": {"$first": "$active_substances_raw"},
+                    "manufacturer": {"$first": "$manufacturer"},
+                    "registration_status": {"$first": "$registration_status"},
+                    "pesticide_type": {"$first": "$pesticide_type"},
+                    "applications_count": {"$sum": 1}
+                }
+            },
+            {"$sort": {"product_name": 1}},
+            {"$limit": limit}
+        ])
+        
+        results = await db.seed_treatment_records.aggregate(pipeline).to_list(length=limit)
+        
+        return [
+            {
+                "product_key": r["_id"],
+                "product_name": r["product_name"],
+                "formulation": r.get("formulation"),
+                "active_substances_raw": r.get("active_substances_raw"),
+                "manufacturer": r.get("manufacturer"),
+                "registration_status": r.get("registration_status"),
+                "pesticide_type": r.get("pesticide_type"),
+                "applications_count": r.get("applications_count", 0)
+            }
+            for r in results
+        ]
+        
+    except Exception as e:
+        logger.error(f"Seed treatment search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/seed-treatments/{product_key:path}")
+async def get_seed_treatment(product_key: str):
+    """Get a single seed treatment product with all its applications"""
+    try:
+        records = await db.seed_treatment_records.find(
+            {"product_key": product_key}
+        ).to_list(length=1000)
+        
+        if not records:
+            raise HTTPException(status_code=404, detail="Seed treatment product not found")
+        
+        first_record = records[0]
+        
+        applications = []
+        for r in records:
+            app = {
+                "crop": r.get("crop"),
+                "target_object": r.get("target_object"),
+                "rate_raw": r.get("rate_raw"),
+                "application_method": r.get("application_method"),
+                "waiting_period": r.get("waiting_period"),
+                "reentry_period_manual": r.get("reentry_period_manual"),
+                "reentry_period_mech": r.get("reentry_period_mech"),
+                "restrictions": r.get("restrictions")
+            }
+            if any(v for v in app.values() if v and v != "нет данных"):
+                applications.append(app)
+        
+        return {
+            "product_key": product_key,
+            "product_name": first_record.get("product_name"),
+            "formulation": first_record.get("formulation"),
+            "active_substances_raw": first_record.get("active_substances_raw"),
+            "manufacturer": first_record.get("manufacturer"),
+            "registration_number": first_record.get("registration_number"),
+            "registration_start_date": first_record.get("registration_start_date"),
+            "registration_end_date": first_record.get("registration_end_date"),
+            "registration_status": first_record.get("registration_status"),
+            "pesticide_type": first_record.get("pesticide_type"),
+            "applications": applications
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get seed treatment failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/seed-treatments/compare-advanced")
+async def compare_seed_treatments_advanced(request: AdvancedCompareRequest):
+    """Advanced comparison of two seed treatments with active substance analysis."""
+    try:
+        left_records = await db.seed_treatment_records.find(
+            {"product_key": request.left_key}
+        ).to_list(length=1000)
+        
+        right_records = await db.seed_treatment_records.find(
+            {"product_key": request.right_key}
+        ).to_list(length=1000)
+        
+        if not left_records:
+            raise HTTPException(status_code=404, detail="Left seed treatment not found")
+        if not right_records:
+            raise HTTPException(status_code=404, detail="Right seed treatment not found")
+        
+        left_first = left_records[0]
+        right_first = right_records[0]
+        
+        left_substances = parse_active_substances(left_first.get("active_substances_raw"))
+        right_substances = parse_active_substances(right_first.get("active_substances_raw"))
+        
+        left_active = [s for s in left_substances if not s["is_antidote"]]
+        right_active = [s for s in right_substances if not s["is_antidote"]]
+        
+        left_antidotes = [s for s in left_substances if s["is_antidote"]]
+        right_antidotes = [s for s in right_substances if s["is_antidote"]]
+        
+        left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
+        right_rates = [r.get("rate_raw") for r in right_records if r.get("rate_raw")]
+        
+        left_max_rate = max([parse_rate_max(r) for r in left_rates if parse_rate_max(r)], default=None)
+        right_max_rate = max([parse_rate_max(r) for r in right_rates if parse_rate_max(r)], default=None)
+        
+        identical_substances = []
+        for l_sub in left_active:
+            l_name_norm = normalize_substance_name(l_sub["name"])
+            for r_sub in right_active:
+                r_name_norm = normalize_substance_name(r_sub["name"])
+                if l_name_norm == r_name_norm or l_name_norm in r_name_norm or r_name_norm in l_name_norm:
+                    l_per_ha = (l_sub["concentration"] * left_max_rate) if left_max_rate else None
+                    r_per_ha = (r_sub["concentration"] * right_max_rate) if right_max_rate else None
+                    
+                    identical_substances.append({
+                        "name": l_sub["name"],
+                        "left_concentration": l_sub["concentration"],
+                        "left_unit": l_sub["unit"],
+                        "right_concentration": r_sub["concentration"],
+                        "right_unit": r_sub["unit"],
+                        "left_per_ha": round(l_per_ha, 2) if l_per_ha else None,
+                        "right_per_ha": round(r_per_ha, 2) if r_per_ha else None,
+                        "winner": "left" if (l_per_ha and r_per_ha and l_per_ha > r_per_ha) else 
+                                  ("right" if (l_per_ha and r_per_ha and r_per_ha > l_per_ha) else "equal")
+                    })
+        
+        similar_by_category = []
+        left_by_category = {}
+        for s in left_active:
+            cat = get_substance_category(s["name"])
+            if cat not in left_by_category:
+                left_by_category[cat] = []
+            left_by_category[cat].append(s)
+        
+        right_by_category = {}
+        for s in right_active:
+            cat = get_substance_category(s["name"])
+            if cat not in right_by_category:
+                right_by_category[cat] = []
+            right_by_category[cat].append(s)
+        
+        for cat in left_by_category:
+            if cat in right_by_category and cat != "Другие":
+                left_names = set(normalize_substance_name(s["name"]) for s in left_by_category[cat])
+                right_names = set(normalize_substance_name(s["name"]) for s in right_by_category[cat])
+                if not (left_names & right_names):
+                    similar_by_category.append({
+                        "category": cat,
+                        "left_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
+                                           for s in left_by_category[cat]],
+                        "right_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
+                                            for s in right_by_category[cat]]
+                    })
+        
+        left_unique = []
+        for s in left_active:
+            name_norm = normalize_substance_name(s["name"])
+            if not any(name_norm == normalize_substance_name(i["name"]) or 
+                      name_norm in normalize_substance_name(i["name"]) or
+                      normalize_substance_name(i["name"]) in name_norm
+                      for i in identical_substances):
+                per_ha = (s["concentration"] * left_max_rate) if left_max_rate else None
+                left_unique.append({
+                    **s,
+                    "category": get_substance_category(s["name"]),
+                    "per_ha": round(per_ha, 2) if per_ha else None
+                })
+        
+        right_unique = []
+        for s in right_active:
+            name_norm = normalize_substance_name(s["name"])
+            if not any(name_norm == normalize_substance_name(i["name"]) or 
+                      name_norm in normalize_substance_name(i["name"]) or
+                      normalize_substance_name(i["name"]) in name_norm
+                      for i in identical_substances):
+                per_ha = (s["concentration"] * right_max_rate) if right_max_rate else None
+                right_unique.append({
+                    **s,
+                    "category": get_substance_category(s["name"]),
+                    "per_ha": round(per_ha, 2) if per_ha else None
+                })
+        
+        left_total_concentration = sum(s["concentration"] for s in left_active)
+        right_total_concentration = sum(s["concentration"] for s in right_active)
+        
+        left_total_per_ha = (left_total_concentration * left_max_rate) if left_max_rate else None
+        right_total_per_ha = (right_total_concentration * right_max_rate) if right_max_rate else None
+        
+        price_analysis = None
+        if request.left_price or request.right_price:
+            price_analysis = {
+                "left_price_per_unit": request.left_price,
+                "right_price_per_unit": request.right_price,
+                "left_cost_per_ha": round(request.left_price * left_max_rate, 2) if request.left_price and left_max_rate else None,
+                "right_cost_per_ha": round(request.right_price * right_max_rate, 2) if request.right_price and right_max_rate else None,
+                "left_cost_per_gram_ai": None,
+                "right_cost_per_gram_ai": None,
+                "substances_cost": []
+            }
+            
+            if request.left_price and left_total_concentration > 0:
+                price_analysis["left_cost_per_gram_ai"] = round(request.left_price / left_total_concentration, 4)
+            if request.right_price and right_total_concentration > 0:
+                price_analysis["right_cost_per_gram_ai"] = round(request.right_price / right_total_concentration, 4)
+            
+            for s in left_active:
+                if request.left_price and s["concentration"] > 0:
+                    price_analysis["substances_cost"].append({
+                        "side": "left",
+                        "name": s["name"],
+                        "concentration": s["concentration"],
+                        "cost_contribution_pct": round(s["concentration"] / left_total_concentration * 100, 1) if left_total_concentration > 0 else 0
+                    })
+            
+            for s in right_active:
+                if request.right_price and s["concentration"] > 0:
+                    price_analysis["substances_cost"].append({
+                        "side": "right",
+                        "name": s["name"],
+                        "concentration": s["concentration"],
+                        "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
+                    })
+        
+        return {
+            "left": {
+                "product_key": left_first.get("product_key"),
+                "product_name": left_first.get("product_name"),
+                "formulation": left_first.get("formulation"),
+                "active_substances_raw": left_first.get("active_substances_raw"),
+                "registration_status": left_first.get("registration_status"),
+                "pesticide_type": left_first.get("pesticide_type"),
+                "max_rate": left_max_rate,
+                "substances": left_active,
+                "antidotes": left_antidotes,
+                "total_concentration": left_total_concentration,
+                "total_per_ha": round(left_total_per_ha, 2) if left_total_per_ha else None,
+                "substance_count": len(left_active)
+            },
+            "right": {
+                "product_key": right_first.get("product_key"),
+                "product_name": right_first.get("product_name"),
+                "formulation": right_first.get("formulation"),
+                "active_substances_raw": right_first.get("active_substances_raw"),
+                "registration_status": right_first.get("registration_status"),
+                "pesticide_type": right_first.get("pesticide_type"),
+                "max_rate": right_max_rate,
+                "substances": right_active,
+                "antidotes": right_antidotes,
+                "total_concentration": right_total_concentration,
+                "total_per_ha": round(right_total_per_ha, 2) if right_total_per_ha else None,
+                "substance_count": len(right_active)
+            },
+            "analysis": {
+                "identical_substances": identical_substances,
+                "similar_by_category": similar_by_category,
+                "left_unique_substances": left_unique,
+                "right_unique_substances": right_unique
+            },
+            "price_analysis": price_analysis
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Advanced seed treatment compare failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @api_router.get("/stats")
 async def get_stats():
-    """Get database statistics for both herbicides and insecticides"""
+    """Get database statistics for herbicides, insecticides and seed treatments"""
     try:
         # Herbicide stats
         herb_total = await db.herbicide_records.count_documents({})
@@ -1196,6 +1587,11 @@ async def get_stats():
         ins_products = await db.insecticide_records.distinct("product_key")
         ins_active = await db.insecticide_records.count_documents({"registration_status": "Действует"})
         
+        # Seed treatment stats
+        st_total = await db.seed_treatment_records.count_documents({})
+        st_products = await db.seed_treatment_records.distinct("product_key")
+        st_active = await db.seed_treatment_records.count_documents({"registration_status": "Действует"})
+        
         return {
             "total_records": herb_total,
             "unique_products": len(herb_products),
@@ -1204,6 +1600,11 @@ async def get_stats():
                 "total_records": ins_total,
                 "unique_products": len(ins_products),
                 "active_registrations": ins_active
+            },
+            "seed_treatments": {
+                "total_records": st_total,
+                "unique_products": len(st_products),
+                "active_registrations": st_active
             }
         }
     except Exception as e:
