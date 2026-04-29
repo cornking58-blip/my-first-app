@@ -1,0 +1,899 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import axios from 'axios';
+import { useHerbicideStore } from '../src/store/herbicideStore';
+
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+
+// Logo Component
+const Logo = () => (
+  <View style={styles.logoContainer}>
+    <Text style={styles.logoText}>
+      <Text style={styles.logoB}>b</Text>
+      <Text style={styles.logoAI}>AI</Text>
+      <Text style={styles.logoKov}>kov</Text>
+    </Text>
+  </View>
+);
+
+interface Substance {
+  name: string;
+  concentration: number;
+  unit: string;
+  is_antidote: boolean;
+  category?: string;
+  per_ha?: number;
+}
+
+interface IdenticalSubstance {
+  name: string;
+  left_concentration: number;
+  left_unit: string;
+  right_concentration: number;
+  right_unit: string;
+  left_per_ha: number | null;
+  right_per_ha: number | null;
+  winner: 'left' | 'right' | 'equal';
+}
+
+interface SimilarCategory {
+  category: string;
+  left_substances: { name: string; concentration: number; unit: string }[];
+  right_substances: { name: string; concentration: number; unit: string }[];
+}
+
+interface ProductInfo {
+  product_key: string;
+  product_name: string;
+  formulation: string | null;
+  active_substances_raw: string | null;
+  registration_status: string | null;
+  max_rate: number | null;
+  substances: Substance[];
+  antidotes: Substance[];
+  total_concentration: number;
+  total_per_ha: number | null;
+  substance_count: number;
+}
+
+interface PriceAnalysis {
+  left_price_per_unit: number | null;
+  right_price_per_unit: number | null;
+  left_cost_per_ha: number | null;
+  right_cost_per_ha: number | null;
+  left_cost_per_gram_ai: number | null;
+  right_cost_per_gram_ai: number | null;
+  substances_cost: {
+    side: 'left' | 'right';
+    name: string;
+    concentration: number;
+    cost_contribution_pct: number;
+  }[];
+}
+
+interface CompareResult {
+  left: ProductInfo;
+  right: ProductInfo;
+  analysis: {
+    identical_substances: IdenticalSubstance[];
+    similar_by_category: SimilarCategory[];
+    left_unique_substances: (Substance & { category: string; per_ha: number | null })[];
+    right_unique_substances: (Substance & { category: string; per_ha: number | null })[];
+  };
+  price_analysis: PriceAnalysis | null;
+}
+
+export default function FungicideCompareScreen() {
+  const router = useRouter();
+  const { selectedFungicidesForCompare, clearFungicideSelection } = useHerbicideStore();
+  const [compareData, setCompareData] = useState<CompareResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [leftPrice, setLeftPrice] = useState('');
+  const [rightPrice, setRightPrice] = useState('');
+  const [priceLoading, setPriceLoading] = useState(false);
+
+  useEffect(() => {
+    if (selectedFungicidesForCompare.length === 2) {
+      fetchCompareData();
+    }
+  }, [selectedFungicidesForCompare]);
+
+  const fetchCompareData = async (lPrice?: number, rPrice?: number) => {
+    if (lPrice !== undefined || rPrice !== undefined) {
+      setPriceLoading(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+    
+    try {
+      const body: any = {
+        left_key: selectedFungicidesForCompare[0],
+        right_key: selectedFungicidesForCompare[1],
+      };
+      
+      if (lPrice !== undefined) body.left_price = lPrice;
+      if (rPrice !== undefined) body.right_price = rPrice;
+      
+      const response = await axios.post(`${API_URL}/api/fungicides/compare-advanced`, body);
+      setCompareData(response.data);
+    } catch (err) {
+      console.error('Compare failed:', err);
+      setError('Не удалось сравнить препараты');
+    } finally {
+      setLoading(false);
+      setPriceLoading(false);
+    }
+  };
+
+  const handlePriceCalculation = () => {
+    const lPrice = leftPrice ? parseFloat(leftPrice.replace(',', '.')) : undefined;
+    const rPrice = rightPrice ? parseFloat(rightPrice.replace(',', '.')) : undefined;
+    if (lPrice || rPrice) {
+      fetchCompareData(lPrice, rPrice);
+    }
+  };
+
+  const handleBack = () => {
+    clearFungicideSelection();
+    router.back();
+  };
+
+  const isActive = (status: string | null) => {
+    return status?.toLowerCase().trim() === 'действует';
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <Ionicons name="arrow-back" size={24} color="#111827" />
+          </TouchableOpacity>
+          <Logo />
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>Анализ действующих веществ...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !compareData) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <Ionicons name="arrow-back" size={24} color="#111827" />
+          </TouchableOpacity>
+          <Logo />
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.errorContainer}>
+          <Ionicons name="warning-outline" size={64} color="#EF4444" />
+          <Text style={styles.errorText}>{error || 'Ошибка загрузки'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => fetchCompareData()}>
+            <Text style={styles.retryText}>Повторить</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const { left, right, analysis, price_analysis } = compareData;
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <Ionicons name="arrow-back" size={24} color="#111827" />
+          </TouchableOpacity>
+          <Logo />
+          <View style={{ width: 40 }} />
+        </View>
+
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Product Headers */}
+          <View style={styles.productHeaders}>
+            <View style={styles.productHeaderLeft}>
+              <Text style={styles.productHeaderName} numberOfLines={2}>{left.product_name}</Text>
+              {left.formulation && (
+                <View style={styles.formulationBadge}>
+                  <Text style={styles.formulationText}>{left.formulation}</Text>
+                </View>
+              )}
+              <View style={[
+                styles.statusBadgeMini,
+                isActive(left.registration_status) ? styles.statusActiveMini : styles.statusInactiveMini
+              ]}>
+                <Text style={[
+                  styles.statusTextMini,
+                  isActive(left.registration_status) ? styles.statusTextActiveMini : styles.statusTextInactiveMini
+                ]}>
+                  {isActive(left.registration_status) ? 'Действует' : 'Не действует'}
+                </Text>
+              </View>
+            </View>
+            
+            <View style={styles.vsContainer}>
+              <Text style={styles.vsText}>VS</Text>
+            </View>
+            
+            <View style={styles.productHeaderRight}>
+              <Text style={styles.productHeaderName} numberOfLines={2}>{right.product_name}</Text>
+              {right.formulation && (
+                <View style={styles.formulationBadge}>
+                  <Text style={styles.formulationText}>{right.formulation}</Text>
+                </View>
+              )}
+              <View style={[
+                styles.statusBadgeMini,
+                isActive(right.registration_status) ? styles.statusActiveMini : styles.statusInactiveMini
+              ]}>
+                <Text style={[
+                  styles.statusTextMini,
+                  isActive(right.registration_status) ? styles.statusTextActiveMini : styles.statusTextInactiveMini
+                ]}>
+                  {isActive(right.registration_status) ? 'Действует' : 'Не действует'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Summary Stats */}
+          <View style={styles.summarySection}>
+            <Text style={styles.sectionTitle}>Общая информация</Text>
+            <View style={styles.summaryGrid}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>ДВ (без антидотов)</Text>
+                <View style={styles.summaryValues}>
+                  <Text style={[styles.summaryValue, styles.leftValue]}>{left.substance_count}</Text>
+                  <Text style={[styles.summaryValue, styles.rightValue]}>{right.substance_count}</Text>
+                </View>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Сумма ДВ, г/л</Text>
+                <View style={styles.summaryValues}>
+                  <Text style={[styles.summaryValue, styles.leftValue]}>{left.total_concentration}</Text>
+                  <Text style={[styles.summaryValue, styles.rightValue]}>{right.total_concentration}</Text>
+                </View>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Макс. норма, л/га</Text>
+                <View style={styles.summaryValues}>
+                  <Text style={[styles.summaryValue, styles.leftValue]}>{left.max_rate ?? '—'}</Text>
+                  <Text style={[styles.summaryValue, styles.rightValue]}>{right.max_rate ?? '—'}</Text>
+                </View>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>ДВ на 1 га, г</Text>
+                <View style={styles.summaryValues}>
+                  <Text style={[styles.summaryValue, styles.leftValue, left.total_per_ha && right.total_per_ha && left.total_per_ha > right.total_per_ha ? styles.winnerValue : null]}>
+                    {left.total_per_ha ?? '—'}
+                  </Text>
+                  <Text style={[styles.summaryValue, styles.rightValue, left.total_per_ha && right.total_per_ha && right.total_per_ha > left.total_per_ha ? styles.winnerValue : null]}>
+                    {right.total_per_ha ?? '—'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Identical Substances */}
+          {analysis.identical_substances.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                <Text style={styles.sectionTitle}>Одинаковые ДВ ({analysis.identical_substances.length})</Text>
+              </View>
+              {analysis.identical_substances.map((sub, idx) => (
+                <View key={idx} style={styles.substanceCard}>
+                  <Text style={styles.substanceName}>{sub.name}</Text>
+                  <View style={styles.substanceComparison}>
+                    <View style={[styles.substanceValue, styles.leftBg, sub.winner === 'left' && styles.winnerBg]}>
+                      <Text style={styles.substanceConc}>{sub.left_concentration} {sub.left_unit}</Text>
+                      {sub.left_per_ha && (
+                        <Text style={styles.substancePerHa}>{sub.left_per_ha} г/га</Text>
+                      )}
+                    </View>
+                    <View style={[styles.substanceValue, styles.rightBg, sub.winner === 'right' && styles.winnerBg]}>
+                      <Text style={styles.substanceConc}>{sub.right_concentration} {sub.right_unit}</Text>
+                      {sub.right_per_ha && (
+                        <Text style={styles.substancePerHa}>{sub.right_per_ha} г/га</Text>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Similar by Category */}
+          {analysis.similar_by_category.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="git-compare" size={20} color="#F59E0B" />
+                <Text style={styles.sectionTitle}>Сходные по механизму</Text>
+              </View>
+              {analysis.similar_by_category.map((cat, idx) => (
+                <View key={idx} style={styles.categoryCard}>
+                  <View style={styles.categoryHeader}>
+                    <Ionicons name="flask" size={16} color="#6B7280" />
+                    <Text style={styles.categoryName}>{cat.category}</Text>
+                  </View>
+                  <View style={styles.categoryComparison}>
+                    <View style={[styles.categoryColumn, styles.leftBg]}>
+                      {cat.left_substances.map((s, i) => (
+                        <Text key={i} style={styles.categorySubstance}>
+                          {s.name} ({s.concentration} {s.unit})
+                        </Text>
+                      ))}
+                    </View>
+                    <View style={[styles.categoryColumn, styles.rightBg]}>
+                      {cat.right_substances.map((s, i) => (
+                        <Text key={i} style={styles.categorySubstance}>
+                          {s.name} ({s.concentration} {s.unit})
+                        </Text>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Unique Substances */}
+          {(analysis.left_unique_substances.length > 0 || analysis.right_unique_substances.length > 0) && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="add-circle" size={20} color="#6366F1" />
+                <Text style={styles.sectionTitle}>Уникальные ДВ</Text>
+              </View>
+              
+              {analysis.left_unique_substances.length > 0 && (
+                <View style={styles.uniqueBlock}>
+                  <Text style={styles.uniqueBlockTitle}>Только в {left.product_name}:</Text>
+                  {analysis.left_unique_substances.map((sub, idx) => (
+                    <View key={idx} style={[styles.uniqueSubstance, styles.leftBg]}>
+                      <Text style={styles.uniqueSubstanceName}>{sub.name}</Text>
+                      <Text style={styles.uniqueSubstanceInfo}>
+                        {sub.concentration} {sub.unit} • {sub.category}
+                        {sub.per_ha && ` • ${sub.per_ha} г/га`}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              
+              {analysis.right_unique_substances.length > 0 && (
+                <View style={styles.uniqueBlock}>
+                  <Text style={styles.uniqueBlockTitle}>Только в {right.product_name}:</Text>
+                  {analysis.right_unique_substances.map((sub, idx) => (
+                    <View key={idx} style={[styles.uniqueSubstance, styles.rightBg]}>
+                      <Text style={styles.uniqueSubstanceName}>{sub.name}</Text>
+                      <Text style={styles.uniqueSubstanceInfo}>
+                        {sub.concentration} {sub.unit} • {sub.category}
+                        {sub.per_ha && ` • ${sub.per_ha} г/га`}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Price Input Section */}
+          <View style={styles.priceSection}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="calculator" size={20} color="#059669" />
+              <Text style={styles.sectionTitle}>Расчёт стоимости</Text>
+            </View>
+            
+            <Text style={styles.priceHint}>Введите цену за 1 л/кг препарата</Text>
+            
+            <View style={styles.priceInputRow}>
+              <View style={styles.priceInputContainer}>
+                <Text style={styles.priceInputLabel}>{left.product_name}</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder="Цена, ₽"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="decimal-pad"
+                  value={leftPrice}
+                  onChangeText={setLeftPrice}
+                />
+              </View>
+              <View style={styles.priceInputContainer}>
+                <Text style={styles.priceInputLabel}>{right.product_name}</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder="Цена, ₽"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="decimal-pad"
+                  value={rightPrice}
+                  onChangeText={setRightPrice}
+                />
+              </View>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.calculateButton}
+              onPress={handlePriceCalculation}
+              disabled={priceLoading || (!leftPrice && !rightPrice)}
+            >
+              {priceLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="calculator" size={18} color="#FFFFFF" />
+                  <Text style={styles.calculateButtonText}>Рассчитать</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Price Analysis Results */}
+            {price_analysis && (price_analysis.left_price_per_unit || price_analysis.right_price_per_unit) && (
+              <View style={styles.priceResults}>
+                <View style={styles.priceResultRow}>
+                  <Text style={styles.priceResultLabel}>Стоимость 1 га, ₽</Text>
+                  <View style={styles.priceResultValues}>
+                    <Text style={[
+                      styles.priceResultValue, 
+                      styles.leftValue,
+                      price_analysis.left_cost_per_ha && price_analysis.right_cost_per_ha && 
+                      price_analysis.left_cost_per_ha < price_analysis.right_cost_per_ha ? styles.winnerValue : null
+                    ]}>
+                      {price_analysis.left_cost_per_ha?.toFixed(0) ?? '—'}
+                    </Text>
+                    <Text style={[
+                      styles.priceResultValue, 
+                      styles.rightValue,
+                      price_analysis.left_cost_per_ha && price_analysis.right_cost_per_ha && 
+                      price_analysis.right_cost_per_ha < price_analysis.left_cost_per_ha ? styles.winnerValue : null
+                    ]}>
+                      {price_analysis.right_cost_per_ha?.toFixed(0) ?? '—'}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.priceResultRow}>
+                  <Text style={styles.priceResultLabel}>Стоимость 1 г ДВ, ₽</Text>
+                  <View style={styles.priceResultValues}>
+                    <Text style={[
+                      styles.priceResultValue, 
+                      styles.leftValue,
+                      price_analysis.left_cost_per_gram_ai && price_analysis.right_cost_per_gram_ai && 
+                      price_analysis.left_cost_per_gram_ai < price_analysis.right_cost_per_gram_ai ? styles.winnerValue : null
+                    ]}>
+                      {price_analysis.left_cost_per_gram_ai?.toFixed(2) ?? '—'}
+                    </Text>
+                    <Text style={[
+                      styles.priceResultValue, 
+                      styles.rightValue,
+                      price_analysis.left_cost_per_gram_ai && price_analysis.right_cost_per_gram_ai && 
+                      price_analysis.right_cost_per_gram_ai < price_analysis.left_cost_per_gram_ai ? styles.winnerValue : null
+                    ]}>
+                      {price_analysis.right_cost_per_gram_ai?.toFixed(2) ?? '—'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111827',
+    flex: 1,
+    textAlign: 'center',
+  },
+  content: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#EF4444',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: '#3B82F6',
+    borderRadius: 8,
+  },
+  retryText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  logoContainer: {
+    alignItems: 'center',
+  },
+  logoText: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  logoB: {
+    color: '#374151',
+  },
+  logoAI: {
+    color: '#3B82F6',
+    fontWeight: '900',
+  },
+  logoKov: {
+    color: '#374151',
+  },
+  productHeaders: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    margin: 16,
+    borderRadius: 16,
+  },
+  productHeaderLeft: {
+    flex: 1,
+    alignItems: 'center',
+    paddingRight: 8,
+  },
+  productHeaderRight: {
+    flex: 1,
+    alignItems: 'center',
+    paddingLeft: 8,
+  },
+  productHeaderName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  vsContainer: {
+    width: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  vsText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#9CA3AF',
+  },
+  formulationBadge: {
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  formulationText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  statusBadgeMini: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  statusActiveMini: {
+    backgroundColor: '#D1FAE5',
+  },
+  statusInactiveMini: {
+    backgroundColor: '#FEE2E2',
+  },
+  statusTextMini: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  statusTextActiveMini: {
+    color: '#059669',
+  },
+  statusTextInactiveMini: {
+    color: '#DC2626',
+  },
+  summarySection: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  summaryGrid: {
+    gap: 12,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    flex: 1,
+  },
+  summaryValues: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  summaryValue: {
+    width: 70,
+    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '600',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  leftValue: {
+    backgroundColor: '#DBEAFE',
+    color: '#1E40AF',
+  },
+  rightValue: {
+    backgroundColor: '#EDE9FE',
+    color: '#5B21B6',
+  },
+  winnerValue: {
+    backgroundColor: '#D1FAE5',
+    color: '#059669',
+  },
+  section: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  substanceCard: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+  },
+  substanceName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  substanceComparison: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  substanceValue: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  leftBg: {
+    backgroundColor: '#DBEAFE',
+  },
+  rightBg: {
+    backgroundColor: '#EDE9FE',
+  },
+  winnerBg: {
+    backgroundColor: '#D1FAE5',
+  },
+  substanceConc: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  substancePerHa: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  categoryCard: {
+    marginBottom: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FEF3C7',
+    gap: 8,
+  },
+  categoryName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#92400E',
+  },
+  categoryComparison: {
+    flexDirection: 'row',
+  },
+  categoryColumn: {
+    flex: 1,
+    padding: 10,
+  },
+  categorySubstance: {
+    fontSize: 13,
+    color: '#374151',
+    marginBottom: 4,
+  },
+  uniqueBlock: {
+    marginBottom: 12,
+  },
+  uniqueBlockTitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginBottom: 8,
+  },
+  uniqueSubstance: {
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  uniqueSubstanceName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  uniqueSubstanceInfo: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  priceSection: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  priceHint: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 12,
+  },
+  priceInputRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  priceInputContainer: {
+    flex: 1,
+  },
+  priceInputLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 6,
+  },
+  priceInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#111827',
+  },
+  calculateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    gap: 8,
+  },
+  calculateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  priceResults: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    gap: 12,
+  },
+  priceResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  priceResultLabel: {
+    fontSize: 13,
+    color: '#374151',
+    flex: 1,
+  },
+  priceResultValues: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  priceResultValue: {
+    width: 80,
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '700',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+});

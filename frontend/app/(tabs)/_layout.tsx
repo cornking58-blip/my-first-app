@@ -46,6 +46,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="fungicides"
+        options={{
+          title: 'Фунгициды',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="flask-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="seed-treatments"
         options={{
           title: 'Протравители',

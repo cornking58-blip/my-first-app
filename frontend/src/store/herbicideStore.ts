@@ -8,6 +8,10 @@ interface HerbicideStore {
   selectedInsecticidesForCompare: string[];
   toggleInsecticideSelection: (productKey: string) => void;
   clearInsecticideSelection: () => void;
+  // Fungicides
+  selectedFungicidesForCompare: string[];
+  toggleFungicideSelection: (productKey: string) => void;
+  clearFungicideSelection: () => void;
   // Seed Treatments
   selectedSeedTreatmentsForCompare: string[];
   toggleSeedTreatmentSelection: (productKey: string) => void;
@@ -44,6 +48,22 @@ export const useHerbicideStore = create<HerbicideStore>((set, get) => ({
 
   clearInsecticideSelection: () => {
     set({ selectedInsecticidesForCompare: [] });
+  },
+
+  // Fungicides
+  selectedFungicidesForCompare: [],
+
+  toggleFungicideSelection: (productKey: string) => {
+    const current = get().selectedFungicidesForCompare;
+    if (current.includes(productKey)) {
+      set({ selectedFungicidesForCompare: current.filter(k => k !== productKey) });
+    } else if (current.length < 2) {
+      set({ selectedFungicidesForCompare: [...current, productKey] });
+    }
+  },
+
+  clearFungicideSelection: () => {
+    set({ selectedFungicidesForCompare: [] });
   },
 
   // Seed Treatments
