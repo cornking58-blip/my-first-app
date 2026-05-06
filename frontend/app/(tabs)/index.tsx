@@ -104,6 +104,13 @@ export default function HomeScreen() {
     search(searchQuery, newValue, crop, harmfulObject);
   };
 
+  const clearFilters = () => {
+    setSearchQuery('');
+    setCrop('');
+    setHarmfulObject('');
+    search('', onlyActive, '', '');
+  };
+
   const isActive = (status: string | null) => {
     return status?.toLowerCase().trim() === 'действует';
   };
@@ -240,8 +247,8 @@ export default function HomeScreen() {
               onSubmitEditing={handleSearch}
               returnKeyType="search"
             />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => { setSearchQuery(''); setCrop(''); setHarmfulObject(''); search('', onlyActive, '', ''); }}>
+            {(searchQuery.length > 0 || crop.length > 0 || harmfulObject.length > 0) && (
+              <TouchableOpacity onPress={clearFilters}>
                 <Ionicons name="close-circle" size={20} color="#9CA3AF" />
               </TouchableOpacity>
             )}
@@ -250,21 +257,22 @@ export default function HomeScreen() {
           <View style={styles.advancedFilters}>
             <TextInput
               style={styles.advancedInput}
-              placeholder="Культура (например, пшеница)"
+              placeholder="Культура, например: пшеница"
               placeholderTextColor="#9CA3AF"
               value={crop}
               onChangeText={setCrop}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
             />
             <TextInput
               style={styles.advancedInput}
-              placeholder="Вредный объект"
+              placeholder="Сорняк / вредный объект"
               placeholderTextColor="#9CA3AF"
               value={harmfulObject}
               onChangeText={setHarmfulObject}
+              onSubmitEditing={handleSearch}
+              returnKeyType="search"
             />
-            <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-              <Text style={styles.searchButtonText}>Найти</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.filterRow}>
@@ -284,6 +292,10 @@ export default function HomeScreen() {
                 styles.filterText,
                 onlyActive && styles.filterTextActive
               ]}>Только действующие</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+              <Text style={styles.searchButtonText}>Найти</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -453,16 +465,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     color: '#111827',
-  },
-  searchButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  searchButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
   },
   filterRow: {
     flexDirection: 'row',
