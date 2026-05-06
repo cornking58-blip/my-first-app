@@ -107,6 +107,37 @@ class SearchResult(BaseModel):
     applications_count: int = 0
 
 
+def build_search_match(query: str) -> Optional[dict]:
+    """
+    Build MongoDB $match for flexible multi-word search across registration rows.
+    Each word from the query must be found in at least one searchable field.
+    """
+    tokens = [token for token in query.strip().split() if token]
+    if not tokens:
+        return None
+
+    searchable_fields = [
+        "product_name",
+        "crop",
+        "target_object",
+        "registration_status",
+        "active_substances_raw",
+        "manufacturer",
+    ]
+
+    return {
+        "$and": [
+            {
+                "$or": [
+                    {field: {"$regex": token, "$options": "i"}}
+                    for field in searchable_fields
+                ]
+            }
+            for token in tokens
+        ]
+    }
+
+
 # ==================== ACTIVE SUBSTANCE PARSER ====================
 
 def parse_active_substances(raw: Optional[str]) -> List[Dict]:
@@ -399,18 +430,9 @@ async def search_herbicides(
         pipeline = []
         
         if q and q.strip():
-            search_regex = {"$regex": q.strip(), "$options": "i"}
-            pipeline.append({
-                "$match": {
-                    "$or": [
-                        {"product_name": search_regex},
-                        {"crop": search_regex},
-                        {"target_object": search_regex},
-                        {"active_substances_raw": search_regex},
-                        {"manufacturer": search_regex}
-                    ]
-                }
-            })
+            search_match = build_search_match(q)
+            if search_match:
+                pipeline.append({"$match": search_match})
         
         if only_active:
             pipeline.append({
@@ -884,18 +906,9 @@ async def search_insecticides(
         pipeline = []
         
         if q and q.strip():
-            search_regex = {"$regex": q.strip(), "$options": "i"}
-            pipeline.append({
-                "$match": {
-                    "$or": [
-                        {"product_name": search_regex},
-                        {"crop": search_regex},
-                        {"target_object": search_regex},
-                        {"active_substances_raw": search_regex},
-                        {"manufacturer": search_regex}
-                    ]
-                }
-            })
+            search_match = build_search_match(q)
+            if search_match:
+                pipeline.append({"$match": search_match})
         
         if only_active:
             pipeline.append({
@@ -1271,18 +1284,9 @@ async def search_fungicides(
         pipeline = []
         
         if q and q.strip():
-            search_regex = {"$regex": q.strip(), "$options": "i"}
-            pipeline.append({
-                "$match": {
-                    "$or": [
-                        {"product_name": search_regex},
-                        {"crop": search_regex},
-                        {"target_object": search_regex},
-                        {"active_substances_raw": search_regex},
-                        {"manufacturer": search_regex}
-                    ]
-                }
-            })
+            search_match = build_search_match(q)
+            if search_match:
+                pipeline.append({"$match": search_match})
         
         if only_active:
             pipeline.append({
@@ -1657,18 +1661,9 @@ async def search_seed_treatments(
         pipeline = []
         
         if q and q.strip():
-            search_regex = {"$regex": q.strip(), "$options": "i"}
-            pipeline.append({
-                "$match": {
-                    "$or": [
-                        {"product_name": search_regex},
-                        {"crop": search_regex},
-                        {"target_object": search_regex},
-                        {"active_substances_raw": search_regex},
-                        {"manufacturer": search_regex}
-                    ]
-                }
-            })
+            search_match = build_search_match(q)
+            if search_match:
+                pipeline.append({"$match": search_match})
         
         if only_active:
             pipeline.append({
