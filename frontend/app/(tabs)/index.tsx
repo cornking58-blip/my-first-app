@@ -44,6 +44,8 @@ const Logo = () => (
 export default function HomeScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const [crop, setCrop] = useState('');
+  const [harmfulObject, setHarmfulObject] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -60,11 +62,13 @@ export default function HomeScreen() {
     }
   };
 
-  const search = async (query: string, active: boolean) => {
+  const search = async (query: string, active: boolean, cropValue: string, harmfulObjectValue: string) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.append('q', query.trim());
+      if (cropValue.trim()) params.append('crop', cropValue.trim());
+      if (harmfulObjectValue.trim()) params.append('harmful_object', harmfulObjectValue.trim());
       if (active) params.append('only_active', 'true');
       params.append('limit', '50');
 
@@ -80,24 +84,24 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchStats();
-    search('', false);
+    search('', false, '', '');
   }, []);
 
   const handleSearch = useCallback(() => {
     Keyboard.dismiss();
-    search(searchQuery, onlyActive);
-  }, [searchQuery, onlyActive]);
+    search(searchQuery, onlyActive, crop, harmfulObject);
+  }, [searchQuery, onlyActive, crop, harmfulObject]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchStats(), search(searchQuery, onlyActive)]);
+    await Promise.all([fetchStats(), search(searchQuery, onlyActive, crop, harmfulObject)]);
     setRefreshing(false);
   };
 
   const toggleActiveFilter = () => {
     const newValue = !onlyActive;
     setOnlyActive(newValue);
-    search(searchQuery, newValue);
+    search(searchQuery, newValue, crop, harmfulObject);
   };
 
   const isActive = (status: string | null) => {
@@ -237,10 +241,30 @@ export default function HomeScreen() {
               returnKeyType="search"
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => { setSearchQuery(''); search('', onlyActive); }}>
+              <TouchableOpacity onPress={() => { setSearchQuery(''); setCrop(''); setHarmfulObject(''); search('', onlyActive, '', ''); }}>
                 <Ionicons name="close-circle" size={20} color="#9CA3AF" />
               </TouchableOpacity>
             )}
+          </View>
+
+          <View style={styles.advancedFilters}>
+            <TextInput
+              style={styles.advancedInput}
+              placeholder="Культура (например, пшеница)"
+              placeholderTextColor="#9CA3AF"
+              value={crop}
+              onChangeText={setCrop}
+            />
+            <TextInput
+              style={styles.advancedInput}
+              placeholder="Вредный объект"
+              placeholderTextColor="#9CA3AF"
+              value={harmfulObject}
+              onChangeText={setHarmfulObject}
+            />
+            <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+              <Text style={styles.searchButtonText}>Найти</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.filterRow}>
@@ -260,10 +284,6 @@ export default function HomeScreen() {
                 styles.filterText,
                 onlyActive && styles.filterTextActive
               ]}>Только действующие</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-              <Text style={styles.searchButtonText}>Найти</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -421,6 +441,28 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#111827',
+  },
+  advancedFilters: {
+    marginTop: 10,
+    gap: 8,
+  },
+  advancedInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#111827',
+  },
+  searchButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  searchButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   filterRow: {
     flexDirection: 'row',

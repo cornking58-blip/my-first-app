@@ -427,6 +427,8 @@ async def import_excel(file: UploadFile = File(...)):
 
 @api_router.get("/herbicides/search", response_model=List[SearchResult])
 async def search_herbicides(
+    crop: str = Query(default="", description="Filter by crop"),
+    harmful_object: str = Query(default="", description="Filter by target object"),
     q: str = Query(default="", description="Search query"),
     only_active: bool = Query(default=False, description="Show only active registrations"),
     limit: int = Query(default=50, le=200, description="Maximum results")
@@ -435,15 +437,19 @@ async def search_herbicides(
     try:
         pipeline = []
         
+        if crop and crop.strip():
+            pipeline.append({"$match": {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}}})
+
+        if harmful_object and harmful_object.strip():
+            pipeline.append({"$match": {"target_object": {"$regex": re.escape(harmful_object.strip()), "$options": "i"}}})
+
         if q and q.strip():
             search_match = build_search_match(q)
             if search_match:
                 pipeline.append({"$match": search_match})
-        
+
         if only_active:
-            pipeline.append({
-                "$match": {"registration_status": "Действует"}
-            })
+            pipeline.append({"$match": {"registration_status": "Действует"}})
         
         pipeline.extend([
             {
@@ -903,6 +909,8 @@ async def import_insecticides(file: UploadFile = File(...)):
 
 @api_router.get("/insecticides/search", response_model=List[SearchResult])
 async def search_insecticides(
+    crop: str = Query(default="", description="Filter by crop"),
+    harmful_object: str = Query(default="", description="Filter by target object"),
     q: str = Query(default="", description="Search query"),
     only_active: bool = Query(default=False, description="Show only active registrations"),
     limit: int = Query(default=50, le=200, description="Maximum results")
@@ -911,15 +919,19 @@ async def search_insecticides(
     try:
         pipeline = []
         
+        if crop and crop.strip():
+            pipeline.append({"$match": {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}}})
+
+        if harmful_object and harmful_object.strip():
+            pipeline.append({"$match": {"target_object": {"$regex": re.escape(harmful_object.strip()), "$options": "i"}}})
+
         if q and q.strip():
             search_match = build_search_match(q)
             if search_match:
                 pipeline.append({"$match": search_match})
-        
+
         if only_active:
-            pipeline.append({
-                "$match": {"registration_status": "Действует"}
-            })
+            pipeline.append({"$match": {"registration_status": "Действует"}})
         
         pipeline.extend([
             {
@@ -1281,6 +1293,8 @@ async def import_fungicides(file: UploadFile = File(...)):
 
 @api_router.get("/fungicides/search", response_model=List[SearchResult])
 async def search_fungicides(
+    crop: str = Query(default="", description="Filter by crop"),
+    harmful_object: str = Query(default="", description="Filter by target object"),
     q: str = Query(default="", description="Search query"),
     only_active: bool = Query(default=False, description="Show only active registrations"),
     limit: int = Query(default=50, le=200, description="Maximum results")
@@ -1289,15 +1303,19 @@ async def search_fungicides(
     try:
         pipeline = []
         
+        if crop and crop.strip():
+            pipeline.append({"$match": {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}}})
+
+        if harmful_object and harmful_object.strip():
+            pipeline.append({"$match": {"target_object": {"$regex": re.escape(harmful_object.strip()), "$options": "i"}}})
+
         if q and q.strip():
             search_match = build_search_match(q)
             if search_match:
                 pipeline.append({"$match": search_match})
-        
+
         if only_active:
-            pipeline.append({
-                "$match": {"registration_status": "Действует"}
-            })
+            pipeline.append({"$match": {"registration_status": "Действует"}})
         
         pipeline.extend([
             {
@@ -1658,6 +1676,8 @@ async def import_seed_treatments(file: UploadFile = File(...)):
 
 @api_router.get("/seed-treatments/search")
 async def search_seed_treatments(
+    crop: str = Query(default="", description="Filter by crop"),
+    harmful_object: str = Query(default="", description="Filter by target object"),
     q: str = Query(default="", description="Search query"),
     only_active: bool = Query(default=False, description="Show only active registrations"),
     limit: int = Query(default=50, le=200, description="Maximum results")
@@ -1666,15 +1686,19 @@ async def search_seed_treatments(
     try:
         pipeline = []
         
+        if crop and crop.strip():
+            pipeline.append({"$match": {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}}})
+
+        if harmful_object and harmful_object.strip():
+            pipeline.append({"$match": {"target_object": {"$regex": re.escape(harmful_object.strip()), "$options": "i"}}})
+
         if q and q.strip():
             search_match = build_search_match(q)
             if search_match:
                 pipeline.append({"$match": search_match})
-        
+
         if only_active:
-            pipeline.append({
-                "$match": {"registration_status": "Действует"}
-            })
+            pipeline.append({"$match": {"registration_status": "Действует"}})
         
         pipeline.extend([
             {
@@ -1959,6 +1983,55 @@ async def compare_seed_treatments_advanced(request: AdvancedCompareRequest):
     except Exception as e:
         logger.error(f"Advanced seed treatment compare failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def get_distinct_values(collection_name: str, field: str, filter_query: Optional[dict] = None) -> List[str]:
+    values = await db[collection_name].distinct(field, filter_query or {})
+    return sorted([v for v in values if isinstance(v, str) and v.strip()])
+
+
+@api_router.get("/herbicides/crops", response_model=List[str])
+async def herbicide_crops():
+    return await get_distinct_values("herbicide_records", "crop")
+
+
+@api_router.get("/herbicides/harmful-objects", response_model=List[str])
+async def herbicide_harmful_objects(crop: str = Query(default="")):
+    fq = {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}} if crop.strip() else {}
+    return await get_distinct_values("herbicide_records", "target_object", fq)
+
+
+@api_router.get("/insecticides/crops", response_model=List[str])
+async def insecticide_crops():
+    return await get_distinct_values("insecticide_records", "crop")
+
+
+@api_router.get("/insecticides/harmful-objects", response_model=List[str])
+async def insecticide_harmful_objects(crop: str = Query(default="")):
+    fq = {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}} if crop.strip() else {}
+    return await get_distinct_values("insecticide_records", "target_object", fq)
+
+
+@api_router.get("/fungicides/crops", response_model=List[str])
+async def fungicide_crops():
+    return await get_distinct_values("fungicide_records", "crop")
+
+
+@api_router.get("/fungicides/harmful-objects", response_model=List[str])
+async def fungicide_harmful_objects(crop: str = Query(default="")):
+    fq = {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}} if crop.strip() else {}
+    return await get_distinct_values("fungicide_records", "target_object", fq)
+
+
+@api_router.get("/seed-treatments/crops", response_model=List[str])
+async def seed_treatment_crops():
+    return await get_distinct_values("seed_treatment_records", "crop")
+
+
+@api_router.get("/seed-treatments/harmful-objects", response_model=List[str])
+async def seed_treatment_harmful_objects(crop: str = Query(default="")):
+    fq = {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}} if crop.strip() else {}
+    return await get_distinct_values("seed_treatment_records", "target_object", fq)
 
 
 @api_router.get("/stats")
