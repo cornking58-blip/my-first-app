@@ -112,7 +112,13 @@ def build_search_match(query: str) -> Optional[dict]:
     Build MongoDB $match for flexible multi-word search across registration rows.
     Each word from the query must be found in at least one searchable field.
     """
-    tokens = [token for token in query.strip().split() if token]
+    # Support queries like: "crop + target_object + registration_status"
+    # Split by +, comma, semicolon, or whitespace and ignore empty parts.
+    tokens = [
+        token.strip()
+        for token in re.split(r"[+,;\s]+", query.strip())
+        if token.strip()
+    ]
     if not tokens:
         return None
 
@@ -129,7 +135,7 @@ def build_search_match(query: str) -> Optional[dict]:
         "$and": [
             {
                 "$or": [
-                    {field: {"$regex": token, "$options": "i"}}
+                    {field: {"$regex": re.escape(token), "$options": "i"}}
                     for field in searchable_fields
                 ]
             }
