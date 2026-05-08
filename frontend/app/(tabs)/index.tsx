@@ -44,8 +44,6 @@ const Logo = () => (
 export default function HomeScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [crop, setCrop] = useState('');
-  const [harmfulObject, setHarmfulObject] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,13 +60,11 @@ export default function HomeScreen() {
     }
   };
 
-  const search = async (query: string, active: boolean, cropValue: string, harmfulObjectValue: string) => {
+  const search = async (query: string, active: boolean) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.append('q', query.trim());
-      if (cropValue.trim()) params.append('crop', cropValue.trim());
-      if (harmfulObjectValue.trim()) params.append('harmful_object', harmfulObjectValue.trim());
       if (active) params.append('only_active', 'true');
       params.append('limit', '50');
 
@@ -84,31 +80,29 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchStats();
-    search('', false, '', '');
+    search('', false);
   }, []);
 
   const handleSearch = useCallback(() => {
     Keyboard.dismiss();
-    search(searchQuery, onlyActive, crop, harmfulObject);
-  }, [searchQuery, onlyActive, crop, harmfulObject]);
+    search(searchQuery, onlyActive);
+  }, [searchQuery, onlyActive]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchStats(), search(searchQuery, onlyActive, crop, harmfulObject)]);
+    await Promise.all([fetchStats(), search(searchQuery, onlyActive)]);
     setRefreshing(false);
   };
 
   const toggleActiveFilter = () => {
     const newValue = !onlyActive;
     setOnlyActive(newValue);
-    search(searchQuery, newValue, crop, harmfulObject);
+    search(searchQuery, newValue);
   };
 
   const clearFilters = () => {
     setSearchQuery('');
-    setCrop('');
-    setHarmfulObject('');
-    search('', onlyActive, '', '');
+    search('', onlyActive);
   };
 
   const isActive = (status: string | null) => {
@@ -240,40 +234,20 @@ export default function HomeScreen() {
             <Ionicons name="search-outline" size={20} color="#9CA3AF" style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Поиск по названию, культуре, ДВ..."
+              placeholder="Поиск по названию или ДВ..."
               placeholderTextColor="#9CA3AF"
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSearch}
               returnKeyType="search"
             />
-            {(searchQuery.length > 0 || crop.length > 0 || harmfulObject.length > 0) && (
+            {searchQuery.length > 0 && (
               <TouchableOpacity onPress={clearFilters}>
                 <Ionicons name="close-circle" size={20} color="#9CA3AF" />
               </TouchableOpacity>
             )}
           </View>
 
-          <View style={styles.advancedFilters}>
-            <TextInput
-              style={styles.advancedInput}
-              placeholder="Культура, например: пшеница"
-              placeholderTextColor="#9CA3AF"
-              value={crop}
-              onChangeText={setCrop}
-              onSubmitEditing={handleSearch}
-              returnKeyType="search"
-            />
-            <TextInput
-              style={styles.advancedInput}
-              placeholder="Сорняк / вредный объект"
-              placeholderTextColor="#9CA3AF"
-              value={harmfulObject}
-              onChangeText={setHarmfulObject}
-              onSubmitEditing={handleSearch}
-              returnKeyType="search"
-            />
-          </View>
 
           <View style={styles.filterRow}>
             <TouchableOpacity
@@ -452,18 +426,6 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#111827',
-  },
-  advancedFilters: {
-    marginTop: 10,
-    gap: 8,
-  },
-  advancedInput: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
     color: '#111827',
   },
   filterRow: {
