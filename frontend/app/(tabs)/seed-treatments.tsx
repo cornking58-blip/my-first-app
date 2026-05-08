@@ -62,6 +62,8 @@ const PesticideTypeBadge = ({ type }: { type: string | null }) => {
 export default function SeedTreatmentsScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const [crop, setCrop] = useState('');
+  const [harmfulObject, setHarmfulObject] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -80,11 +82,13 @@ export default function SeedTreatmentsScreen() {
     }
   };
 
-  const search = async (query: string, active: boolean) => {
+  const search = async (query: string, active: boolean, cropValue: string, harmfulObjectValue: string) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.append('q', query.trim());
+      if (cropValue.trim()) params.append('crop', cropValue.trim());
+      if (harmfulObjectValue.trim()) params.append('harmful_object', harmfulObjectValue.trim());
       if (active) params.append('only_active', 'true');
       params.append('limit', '50');
 
@@ -100,24 +104,24 @@ export default function SeedTreatmentsScreen() {
 
   useEffect(() => {
     fetchStats();
-    search('', false);
+    search('', false, '', '');
   }, []);
 
   const handleSearch = useCallback(() => {
     Keyboard.dismiss();
-    search(searchQuery, onlyActive);
-  }, [searchQuery, onlyActive]);
+    search(searchQuery, onlyActive, crop, harmfulObject);
+  }, [searchQuery, onlyActive, crop, harmfulObject]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchStats(), search(searchQuery, onlyActive)]);
+    await Promise.all([fetchStats(), search(searchQuery, onlyActive, crop, harmfulObject)]);
     setRefreshing(false);
   };
 
   const toggleActiveFilter = () => {
     const newValue = !onlyActive;
     setOnlyActive(newValue);
-    search(searchQuery, newValue);
+    search(searchQuery, newValue, crop, harmfulObject);
   };
 
   const isActive = (status: string | null) => {
@@ -249,19 +253,40 @@ export default function SeedTreatmentsScreen() {
             <Ionicons name="search-outline" size={20} color="#9CA3AF" style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Поиск по названию, культуре, ДВ..."
+              placeholder="Поиск по названию или ДВ..."
               placeholderTextColor="#9CA3AF"
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSearch}
               returnKeyType="search"
             />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => { setSearchQuery(''); search('', onlyActive); }}>
+            {(searchQuery.length > 0 || crop.length > 0 || harmfulObject.length > 0) && (
+              <TouchableOpacity onPress={() => { setSearchQuery(''); setCrop(''); setHarmfulObject(''); search('', onlyActive, '', ''); }}>
                 <Ionicons name="close-circle" size={20} color="#9CA3AF" />
               </TouchableOpacity>
             )}
           </View>
+
+
+          <TextInput
+            style={styles.filterInput}
+            placeholder="Культура (опционально)"
+            placeholderTextColor="#9CA3AF"
+            value={crop}
+            onChangeText={setCrop}
+            onSubmitEditing={handleSearch}
+            returnKeyType="search"
+          />
+
+          <TextInput
+            style={styles.filterInput}
+            placeholder="Вредный объект (опционально)"
+            placeholderTextColor="#9CA3AF"
+            value={harmfulObject}
+            onChangeText={setHarmfulObject}
+            onSubmitEditing={handleSearch}
+            returnKeyType="search"
+          />
 
           <View style={styles.filterRow}>
             <TouchableOpacity

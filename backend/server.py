@@ -437,12 +437,6 @@ async def search_herbicides(
     try:
         pipeline = []
         
-        if crop and crop.strip():
-            pipeline.append({"$match": {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}}})
-
-        if harmful_object and harmful_object.strip():
-            pipeline.append({"$match": {"target_object": {"$regex": re.escape(harmful_object.strip()), "$options": "i"}}})
-
         if q and q.strip():
             search_match = build_search_match(q)
             if search_match:
@@ -919,12 +913,6 @@ async def search_insecticides(
     try:
         pipeline = []
         
-        if crop and crop.strip():
-            pipeline.append({"$match": {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}}})
-
-        if harmful_object and harmful_object.strip():
-            pipeline.append({"$match": {"target_object": {"$regex": re.escape(harmful_object.strip()), "$options": "i"}}})
-
         if q and q.strip():
             search_match = build_search_match(q)
             if search_match:
@@ -1303,12 +1291,6 @@ async def search_fungicides(
     try:
         pipeline = []
         
-        if crop and crop.strip():
-            pipeline.append({"$match": {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}}})
-
-        if harmful_object and harmful_object.strip():
-            pipeline.append({"$match": {"target_object": {"$regex": re.escape(harmful_object.strip()), "$options": "i"}}})
-
         if q and q.strip():
             search_match = build_search_match(q)
             if search_match:
@@ -1686,12 +1668,6 @@ async def search_seed_treatments(
     try:
         pipeline = []
         
-        if crop and crop.strip():
-            pipeline.append({"$match": {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}}})
-
-        if harmful_object and harmful_object.strip():
-            pipeline.append({"$match": {"target_object": {"$regex": re.escape(harmful_object.strip()), "$options": "i"}}})
-
         if q and q.strip():
             search_match = build_search_match(q)
             if search_match:
