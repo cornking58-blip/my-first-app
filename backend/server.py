@@ -107,6 +107,50 @@ class SearchResult(BaseModel):
     applications_count: int = 0
 
 
+RUSSIAN_ENDINGS = (
+    "иями", "ями", "ами", "ого", "ему", "ыми", "ими", "ая", "яя", "ое", "ее",
+    "ые", "ие", "ый", "ий", "ой", "ую", "юю", "ом", "ем", "ах", "ях",
+    "ов", "ев", "ей", "ам", "ям", "ою", "ею", "а", "я", "ы", "и",
+    "у", "ю", "е", "о", "ь",
+)
+
+
+def make_flexible_text_regex(value: str) -> str:
+    """
+    Build a MongoDB regex for forgiving Russian text matching.
+
+    It keeps partial-match behavior, treats ``е`` and ``ё`` as equal, and trims common
+    Russian endings so searches like ``пшеница`` can match registration rows with
+    ``пшеницы``. Latin/numeric product names still work as regular partial matches.
+    """
+    normalized = (value or "").strip().lower().replace("ё", "е")
+    if not normalized:
+        return ""
+
+    # Remove punctuation at token edges but keep useful in-word symbols for product names.
+    normalized = re.sub(r"^[^0-9a-zа-яе]+|[^0-9a-zа-яе]+$", "", normalized, flags=re.IGNORECASE)
+
+    has_cyrillic = bool(re.search(r"[а-я]", normalized, flags=re.IGNORECASE))
+    stem = normalized
+    if has_cyrillic and len(normalized) >= 4:
+        for ending in RUSSIAN_ENDINGS:
+            if normalized.endswith(ending) and len(normalized) - len(ending) >= 3:
+                stem = normalized[: -len(ending)]
+                break
+
+    escaped = re.escape(stem)
+    # Match both spellings without requiring separate normalized fields in MongoDB.
+    escaped = escaped.replace("е", "[её]")
+
+    if has_cyrillic and len(stem) >= 3:
+        return f"{escaped}[а-яё]*"
+    return escaped
+
+
+def build_flexible_field_match(field: str, value: str) -> dict:
+    return {field: {"$regex": make_flexible_text_regex(value), "$options": "i"}}
+
+
 def build_registration_filters(culture: str = "", crop: str = "", harmful_object: str = "") -> Optional[dict]:
     """
     Build row-level filters for registration crop and harmful object.
@@ -117,9 +161,9 @@ def build_registration_filters(culture: str = "", crop: str = "", harmful_object
 
     filters = {}
     if selected_culture:
-        filters["crop"] = {"$regex": re.escape(selected_culture), "$options": "i"}
+        filters["crop"] = build_flexible_field_match("crop", selected_culture)["crop"]
     if selected_harmful_object:
-        filters["target_object"] = {"$regex": re.escape(selected_harmful_object), "$options": "i"}
+        filters["target_object"] = build_flexible_field_match("target_object", selected_harmful_object)["target_object"]
 
     return filters or None
 
@@ -152,7 +196,7 @@ def build_search_match(query: str) -> Optional[dict]:
         "$and": [
             {
                 "$or": [
-                    {field: {"$regex": re.escape(token), "$options": "i"}}
+                    build_flexible_field_match(field, token)
                     for field in searchable_fields
                 ]
             }
@@ -2010,7 +2054,7 @@ async def herbicide_crops():
 
 @api_router.get("/herbicides/harmful-objects", response_model=List[str])
 async def herbicide_harmful_objects(crop: str = Query(default="")):
-    fq = {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}} if crop.strip() else {}
+    fq = build_registration_filters(culture=crop) or {}
     return await get_distinct_values("herbicide_records", "target_object", fq)
 
 
@@ -2021,7 +2065,7 @@ async def insecticide_crops():
 
 @api_router.get("/insecticides/harmful-objects", response_model=List[str])
 async def insecticide_harmful_objects(crop: str = Query(default="")):
-    fq = {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}} if crop.strip() else {}
+    fq = build_registration_filters(culture=crop) or {}
     return await get_distinct_values("insecticide_records", "target_object", fq)
 
 
@@ -2032,7 +2076,7 @@ async def fungicide_crops():
 
 @api_router.get("/fungicides/harmful-objects", response_model=List[str])
 async def fungicide_harmful_objects(crop: str = Query(default="")):
-    fq = {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}} if crop.strip() else {}
+    fq = build_registration_filters(culture=crop) or {}
     return await get_distinct_values("fungicide_records", "target_object", fq)
 
 
@@ -2043,7 +2087,7 @@ async def seed_treatment_crops():
 
 @api_router.get("/seed-treatments/harmful-objects", response_model=List[str])
 async def seed_treatment_harmful_objects(crop: str = Query(default="")):
-    fq = {"crop": {"$regex": re.escape(crop.strip()), "$options": "i"}} if crop.strip() else {}
+    fq = build_registration_filters(culture=crop) or {}
     return await get_distinct_values("seed_treatment_records", "target_object", fq)
 
 
