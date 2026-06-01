@@ -107,6 +107,112 @@ class SearchResult(BaseModel):
     applications_count: int = 0
 
 
+SERVICE_SEARCH_WORDS = {
+    "и", "в", "во", "на", "по", "от", "для", "против", "с", "со",
+    "к", "ко", "о", "об", "из", "за", "над", "под", "при", "без",
+    "до", "или", "а", "у", "не", "через",
+}
+
+COMMON_RUSSIAN_ENDINGS = (
+    "иями", "ями", "ами", "его", "ого", "ему", "ому", "ими", "ыми",
+    "ией", "иях", "ах", "ях", "ов", "ев", "ой", "ей", "ий",
+    "ый", "ая", "яя", "ое", "ее", "ие", "ые", "ых", "их", "ам",
+    "ям", "ом", "ем", "а", "я", "ы", "и", "е", "у", "ю", "о",
+)
+
+
+def normalize_search_text(text: Optional[str]) -> str:
+    """Normalize user text before building fuzzy Russian search patterns."""
+    if not text:
+        return ""
+
+    normalized = text.lower().strip().replace("ё", "е")
+    normalized = re.sub(r"[^0-9a-zа-я]+", " ", normalized, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _safe_russian_root(word: str) -> str:
+    """Return a conservative stem so common Russian endings do not block matches."""
+    if len(word) <= 3:
+        return word
+
+    if word.endswith("ь") and len(word) > 4:
+        return word[:-1]
+
+    for ending in COMMON_RUSSIAN_ENDINGS:
+        if word.endswith(ending) and len(word) - len(ending) >= 4:
+            return word[:-len(ending)]
+
+    if len(word) > 8:
+        return word[:-1]
+
+    return word
+
+
+def build_fuzzy_word_patterns(text: Optional[str]) -> List[str]:
+    """Build safe regex fragments for every meaningful word in a query."""
+    normalized = normalize_search_text(text)
+    if not normalized:
+        return []
+
+    patterns = []
+    seen = set()
+    for word in normalized.split():
+        if word in SERVICE_SEARCH_WORDS:
+            continue
+
+        root = _safe_russian_root(word)
+        if len(root) < 3:
+            continue
+
+        pattern = re.escape(root).replace("е", "[её]")
+        if pattern not in seen:
+            patterns.append(pattern)
+            seen.add(pattern)
+
+    return patterns
+
+
+def build_text_match_condition(field: str, text: Optional[str]) -> Optional[dict]:
+    """Build a MongoDB condition where every meaningful word must be in one field."""
+    patterns = build_fuzzy_word_patterns(text)
+    if not patterns:
+        return None
+
+    conditions = [
+        {field: {"$regex": pattern, "$options": "i"}}
+        for pattern in patterns
+    ]
+    if len(conditions) == 1:
+        return conditions[0]
+
+    return {"$and": conditions}
+
+
+def build_registration_filters(culture: str = "", crop: str = "", harmful_object: str = "") -> Optional[dict]:
+    """
+    Build row-level filters for registration crop and harmful object.
+    ``culture`` is the public API parameter; ``crop`` is kept for backward compatibility.
+    """
+    selected_culture = culture or crop
+
+    conditions = []
+    culture_condition = build_text_match_condition("crop", selected_culture)
+    harmful_object_condition = build_text_match_condition("target_object", harmful_object)
+
+    if culture_condition:
+        conditions.append(culture_condition)
+    if harmful_object_condition:
+        conditions.append(harmful_object_condition)
+
+    if not conditions:
+        return None
+    if len(conditions) == 1:
+        return conditions[0]
+
+    return {"$and": conditions}
+
+
 def build_search_match(query: str) -> Optional[dict]:
     """
     Build MongoDB $match for flexible multi-word search across registration rows.
@@ -427,8 +533,9 @@ async def import_excel(file: UploadFile = File(...)):
 
 @api_router.get("/herbicides/search", response_model=List[SearchResult])
 async def search_herbicides(
-    crop: str = Query(default="", description="Filter by crop"),
+    culture: str = Query(default="", description="Filter by culture/crop"),
     harmful_object: str = Query(default="", description="Filter by target object"),
+    crop: str = Query(default="", description="Deprecated alias for culture"),
     q: str = Query(default="", description="Search query"),
     only_active: bool = Query(default=False, description="Show only active registrations"),
     limit: int = Query(default=50, le=200, description="Maximum results")
@@ -436,6 +543,10 @@ async def search_herbicides(
     """Search herbicides by name, crop, target, or active substances"""
     try:
         pipeline = []
+
+        registration_filters = build_registration_filters(culture, crop, harmful_object)
+        if registration_filters:
+            pipeline.append({"$match": registration_filters})
         
         if q and q.strip():
             search_match = build_search_match(q)
@@ -903,8 +1014,9 @@ async def import_insecticides(file: UploadFile = File(...)):
 
 @api_router.get("/insecticides/search", response_model=List[SearchResult])
 async def search_insecticides(
-    crop: str = Query(default="", description="Filter by crop"),
+    culture: str = Query(default="", description="Filter by culture/crop"),
     harmful_object: str = Query(default="", description="Filter by target object"),
+    crop: str = Query(default="", description="Deprecated alias for culture"),
     q: str = Query(default="", description="Search query"),
     only_active: bool = Query(default=False, description="Show only active registrations"),
     limit: int = Query(default=50, le=200, description="Maximum results")
@@ -912,6 +1024,10 @@ async def search_insecticides(
     """Search insecticides by name, crop, target, or active substances"""
     try:
         pipeline = []
+
+        registration_filters = build_registration_filters(culture, crop, harmful_object)
+        if registration_filters:
+            pipeline.append({"$match": registration_filters})
         
         if q and q.strip():
             search_match = build_search_match(q)
@@ -1281,8 +1397,9 @@ async def import_fungicides(file: UploadFile = File(...)):
 
 @api_router.get("/fungicides/search", response_model=List[SearchResult])
 async def search_fungicides(
-    crop: str = Query(default="", description="Filter by crop"),
+    culture: str = Query(default="", description="Filter by culture/crop"),
     harmful_object: str = Query(default="", description="Filter by target object"),
+    crop: str = Query(default="", description="Deprecated alias for culture"),
     q: str = Query(default="", description="Search query"),
     only_active: bool = Query(default=False, description="Show only active registrations"),
     limit: int = Query(default=50, le=200, description="Maximum results")
@@ -1290,6 +1407,10 @@ async def search_fungicides(
     """Search fungicides by name, crop, target, or active substances"""
     try:
         pipeline = []
+
+        registration_filters = build_registration_filters(culture, crop, harmful_object)
+        if registration_filters:
+            pipeline.append({"$match": registration_filters})
         
         if q and q.strip():
             search_match = build_search_match(q)
@@ -1658,8 +1779,9 @@ async def import_seed_treatments(file: UploadFile = File(...)):
 
 @api_router.get("/seed-treatments/search")
 async def search_seed_treatments(
-    crop: str = Query(default="", description="Filter by crop"),
+    culture: str = Query(default="", description="Filter by culture/crop"),
     harmful_object: str = Query(default="", description="Filter by target object"),
+    crop: str = Query(default="", description="Deprecated alias for culture"),
     q: str = Query(default="", description="Search query"),
     only_active: bool = Query(default=False, description="Show only active registrations"),
     limit: int = Query(default=50, le=200, description="Maximum results")
@@ -1667,6 +1789,10 @@ async def search_seed_treatments(
     """Search seed treatments by name, crop, target, or active substances"""
     try:
         pipeline = []
+
+        registration_filters = build_registration_filters(culture, crop, harmful_object)
+        if registration_filters:
+            pipeline.append({"$match": registration_filters})
         
         if q and q.strip():
             search_match = build_search_match(q)

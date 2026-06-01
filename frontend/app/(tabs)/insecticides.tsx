@@ -69,7 +69,7 @@ export default function InsecticidesScreen() {
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.append('q', query.trim());
-      if (cropValue.trim()) params.append('crop', cropValue.trim());
+      if (cropValue.trim()) params.append('culture', cropValue.trim());
       if (harmfulObjectValue.trim()) params.append('harmful_object', harmfulObjectValue.trim());
       if (active) params.append('only_active', 'true');
       params.append('limit', '50');
@@ -262,7 +262,7 @@ export default function InsecticidesScreen() {
 
           <TextInput
             style={styles.filterInput}
-            placeholder="Вредный объект (опционально)"
+            placeholder="Вредитель (опционально)"
             placeholderTextColor="#9CA3AF"
             value={harmfulObject}
             onChangeText={setHarmfulObject}

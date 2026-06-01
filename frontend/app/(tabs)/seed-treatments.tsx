@@ -87,7 +87,7 @@ export default function SeedTreatmentsScreen() {
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.append('q', query.trim());
-      if (cropValue.trim()) params.append('crop', cropValue.trim());
+      if (cropValue.trim()) params.append('culture', cropValue.trim());
       if (harmfulObjectValue.trim()) params.append('harmful_object', harmfulObjectValue.trim());
       if (active) params.append('only_active', 'true');
       params.append('limit', '50');
@@ -408,6 +408,17 @@ const styles = StyleSheet.create({
   },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 16, color: '#111827' },
+  filterInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#111827',
+    marginTop: 8,
+  },
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
