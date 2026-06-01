@@ -7,7 +7,7 @@ import logging
 import re
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Sequence
 import uuid
 from datetime import datetime
 import pandas as pd
@@ -115,43 +115,75 @@ RUSSIAN_ENDINGS = (
 )
 
 
+OPTIONAL_OCR_SEPARATOR_REGEX = r"[\s\-–—_,.;:()/\\]*"
+
+
+def normalize_search_text(value: str) -> str:
+    """Normalize user text before building a forgiving MongoDB regex."""
+    normalized = (value or "").strip().lower().replace("ё", "е")
+    normalized = re.sub(r"[^0-9a-zа-яе]+", " ", normalized, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def build_ocr_tolerant_literal_regex(value: str) -> str:
+    """Allow OCR/PDF separators inside a searched word, e.g. подсолнечн ик."""
+    parts = []
+    for char in value:
+        if char.isspace():
+            if parts and parts[-1] != OPTIONAL_OCR_SEPARATOR_REGEX:
+                parts.append(OPTIONAL_OCR_SEPARATOR_REGEX)
+            continue
+        if char == "е":
+            parts.append("[её]")
+        else:
+            parts.append(re.escape(char))
+        parts.append(OPTIONAL_OCR_SEPARATOR_REGEX)
+
+    while parts and parts[-1] == OPTIONAL_OCR_SEPARATOR_REGEX:
+        parts.pop()
+    return "".join(parts)
+
+
 def make_flexible_text_regex(value: str) -> str:
     """
     Build a MongoDB regex for forgiving Russian text matching.
 
-    It keeps partial-match behavior, treats ``е`` and ``ё`` as equal, and trims common
-    Russian endings so searches like ``пшеница`` can match registration rows with
-    ``пшеницы``. Latin/numeric product names still work as regular partial matches.
+    It keeps partial-match behavior, treats ``е`` and ``ё`` as equal, trims common
+    Russian endings, and tolerates OCR/PDF word breaks such as ``Подсолнечн ик``.
+    Latin/numeric product names still work as regular partial matches.
     """
-    normalized = (value or "").strip().lower().replace("ё", "е")
+    normalized = normalize_search_text(value)
     if not normalized:
         return ""
 
-    # Remove punctuation at token edges but keep useful in-word symbols for product names.
-    normalized = re.sub(r"^[^0-9a-zа-яе]+|[^0-9a-zа-яе]+$", "", normalized, flags=re.IGNORECASE)
-
+    compact_normalized = normalized.replace(" ", "")
     has_cyrillic = bool(re.search(r"[а-я]", normalized, flags=re.IGNORECASE))
     stem = normalized
-    if has_cyrillic and len(normalized) >= 4:
+    if has_cyrillic and len(compact_normalized) >= 4:
         for ending in RUSSIAN_ENDINGS:
-            if normalized.endswith(ending) and len(normalized) - len(ending) >= 3:
-                stem = normalized[: -len(ending)]
+            if compact_normalized.endswith(ending) and len(compact_normalized) - len(ending) >= 3:
+                stem = compact_normalized[: -len(ending)]
                 break
+        else:
+            stem = compact_normalized
 
-    escaped = re.escape(stem)
-    # Match both spellings without requiring separate normalized fields in MongoDB.
-    escaped = escaped.replace("е", "[её]")
+    pattern = build_ocr_tolerant_literal_regex(stem)
 
-    if has_cyrillic and len(stem) >= 3:
-        return f"{escaped}[а-яё]*"
-    return escaped
+    if has_cyrillic and len(stem.replace(" ", "")) >= 3:
+        return f"{pattern}[а-яё]*"
+    return pattern
 
 
 def build_flexible_field_match(field: str, value: str) -> dict:
     return {field: {"$regex": make_flexible_text_regex(value), "$options": "i"}}
 
 
-def build_registration_filters(culture: str = "", crop: str = "", harmful_object: str = "") -> Optional[dict]:
+def build_registration_filters(
+    culture: str = "",
+    crop: str = "",
+    harmful_object: str = "",
+    harmful_object_fields: Sequence[str] = ("target_object",),
+) -> Optional[dict]:
     """
     Build row-level filters for registration crop and harmful object.
     ``culture`` is the public API parameter; ``crop`` is kept for backward compatibility.
@@ -163,7 +195,14 @@ def build_registration_filters(culture: str = "", crop: str = "", harmful_object
     if selected_culture:
         filters["crop"] = build_flexible_field_match("crop", selected_culture)["crop"]
     if selected_harmful_object:
-        filters["target_object"] = build_flexible_field_match("target_object", selected_harmful_object)["target_object"]
+        harmful_matches = [
+            build_flexible_field_match(field, selected_harmful_object)
+            for field in harmful_object_fields
+        ]
+        if len(harmful_matches) == 1:
+            filters.update(harmful_matches[0])
+        else:
+            filters["$or"] = harmful_matches
 
     return filters or None
 
@@ -367,6 +406,15 @@ def parse_rate_max(rate_raw: Optional[str]) -> Optional[float]:
 
 # ==================== HELPER FUNCTIONS ====================
 
+TARGET_OBJECT_IMPORT_COLUMNS = (
+    "target_object",
+    "harmful_object",
+    "harmful_objects",
+    "disease",
+    "diseases",
+)
+
+
 def clean_value(val) -> Optional[str]:
     """Clean and normalize a value from Excel"""
     if pd.isna(val) or val is None:
@@ -375,6 +423,29 @@ def clean_value(val) -> Optional[str]:
     if val_str.lower() in ['nan', 'none', '']:
         return None
     return val_str
+
+
+def clean_record_id(val) -> Optional[Any]:
+    """Clean Excel record identifiers without forcing text IDs to integers."""
+    cleaned = clean_value(val)
+    if cleaned is None:
+        return None
+    try:
+        numeric = float(cleaned)
+        if numeric.is_integer():
+            return int(numeric)
+    except (TypeError, ValueError):
+        pass
+    return cleaned
+
+
+def first_clean_value(row, columns: Sequence[str]) -> Optional[str]:
+    """Return the first non-empty Excel value from a list of possible column names."""
+    for column in columns:
+        value = clean_value(row.get(column))
+        if value:
+            return value
+    return None
 
 
 def create_product_key(product_name: str, registration_number: Optional[str]) -> str:
@@ -435,7 +506,7 @@ async def import_excel(file: UploadFile = File(...)):
             
             record = {
                 "id": str(uuid.uuid4()),
-                "record_id": int(row.get('record_id')) if pd.notna(row.get('record_id')) else None,
+                "record_id": clean_record_id(row.get('record_id')),
                 "product_name": product_name,
                 "product_key": product_key,
                 "formulation": clean_value(row.get('formulation')),
@@ -447,7 +518,7 @@ async def import_excel(file: UploadFile = File(...)):
                 "registration_status": clean_value(row.get('registration_status')),
                 "rate_raw": clean_value(row.get('rate_raw')),
                 "crop": clean_value(row.get('crop')),
-                "target_object": clean_value(row.get('target_object')),
+                "target_object": first_clean_value(row, TARGET_OBJECT_IMPORT_COLUMNS),
                 "application_method": clean_value(row.get('application_method')),
                 "waiting_period": clean_value(row.get('waiting_period')),
                 "reentry_period_manual": clean_value(row.get('reentry_period_manual')),
@@ -915,7 +986,7 @@ async def import_insecticides(file: UploadFile = File(...)):
             
             record = {
                 "id": str(uuid.uuid4()),
-                "record_id": int(row.get('record_id')) if pd.notna(row.get('record_id')) else None,
+                "record_id": clean_record_id(row.get('record_id')),
                 "product_name": product_name,
                 "product_key": product_key,
                 "formulation": clean_value(row.get('formulation')),
@@ -927,7 +998,7 @@ async def import_insecticides(file: UploadFile = File(...)):
                 "registration_status": clean_value(row.get('registration_status')),
                 "rate_raw": clean_value(row.get('rate_raw')),
                 "crop": clean_value(row.get('crop')),
-                "target_object": clean_value(row.get('target_object')),
+                "target_object": first_clean_value(row, TARGET_OBJECT_IMPORT_COLUMNS),
                 "application_method": clean_value(row.get('application_method')),
                 "waiting_period": clean_value(row.get('waiting_period')),
                 "reentry_period_manual": clean_value(row.get('reentry_period_manual')),
@@ -1276,6 +1347,15 @@ async def compare_insecticides_advanced(request: AdvancedCompareRequest):
 
 
 
+FUNGICIDE_HARMFUL_OBJECT_FIELDS = (
+    "target_object",
+    "harmful_object",
+    "harmful_objects",
+    "disease",
+    "diseases",
+)
+
+
 # ==================== FUNGICIDE ENDPOINTS ====================
 
 @api_router.post("/admin/import-fungicides")
@@ -1298,7 +1378,7 @@ async def import_fungicides(file: UploadFile = File(...)):
             
             record = {
                 "id": str(uuid.uuid4()),
-                "record_id": int(row.get('record_id')) if pd.notna(row.get('record_id')) else None,
+                "record_id": clean_record_id(row.get('record_id')),
                 "product_name": product_name,
                 "product_key": product_key,
                 "formulation": clean_value(row.get('formulation')),
@@ -1310,7 +1390,7 @@ async def import_fungicides(file: UploadFile = File(...)):
                 "registration_status": clean_value(row.get('registration_status')),
                 "rate_raw": clean_value(row.get('rate_raw')),
                 "crop": clean_value(row.get('crop')),
-                "target_object": clean_value(row.get('target_object')),
+                "target_object": first_clean_value(row, TARGET_OBJECT_IMPORT_COLUMNS),
                 "application_method": clean_value(row.get('application_method')),
                 "waiting_period": clean_value(row.get('waiting_period')),
                 "reentry_period_manual": clean_value(row.get('reentry_period_manual')),
@@ -1363,7 +1443,9 @@ async def search_fungicides(
     try:
         pipeline = []
 
-        registration_filters = build_registration_filters(culture, crop, harmful_object)
+        registration_filters = build_registration_filters(
+            culture, crop, harmful_object, FUNGICIDE_HARMFUL_OBJECT_FIELDS
+        )
         if registration_filters:
             pipeline.append({"$match": registration_filters})
         
@@ -1679,7 +1761,7 @@ async def import_seed_treatments(file: UploadFile = File(...)):
             
             record = {
                 "id": str(uuid.uuid4()),
-                "record_id": int(row.get('record_id')) if pd.notna(row.get('record_id')) else None,
+                "record_id": clean_record_id(row.get('record_id')),
                 "product_name": product_name,
                 "product_key": product_key,
                 "formulation": clean_value(row.get('formulation')),
@@ -1691,7 +1773,7 @@ async def import_seed_treatments(file: UploadFile = File(...)):
                 "registration_status": clean_value(row.get('registration_status')),
                 "rate_raw": clean_value(row.get('rate_raw')),
                 "crop": clean_value(row.get('crop')),
-                "target_object": clean_value(row.get('target_object')),
+                "target_object": first_clean_value(row, TARGET_OBJECT_IMPORT_COLUMNS),
                 "application_method": clean_value(row.get('application_method')),
                 "waiting_period": clean_value(row.get('waiting_period')),
                 "reentry_period_manual": clean_value(row.get('reentry_period_manual')),
@@ -2047,6 +2129,16 @@ async def get_distinct_values(collection_name: str, field: str, filter_query: Op
     return sorted([v for v in values if isinstance(v, str) and v.strip()])
 
 
+async def get_distinct_values_from_fields(
+    collection_name: str, fields: Sequence[str], filter_query: Optional[dict] = None
+) -> List[str]:
+    values = set()
+    for field in fields:
+        field_values = await db[collection_name].distinct(field, filter_query or {})
+        values.update(v for v in field_values if isinstance(v, str) and v.strip())
+    return sorted(values)
+
+
 @api_router.get("/herbicides/crops", response_model=List[str])
 async def herbicide_crops():
     return await get_distinct_values("herbicide_records", "crop")
@@ -2077,7 +2169,9 @@ async def fungicide_crops():
 @api_router.get("/fungicides/harmful-objects", response_model=List[str])
 async def fungicide_harmful_objects(crop: str = Query(default="")):
     fq = build_registration_filters(culture=crop) or {}
-    return await get_distinct_values("fungicide_records", "target_object", fq)
+    return await get_distinct_values_from_fields(
+        "fungicide_records", FUNGICIDE_HARMFUL_OBJECT_FIELDS, fq
+    )
 
 
 @api_router.get("/seed-treatments/crops", response_model=List[str])
