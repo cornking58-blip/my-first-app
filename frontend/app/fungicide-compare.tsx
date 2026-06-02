@@ -34,6 +34,9 @@ interface Substance {
   concentration: number;
   unit: string;
   is_antidote: boolean;
+  resistance_system?: string | null;
+  resistance_group?: string | null;
+  resistance_group_name?: string;
   category?: string;
   per_ha?: number;
 }
@@ -62,11 +65,43 @@ interface ProductInfo {
   active_substances_raw: string | null;
   registration_status: string | null;
   max_rate: number | null;
+  rate_used?: number | null;
+  rate_source?: 'manual' | 'max_registered';
   substances: Substance[];
   antidotes: Substance[];
   total_concentration: number;
   total_per_ha: number | null;
   substance_count: number;
+}
+
+interface GroupAnalysis {
+  identical_active_set?: boolean;
+  reference_groups?: {
+    substance: string;
+    system: string | null;
+    group: string | null;
+    group_name: string;
+  }[];
+  same_group_matches: {
+    system: string;
+    group: string;
+    group_name: string;
+    left_substances: string[];
+    right_substances: string[];
+    warning: string;
+  }[];
+  different_group_matches: {
+    left_substance: string;
+    left_group: string;
+    right_substance: string;
+    right_group: string;
+    message: string;
+  }[];
+  unknown_group_substances: {
+    side: 'left' | 'right';
+    substance: string;
+  }[];
+  plain_explanation: string;
 }
 
 interface PriceAnalysis {
@@ -79,9 +114,21 @@ interface PriceAnalysis {
   substances_cost: {
     side: 'left' | 'right';
     name: string;
+    substance_name?: string;
     concentration: number;
+    unit?: string;
+    rate_used?: number;
+    grams_per_ha?: number;
+    estimated_cost_share_per_ha?: number;
+    estimated_cost_per_gram?: number | null;
     cost_contribution_pct: number;
   }[];
+}
+
+interface CropRegistration {
+  crop: string;
+  left: { has_registration: boolean; message: string };
+  right: { has_registration: boolean; message: string };
 }
 
 interface CompareResult {
@@ -93,6 +140,8 @@ interface CompareResult {
     left_unique_substances: (Substance & { category: string; per_ha: number | null })[];
     right_unique_substances: (Substance & { category: string; per_ha: number | null })[];
   };
+  group_analysis?: GroupAnalysis;
+  crop_registration?: CropRegistration | null;
   price_analysis: PriceAnalysis | null;
 }
 
@@ -104,6 +153,9 @@ export default function FungicideCompareScreen() {
   const [error, setError] = useState<string | null>(null);
   const [leftPrice, setLeftPrice] = useState('');
   const [rightPrice, setRightPrice] = useState('');
+  const [leftRate, setLeftRate] = useState('');
+  const [rightRate, setRightRate] = useState('');
+  const [crop, setCrop] = useState('');
   const [priceLoading, setPriceLoading] = useState(false);
 
   useEffect(() => {
@@ -112,8 +164,15 @@ export default function FungicideCompareScreen() {
     }
   }, [selectedFungicidesForCompare]);
 
-  const fetchCompareData = async (lPrice?: number, rPrice?: number) => {
-    if (lPrice !== undefined || rPrice !== undefined) {
+  const parseOptionalNumber = (value: string) => {
+    const normalized = value.trim().replace(',', '.');
+    if (!normalized) return undefined;
+    const parsed = parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const fetchCompareData = async (options?: { inlineLoading?: boolean }) => {
+    if (options?.inlineLoading) {
       setPriceLoading(true);
     } else {
       setLoading(true);
@@ -125,9 +184,18 @@ export default function FungicideCompareScreen() {
         left_key: selectedFungicidesForCompare[0],
         right_key: selectedFungicidesForCompare[1],
       };
+
+      const lPrice = parseOptionalNumber(leftPrice);
+      const rPrice = parseOptionalNumber(rightPrice);
+      const lRate = parseOptionalNumber(leftRate);
+      const rRate = parseOptionalNumber(rightRate);
+      const cropValue = crop.trim();
       
       if (lPrice !== undefined) body.left_price = lPrice;
       if (rPrice !== undefined) body.right_price = rPrice;
+      if (lRate !== undefined) body.left_rate = lRate;
+      if (rRate !== undefined) body.right_rate = rRate;
+      if (cropValue) body.crop = cropValue;
       
       const response = await axios.post(`${API_URL}/api/fungicides/compare-advanced`, body);
       setCompareData(response.data);
@@ -141,11 +209,7 @@ export default function FungicideCompareScreen() {
   };
 
   const handlePriceCalculation = () => {
-    const lPrice = leftPrice ? parseFloat(leftPrice.replace(',', '.')) : undefined;
-    const rPrice = rightPrice ? parseFloat(rightPrice.replace(',', '.')) : undefined;
-    if (lPrice || rPrice) {
-      fetchCompareData(lPrice, rPrice);
-    }
+    fetchCompareData({ inlineLoading: true });
   };
 
   const handleBack = () => {
@@ -196,7 +260,7 @@ export default function FungicideCompareScreen() {
     );
   }
 
-  const { left, right, analysis, price_analysis } = compareData;
+  const { left, right, analysis, group_analysis, crop_registration, price_analysis } = compareData;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -298,6 +362,28 @@ export default function FungicideCompareScreen() {
               </View>
             </View>
           </View>
+
+          {/* Crop Registration */}
+          {crop_registration && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="leaf" size={20} color="#16A34A" />
+                <Text style={styles.sectionTitle}>Регистрация на культуру: {crop_registration.crop}</Text>
+              </View>
+              <View style={styles.cropRegistrationRow}>
+                <View style={[styles.cropRegistrationCard, crop_registration.left.has_registration ? styles.cropRegistered : styles.cropNotRegistered]}>
+                  <Text style={styles.cropProductName}>{left.product_name}</Text>
+                  <Text style={styles.cropGeneralStatus}>Общий статус: {isActive(left.registration_status) ? 'Действует' : 'Не действует'}</Text>
+                  <Text style={styles.cropRegistrationText}>{crop_registration.left.message}</Text>
+                </View>
+                <View style={[styles.cropRegistrationCard, crop_registration.right.has_registration ? styles.cropRegistered : styles.cropNotRegistered]}>
+                  <Text style={styles.cropProductName}>{right.product_name}</Text>
+                  <Text style={styles.cropGeneralStatus}>Общий статус: {isActive(right.registration_status) ? 'Действует' : 'Не действует'}</Text>
+                  <Text style={styles.cropRegistrationText}>{crop_registration.right.message}</Text>
+                </View>
+              </View>
+            </View>
+          )}
 
           {/* Identical Substances */}
           {analysis.identical_substances.length > 0 && (
@@ -402,6 +488,64 @@ export default function FungicideCompareScreen() {
             </View>
           )}
 
+          {/* Resistance Groups */}
+          {group_analysis && (
+            group_analysis.same_group_matches.length > 0 ||
+            group_analysis.different_group_matches.length > 0 ||
+            group_analysis.unknown_group_substances.length > 0 ||
+            (group_analysis.reference_groups?.length ?? 0) > 0
+          ) && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="shield-checkmark" size={20} color="#0F766E" />
+                <Text style={styles.sectionTitle}>Группы устойчивости HRAC / FRAC / IRAC</Text>
+              </View>
+
+              {group_analysis.reference_groups && group_analysis.reference_groups.length > 0 && (
+                <View style={[styles.groupCard, styles.groupUnknownCard]}>
+                  <Text style={styles.groupTitle}>Действующие вещества совпадают</Text>
+                  {group_analysis.reference_groups.map((item, idx) => (
+                    <Text key={`reference-${idx}`} style={styles.groupText}>
+                      {item.substance} — {item.system && item.group ? `${item.system} ${item.group}` : 'группа не определена'} / {item.group_name}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              {group_analysis.same_group_matches.map((match, idx) => (
+                <View key={`same-${idx}`} style={[styles.groupCard, styles.groupWarningCard]}>
+                  <Text style={styles.groupTitle}>{match.system} {match.group} • {match.group_name}</Text>
+                  <Text style={styles.groupText}>
+                    {match.left_substances.join(', ')} ↔ {match.right_substances.join(', ')}
+                  </Text>
+                  <Text style={styles.groupWarningText}>{match.warning}</Text>
+                </View>
+              ))}
+
+              {group_analysis.different_group_matches.map((match, idx) => (
+                <View key={`different-${idx}`} style={[styles.groupCard, styles.groupSuccessCard]}>
+                  <Text style={styles.groupTitle}>
+                    {match.left_substance} ({match.left_group}) ↔ {match.right_substance} ({match.right_group})
+                  </Text>
+                  <Text style={styles.groupText}>{match.message}</Text>
+                </View>
+              ))}
+
+              {group_analysis.unknown_group_substances.length > 0 && (
+                <View style={[styles.groupCard, styles.groupUnknownCard]}>
+                  <Text style={styles.groupTitle}>Группа не определена</Text>
+                  {group_analysis.unknown_group_substances.map((item, idx) => (
+                    <Text key={`unknown-${idx}`} style={styles.groupText}>
+                      {item.side === 'left' ? left.product_name : right.product_name}: {item.substance}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              <Text style={styles.groupExplanation}>{group_analysis.plain_explanation}</Text>
+            </View>
+          )}
+
           {/* Price Input Section */}
           <View style={styles.priceSection}>
             <View style={styles.sectionHeader}>
@@ -409,7 +553,7 @@ export default function FungicideCompareScreen() {
               <Text style={styles.sectionTitle}>Расчёт стоимости</Text>
             </View>
             
-            <Text style={styles.priceHint}>Введите цену за 1 л/кг препарата</Text>
+            <Text style={styles.priceHint}>Введите цену за 1 л/кг и, если нужно, ручную норму. Если норма пустая, используется максимальная зарегистрированная.</Text>
             
             <View style={styles.priceInputRow}>
               <View style={styles.priceInputContainer}>
@@ -435,11 +579,46 @@ export default function FungicideCompareScreen() {
                 />
               </View>
             </View>
+
+            <View style={styles.priceInputRow}>
+              <View style={styles.priceInputContainer}>
+                <Text style={styles.priceInputLabel}>Норма препарата А</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder={`Макс.: ${left.max_rate ?? '—'}`}
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="decimal-pad"
+                  value={leftRate}
+                  onChangeText={setLeftRate}
+                />
+                <Text style={styles.rateSourceText}>Используется: {left.rate_source === 'manual' ? 'ручная' : 'макс. зарегистрированная'} ({left.rate_used ?? '—'})</Text>
+              </View>
+              <View style={styles.priceInputContainer}>
+                <Text style={styles.priceInputLabel}>Норма препарата Б</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder={`Макс.: ${right.max_rate ?? '—'}`}
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="decimal-pad"
+                  value={rightRate}
+                  onChangeText={setRightRate}
+                />
+                <Text style={styles.rateSourceText}>Используется: {right.rate_source === 'manual' ? 'ручная' : 'макс. зарегистрированная'} ({right.rate_used ?? '—'})</Text>
+              </View>
+            </View>
+
+            <TextInput
+              style={[styles.priceInput, styles.cropInput]}
+              placeholder="Культура для проверки регистрации"
+              placeholderTextColor="#9CA3AF"
+              value={crop}
+              onChangeText={setCrop}
+            />
             
             <TouchableOpacity 
               style={styles.calculateButton}
               onPress={handlePriceCalculation}
-              disabled={priceLoading || (!leftPrice && !rightPrice)}
+              disabled={priceLoading}
             >
               {priceLoading ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
@@ -476,27 +655,19 @@ export default function FungicideCompareScreen() {
                   </View>
                 </View>
                 
-                <View style={styles.priceResultRow}>
-                  <Text style={styles.priceResultLabel}>Стоимость 1 г ДВ, ₽</Text>
-                  <View style={styles.priceResultValues}>
-                    <Text style={[
-                      styles.priceResultValue, 
-                      styles.leftValue,
-                      price_analysis.left_cost_per_gram_ai && price_analysis.right_cost_per_gram_ai && 
-                      price_analysis.left_cost_per_gram_ai < price_analysis.right_cost_per_gram_ai ? styles.winnerValue : null
-                    ]}>
-                      {price_analysis.left_cost_per_gram_ai?.toFixed(2) ?? '—'}
-                    </Text>
-                    <Text style={[
-                      styles.priceResultValue, 
-                      styles.rightValue,
-                      price_analysis.left_cost_per_gram_ai && price_analysis.right_cost_per_gram_ai && 
-                      price_analysis.right_cost_per_gram_ai < price_analysis.left_cost_per_gram_ai ? styles.winnerValue : null
-                    ]}>
-                      {price_analysis.right_cost_per_gram_ai?.toFixed(2) ?? '—'}
-                    </Text>
+                {price_analysis.substances_cost.length > 0 && (
+                  <View style={styles.substanceCostSection}>
+                    <Text style={styles.substanceCostTitle}>Стоимость действующих веществ</Text>
+                    {price_analysis.substances_cost.map((item, idx) => (
+                      <View key={`cost-${idx}`} style={[styles.substanceCostCard, item.side === 'left' ? styles.leftBg : styles.rightBg]}>
+                        <Text style={styles.substanceCostName}>{item.substance_name || item.name}</Text>
+                        <Text style={styles.substanceCostText}>ДВ на 1 га: {item.grams_per_ha ?? '—'} г</Text>
+                        <Text style={styles.substanceCostText}>Оценка стоимости на 1 га: {item.estimated_cost_share_per_ha?.toFixed(2) ?? '—'} ₽</Text>
+                        <Text style={styles.substanceCostText}>Оценка за 1 г: {item.estimated_cost_per_gram?.toFixed(4) ?? '—'} ₽</Text>
+                      </View>
+                    ))}
                   </View>
-                </View>
+                )}
               </View>
             )}
           </View>
@@ -817,6 +988,104 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginTop: 4,
+  },
+  groupCard: {
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  groupWarningCard: {
+    backgroundColor: '#FEF3C7',
+  },
+  groupSuccessCard: {
+    backgroundColor: '#D1FAE5',
+  },
+  groupUnknownCard: {
+    backgroundColor: '#F3F4F6',
+  },
+  groupTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  groupText: {
+    fontSize: 12,
+    color: '#374151',
+    marginTop: 2,
+  },
+  groupWarningText: {
+    fontSize: 12,
+    color: '#92400E',
+    marginTop: 6,
+  },
+  groupExplanation: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  cropRegistrationRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  cropRegistrationCard: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 10,
+  },
+  cropRegistered: {
+    backgroundColor: '#D1FAE5',
+  },
+  cropNotRegistered: {
+    backgroundColor: '#FEE2E2',
+  },
+  cropProductName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  cropGeneralStatus: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  cropRegistrationText: {
+    fontSize: 12,
+    color: '#374151',
+  },
+  rateSourceText: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  cropInput: {
+    marginTop: 12,
+  },
+  substanceCostSection: {
+    marginTop: 12,
+    gap: 8,
+  },
+  substanceCostTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  substanceCostCard: {
+    padding: 10,
+    borderRadius: 8,
+  },
+  substanceCostName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  substanceCostText: {
+    fontSize: 12,
+    color: '#374151',
+    marginTop: 2,
   },
   priceSection: {
     backgroundColor: '#FFFFFF',
