@@ -34,6 +34,9 @@ interface Substance {
   concentration: number;
   unit: string;
   is_antidote: boolean;
+  resistance_system?: string | null;
+  resistance_group?: string | null;
+  resistance_group_name?: string;
   category?: string;
   per_ha?: number;
 }
@@ -69,6 +72,29 @@ interface ProductInfo {
   substance_count: number;
 }
 
+interface GroupAnalysis {
+  same_group_matches: {
+    system: string;
+    group: string;
+    group_name: string;
+    left_substances: string[];
+    right_substances: string[];
+    warning: string;
+  }[];
+  different_group_matches: {
+    left_substance: string;
+    left_group: string;
+    right_substance: string;
+    right_group: string;
+    message: string;
+  }[];
+  unknown_group_substances: {
+    side: 'left' | 'right';
+    substance: string;
+  }[];
+  plain_explanation: string;
+}
+
 interface PriceAnalysis {
   left_price_per_unit: number | null;
   right_price_per_unit: number | null;
@@ -93,6 +119,7 @@ interface CompareResult {
     left_unique_substances: (Substance & { category: string; per_ha: number | null })[];
     right_unique_substances: (Substance & { category: string; per_ha: number | null })[];
   };
+  group_analysis?: GroupAnalysis;
   price_analysis: PriceAnalysis | null;
 }
 
@@ -196,7 +223,7 @@ export default function InsecticideCompareScreen() {
     );
   }
 
-  const { left, right, analysis, price_analysis } = compareData;
+  const { left, right, analysis, group_analysis, price_analysis } = compareData;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -399,6 +426,52 @@ export default function InsecticideCompareScreen() {
                   ))}
                 </View>
               )}
+            </View>
+          )}
+
+          {/* Resistance Groups */}
+          {group_analysis && (
+            group_analysis.same_group_matches.length > 0 ||
+            group_analysis.different_group_matches.length > 0 ||
+            group_analysis.unknown_group_substances.length > 0
+          ) && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="shield-checkmark" size={20} color="#0F766E" />
+                <Text style={styles.sectionTitle}>Группы устойчивости HRAC / FRAC / IRAC</Text>
+              </View>
+
+              {group_analysis.same_group_matches.map((match, idx) => (
+                <View key={`same-${idx}`} style={[styles.groupCard, styles.groupWarningCard]}>
+                  <Text style={styles.groupTitle}>{match.system} {match.group} • {match.group_name}</Text>
+                  <Text style={styles.groupText}>
+                    {match.left_substances.join(', ')} ↔ {match.right_substances.join(', ')}
+                  </Text>
+                  <Text style={styles.groupWarningText}>{match.warning}</Text>
+                </View>
+              ))}
+
+              {group_analysis.different_group_matches.map((match, idx) => (
+                <View key={`different-${idx}`} style={[styles.groupCard, styles.groupSuccessCard]}>
+                  <Text style={styles.groupTitle}>
+                    {match.left_substance} ({match.left_group}) ↔ {match.right_substance} ({match.right_group})
+                  </Text>
+                  <Text style={styles.groupText}>{match.message}</Text>
+                </View>
+              ))}
+
+              {group_analysis.unknown_group_substances.length > 0 && (
+                <View style={[styles.groupCard, styles.groupUnknownCard]}>
+                  <Text style={styles.groupTitle}>Группа не определена</Text>
+                  {group_analysis.unknown_group_substances.map((item, idx) => (
+                    <Text key={`unknown-${idx}`} style={styles.groupText}>
+                      {item.side === 'left' ? left.product_name : right.product_name}: {item.substance}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              <Text style={styles.groupExplanation}>{group_analysis.plain_explanation}</Text>
             </View>
           )}
 
@@ -817,6 +890,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginTop: 4,
+  },
+  groupCard: {
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  groupWarningCard: {
+    backgroundColor: '#FEF3C7',
+  },
+  groupSuccessCard: {
+    backgroundColor: '#D1FAE5',
+  },
+  groupUnknownCard: {
+    backgroundColor: '#F3F4F6',
+  },
+  groupTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  groupText: {
+    fontSize: 12,
+    color: '#374151',
+    marginTop: 2,
+  },
+  groupWarningText: {
+    fontSize: 12,
+    color: '#92400E',
+    marginTop: 6,
+  },
+  groupExplanation: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#6B7280',
+    marginTop: 2,
   },
   priceSection: {
     backgroundColor: '#FFFFFF',
