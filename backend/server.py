@@ -376,6 +376,191 @@ def get_substance_category(name: str) -> str:
     return "Другие"
 
 
+
+UNKNOWN_RESISTANCE_GROUP = {
+    "system": None,
+    "group": None,
+    "name": "группа не определена",
+}
+
+
+RESISTANCE_GROUPS = {
+    "herbicide": {
+        "глифосат": {"system": "HRAC", "group": "9", "name": "EPSPS inhibitors"},
+        "трибенурон-метил": {"system": "HRAC", "group": "2", "name": "ALS inhibitors"},
+        "метсульфурон-метил": {"system": "HRAC", "group": "2", "name": "ALS inhibitors"},
+        "имазамокс": {"system": "HRAC", "group": "2", "name": "ALS inhibitors"},
+        "имазетапир": {"system": "HRAC", "group": "2", "name": "ALS inhibitors"},
+        "клетодим": {"system": "HRAC", "group": "1", "name": "ACCase inhibitors"},
+        "хизалофоп-п-этил": {"system": "HRAC", "group": "1", "name": "ACCase inhibitors"},
+        "2,4-д": {"system": "HRAC", "group": "4", "name": "Synthetic auxins"},
+        "дикамба": {"system": "HRAC", "group": "4", "name": "Synthetic auxins"},
+        "клопиралид": {"system": "HRAC", "group": "4", "name": "Synthetic auxins"},
+        "мезотрион": {"system": "HRAC", "group": "27", "name": "HPPD inhibitors"},
+        "метрибузин": {"system": "HRAC", "group": "5", "name": "PSII inhibitors"},
+    },
+    "fungicide": {
+        "тебуконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides"},
+        "пропиконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides"},
+        "дифеноконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides"},
+        "азоксистробин": {"system": "FRAC", "group": "11", "name": "QoI fungicides"},
+        "пираклостробин": {"system": "FRAC", "group": "11", "name": "QoI fungicides"},
+        "карбендазим": {"system": "FRAC", "group": "1", "name": "MBC fungicides"},
+        "флудиоксонил": {"system": "FRAC", "group": "12", "name": "Phenylpyrroles"},
+        "металаксил-м": {"system": "FRAC", "group": "4", "name": "Phenylamides"},
+    },
+    "insecticide": {
+        "имидаклоприд": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids"},
+        "тиаметоксам": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids"},
+        "клотианидин": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids"},
+        "лямбда-цигалотрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids"},
+        "альфа-циперметрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids"},
+        "дельтаметрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids"},
+        "хлорантранилипрол": {"system": "IRAC", "group": "28", "name": "Diamides"},
+        "абамектин": {"system": "IRAC", "group": "6", "name": "Avermectins"},
+    },
+}
+
+
+def normalize_resistance_lookup_name(name: str) -> str:
+    """Normalize names before looking them up in exact resistance group tables."""
+    normalized = normalize_substance_name(name).replace("ё", "е")
+    normalized = re.sub(r"[‐‑‒–—−]", "-", normalized)
+    normalized = re.sub(r"\s*[-]\s*", "-", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _lookup_resistance_group_in_table(substance_name: str, pesticide_type: str) -> Optional[Dict[str, Optional[str]]]:
+    table = RESISTANCE_GROUPS.get(pesticide_type, {})
+    normalized = normalize_resistance_lookup_name(substance_name)
+
+    if normalized in table:
+        return table[normalized]
+
+    # Careful partial matching: only accept an explicit known key as a full token/phrase
+    # inside parser leftovers such as "глифосат кислоты". This avoids guessing by family.
+    for known_name, group_info in table.items():
+        known_normalized = normalize_resistance_lookup_name(known_name)
+        pattern = rf"(?<![а-яa-z0-9]){re.escape(known_normalized)}(?![а-яa-z0-9])"
+        if re.search(pattern, normalized, re.IGNORECASE):
+            return group_info
+
+    return None
+
+
+def get_resistance_group(substance_name: str, pesticide_type: str) -> Dict[str, Optional[str]]:
+    """Return HRAC/FRAC/IRAC group data for a known active substance without guessing."""
+    if not substance_name:
+        return UNKNOWN_RESISTANCE_GROUP.copy()
+
+    pesticide_type = (pesticide_type or "").strip().lower()
+
+    if pesticide_type in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"}:
+        # Seed treatments may combine fungicide and insecticide active substances.
+        for lookup_type in ("fungicide", "insecticide"):
+            group_info = _lookup_resistance_group_in_table(substance_name, lookup_type)
+            if group_info:
+                return group_info.copy()
+        return UNKNOWN_RESISTANCE_GROUP.copy()
+
+    group_info = _lookup_resistance_group_in_table(substance_name, pesticide_type)
+    if group_info:
+        return group_info.copy()
+
+    return UNKNOWN_RESISTANCE_GROUP.copy()
+
+
+def annotate_substances_with_resistance(substances: List[Dict], pesticide_type: str) -> List[Dict]:
+    """Add resistance group fields to parsed substances while keeping existing fields intact."""
+    annotated = []
+    for substance in substances:
+        group_info = get_resistance_group(substance.get("name", ""), pesticide_type)
+        annotated.append({
+            **substance,
+            "resistance_system": group_info["system"],
+            "resistance_group": group_info["group"],
+            "resistance_group_name": group_info["name"],
+        })
+    return annotated
+
+
+def _substance_names_match(left_name: str, right_name: str) -> bool:
+    left_norm = normalize_substance_name(left_name)
+    right_norm = normalize_substance_name(right_name)
+    return left_norm == right_norm or left_norm in right_norm or right_norm in left_norm
+
+
+def build_resistance_group_analysis(left_active: List[Dict], right_active: List[Dict]) -> Dict[str, Any]:
+    """Compare known resistance groups without replacing the existing category comparison."""
+    unknown_group_substances = []
+    seen_unknown = set()
+
+    for side, substances in (("left", left_active), ("right", right_active)):
+        for substance in substances:
+            if not substance.get("resistance_system") or not substance.get("resistance_group"):
+                key = (side, substance.get("name"))
+                if key not in seen_unknown:
+                    unknown_group_substances.append({"side": side, "substance": substance.get("name")})
+                    seen_unknown.add(key)
+
+    same_group_bucket = {}
+    different_group_matches = []
+    seen_different = set()
+
+    for left_substance in left_active:
+        for right_substance in right_active:
+            if _substance_names_match(left_substance.get("name", ""), right_substance.get("name", "")):
+                continue
+
+            left_system = left_substance.get("resistance_system")
+            left_group = left_substance.get("resistance_group")
+            right_system = right_substance.get("resistance_system")
+            right_group = right_substance.get("resistance_group")
+
+            if not left_system or not left_group or not right_system or not right_group:
+                continue
+
+            if left_system == right_system and left_group == right_group:
+                bucket_key = (left_system, left_group, left_substance.get("resistance_group_name"))
+                bucket = same_group_bucket.setdefault(bucket_key, {"left": set(), "right": set()})
+                bucket["left"].add(left_substance.get("name"))
+                bucket["right"].add(right_substance.get("name"))
+            else:
+                pair_key = (left_substance.get("name"), left_system, left_group, right_substance.get("name"), right_system, right_group)
+                if pair_key not in seen_different:
+                    different_group_matches.append({
+                        "left_substance": left_substance.get("name"),
+                        "left_group": f"{left_system} {left_group}",
+                        "right_substance": right_substance.get("name"),
+                        "right_group": f"{right_system} {right_group}",
+                        "message": "Группы разные, ротация по механизму действия лучше.",
+                    })
+                    seen_different.add(pair_key)
+
+    same_group_matches = [
+        {
+            "system": system,
+            "group": group,
+            "group_name": group_name,
+            "left_substances": sorted(names["left"]),
+            "right_substances": sorted(names["right"]),
+            "warning": "Разные действующие вещества, но одна группа устойчивости. Это не полноценная ротация механизма действия.",
+        }
+        for (system, group, group_name), names in same_group_bucket.items()
+    ]
+
+    return {
+        "same_group_matches": same_group_matches,
+        "different_group_matches": different_group_matches,
+        "unknown_group_substances": unknown_group_substances,
+        "plain_explanation": (
+            "Группа устойчивости показывает механизм действия вещества. "
+            "Если разные вещества имеют одну группу HRAC/FRAC/IRAC, вредные организмы могут иметь перекрестную устойчивость, "
+            "поэтому это не считается полноценной ротацией. Если группа неизвестна, система не делает предположений."
+        ),
+    }
+
 def parse_rate_max(rate_raw: Optional[str]) -> Optional[float]:
     """
     Parse the maximum application rate from raw string.
@@ -766,8 +951,10 @@ async def compare_herbicides_advanced(request: AdvancedCompareRequest):
         left_active = [s for s in left_substances if not s["is_antidote"]]
         right_active = [s for s in right_substances if not s["is_antidote"]]
         
-        left_antidotes = [s for s in left_substances if s["is_antidote"]]
-        right_antidotes = [s for s in right_substances if s["is_antidote"]]
+        left_antidotes = annotate_substances_with_resistance([s for s in left_substances if s["is_antidote"]], "herbicide")
+        right_antidotes = annotate_substances_with_resistance([s for s in right_substances if s["is_antidote"]], "herbicide")
+        left_active = annotate_substances_with_resistance(left_active, "herbicide")
+        right_active = annotate_substances_with_resistance(right_active, "herbicide")
         
         # Get max application rates
         left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
@@ -920,6 +1107,8 @@ async def compare_herbicides_advanced(request: AdvancedCompareRequest):
                         "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
                     })
         
+        group_analysis = build_resistance_group_analysis(left_active, right_active)
+
         # Build response
         return {
             "left": {
@@ -954,6 +1143,7 @@ async def compare_herbicides_advanced(request: AdvancedCompareRequest):
                 "left_unique_substances": left_unique,
                 "right_unique_substances": right_unique
             },
+            "group_analysis": group_analysis,
             "price_analysis": price_analysis
         }
         
@@ -1173,8 +1363,10 @@ async def compare_insecticides_advanced(request: AdvancedCompareRequest):
         left_active = [s for s in left_substances if not s["is_antidote"]]
         right_active = [s for s in right_substances if not s["is_antidote"]]
         
-        left_antidotes = [s for s in left_substances if s["is_antidote"]]
-        right_antidotes = [s for s in right_substances if s["is_antidote"]]
+        left_antidotes = annotate_substances_with_resistance([s for s in left_substances if s["is_antidote"]], "insecticide")
+        right_antidotes = annotate_substances_with_resistance([s for s in right_substances if s["is_antidote"]], "insecticide")
+        left_active = annotate_substances_with_resistance(left_active, "insecticide")
+        right_active = annotate_substances_with_resistance(right_active, "insecticide")
         
         left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
         right_rates = [r.get("rate_raw") for r in right_records if r.get("rate_raw")]
@@ -1300,6 +1492,8 @@ async def compare_insecticides_advanced(request: AdvancedCompareRequest):
                         "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
                     })
         
+        group_analysis = build_resistance_group_analysis(left_active, right_active)
+
         return {
             "left": {
                 "product_key": left_first.get("product_key"),
@@ -1333,6 +1527,7 @@ async def compare_insecticides_advanced(request: AdvancedCompareRequest):
                 "left_unique_substances": left_unique,
                 "right_unique_substances": right_unique
             },
+            "group_analysis": group_analysis,
             "price_analysis": price_analysis
         }
         
@@ -1567,8 +1762,10 @@ async def compare_fungicides_advanced(request: AdvancedCompareRequest):
         left_active = [s for s in left_substances if not s["is_antidote"]]
         right_active = [s for s in right_substances if not s["is_antidote"]]
         
-        left_antidotes = [s for s in left_substances if s["is_antidote"]]
-        right_antidotes = [s for s in right_substances if s["is_antidote"]]
+        left_antidotes = annotate_substances_with_resistance([s for s in left_substances if s["is_antidote"]], "fungicide")
+        right_antidotes = annotate_substances_with_resistance([s for s in right_substances if s["is_antidote"]], "fungicide")
+        left_active = annotate_substances_with_resistance(left_active, "fungicide")
+        right_active = annotate_substances_with_resistance(right_active, "fungicide")
         
         left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
         right_rates = [r.get("rate_raw") for r in right_records if r.get("rate_raw")]
@@ -1694,6 +1891,8 @@ async def compare_fungicides_advanced(request: AdvancedCompareRequest):
                         "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
                     })
         
+        group_analysis = build_resistance_group_analysis(left_active, right_active)
+
         return {
             "left": {
                 "product_key": left_first.get("product_key"),
@@ -1727,6 +1926,7 @@ async def compare_fungicides_advanced(request: AdvancedCompareRequest):
                 "left_unique_substances": left_unique,
                 "right_unique_substances": right_unique
             },
+            "group_analysis": group_analysis,
             "price_analysis": price_analysis
         }
         
@@ -1952,8 +2152,10 @@ async def compare_seed_treatments_advanced(request: AdvancedCompareRequest):
         left_active = [s for s in left_substances if not s["is_antidote"]]
         right_active = [s for s in right_substances if not s["is_antidote"]]
         
-        left_antidotes = [s for s in left_substances if s["is_antidote"]]
-        right_antidotes = [s for s in right_substances if s["is_antidote"]]
+        left_antidotes = annotate_substances_with_resistance([s for s in left_substances if s["is_antidote"]], "seed-treatment")
+        right_antidotes = annotate_substances_with_resistance([s for s in right_substances if s["is_antidote"]], "seed-treatment")
+        left_active = annotate_substances_with_resistance(left_active, "seed-treatment")
+        right_active = annotate_substances_with_resistance(right_active, "seed-treatment")
         
         left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
         right_rates = [r.get("rate_raw") for r in right_records if r.get("rate_raw")]
@@ -2079,6 +2281,8 @@ async def compare_seed_treatments_advanced(request: AdvancedCompareRequest):
                         "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
                     })
         
+        group_analysis = build_resistance_group_analysis(left_active, right_active)
+
         return {
             "left": {
                 "product_key": left_first.get("product_key"),
@@ -2114,6 +2318,7 @@ async def compare_seed_treatments_advanced(request: AdvancedCompareRequest):
                 "left_unique_substances": left_unique,
                 "right_unique_substances": right_unique
             },
+            "group_analysis": group_analysis,
             "price_analysis": price_analysis
         }
         
