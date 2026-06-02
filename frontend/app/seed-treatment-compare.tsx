@@ -65,6 +65,8 @@ interface ProductInfo {
   active_substances_raw: string | null;
   registration_status: string | null;
   max_rate: number | null;
+  rate_used: number | null;
+  rate_source: 'manual' | 'max_registered';
   substances: Substance[];
   antidotes: Substance[];
   total_concentration: number;
@@ -95,6 +97,18 @@ interface GroupAnalysis {
   plain_explanation: string;
 }
 
+interface SubstanceCost {
+  side: 'left' | 'right';
+  substance_name: string;
+  name?: string;
+  concentration: number;
+  unit: string;
+  rate_used: number;
+  grams_per_ha: number;
+  estimated_cost_share_per_ha: number | null;
+  estimated_cost_per_gram: number | null;
+}
+
 interface PriceAnalysis {
   left_price_per_unit: number | null;
   right_price_per_unit: number | null;
@@ -102,12 +116,20 @@ interface PriceAnalysis {
   right_cost_per_ha: number | null;
   left_cost_per_gram_ai: number | null;
   right_cost_per_gram_ai: number | null;
-  substances_cost: {
-    side: 'left' | 'right';
-    name: string;
-    concentration: number;
-    cost_contribution_pct: number;
-  }[];
+  left_substances_cost?: SubstanceCost[];
+  right_substances_cost?: SubstanceCost[];
+  substances_cost: SubstanceCost[];
+}
+
+interface CropRegistrationSide {
+  has_registration: boolean;
+  message: string;
+}
+
+interface CropRegistration {
+  crop: string;
+  left: CropRegistrationSide;
+  right: CropRegistrationSide;
 }
 
 interface CompareResult {
@@ -121,6 +143,7 @@ interface CompareResult {
   };
   group_analysis?: GroupAnalysis;
   price_analysis: PriceAnalysis | null;
+  crop_registration?: CropRegistration;
 }
 
 export default function SeedTreatmentCompareScreen() {
@@ -131,6 +154,9 @@ export default function SeedTreatmentCompareScreen() {
   const [error, setError] = useState<string | null>(null);
   const [leftPrice, setLeftPrice] = useState('');
   const [rightPrice, setRightPrice] = useState('');
+  const [leftRate, setLeftRate] = useState('');
+  const [rightRate, setRightRate] = useState('');
+  const [crop, setCrop] = useState('');
   const [priceLoading, setPriceLoading] = useState(false);
 
   useEffect(() => {
@@ -139,8 +165,13 @@ export default function SeedTreatmentCompareScreen() {
     }
   }, [selectedSeedTreatmentsForCompare]);
 
-  const fetchCompareData = async (lPrice?: number, rPrice?: number) => {
-    if (lPrice !== undefined || rPrice !== undefined) {
+  const parseOptionalNumber = (value: string) => {
+    const parsed = value ? parseFloat(value.replace(',', '.')) : undefined;
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const fetchCompareData = async (withInputs = false) => {
+    if (withInputs) {
       setPriceLoading(true);
     } else {
       setLoading(true);
@@ -153,8 +184,15 @@ export default function SeedTreatmentCompareScreen() {
         right_key: selectedSeedTreatmentsForCompare[1],
       };
       
+      const lPrice = parseOptionalNumber(leftPrice);
+      const rPrice = parseOptionalNumber(rightPrice);
+      const lRate = parseOptionalNumber(leftRate);
+      const rRate = parseOptionalNumber(rightRate);
       if (lPrice !== undefined) body.left_price = lPrice;
       if (rPrice !== undefined) body.right_price = rPrice;
+      if (lRate !== undefined) body.left_rate = lRate;
+      if (rRate !== undefined) body.right_rate = rRate;
+      if (crop.trim()) body.crop = crop.trim();
       
       const response = await axios.post(`${API_URL}/api/seed-treatments/compare-advanced`, body);
       setCompareData(response.data);
@@ -168,11 +206,7 @@ export default function SeedTreatmentCompareScreen() {
   };
 
   const handlePriceCalculation = () => {
-    const lPrice = leftPrice ? parseFloat(leftPrice.replace(',', '.')) : undefined;
-    const rPrice = rightPrice ? parseFloat(rightPrice.replace(',', '.')) : undefined;
-    if (lPrice || rPrice) {
-      fetchCompareData(lPrice, rPrice);
-    }
+    fetchCompareData(true);
   };
 
   const handleBack = () => {
@@ -223,7 +257,7 @@ export default function SeedTreatmentCompareScreen() {
     );
   }
 
-  const { left, right, analysis, group_analysis, price_analysis } = compareData;
+  const { left, right, analysis, group_analysis, price_analysis, crop_registration } = compareData;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -260,6 +294,17 @@ export default function SeedTreatmentCompareScreen() {
                   {isActive(left.registration_status) ? 'Действует' : 'Не действует'}
                 </Text>
               </View>
+              {crop_registration && (
+                <View style={[
+                  styles.cropRegistrationBadge,
+                  crop_registration.left.has_registration ? styles.statusActiveMini : styles.statusInactiveMini
+                ]}>
+                  <Text style={[
+                    styles.cropRegistrationText,
+                    crop_registration.left.has_registration ? styles.statusTextActiveMini : styles.statusTextInactiveMini
+                  ]}>{crop_registration.left.message}</Text>
+                </View>
+              )}
             </View>
             
             <View style={styles.vsContainer}>
@@ -284,6 +329,17 @@ export default function SeedTreatmentCompareScreen() {
                   {isActive(right.registration_status) ? 'Действует' : 'Не действует'}
                 </Text>
               </View>
+              {crop_registration && (
+                <View style={[
+                  styles.cropRegistrationBadge,
+                  crop_registration.right.has_registration ? styles.statusActiveMini : styles.statusInactiveMini
+                ]}>
+                  <Text style={[
+                    styles.cropRegistrationText,
+                    crop_registration.right.has_registration ? styles.statusTextActiveMini : styles.statusTextInactiveMini
+                  ]}>{crop_registration.right.message}</Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -310,6 +366,13 @@ export default function SeedTreatmentCompareScreen() {
                 <View style={styles.summaryValues}>
                   <Text style={[styles.summaryValue, styles.leftValue]}>{left.max_rate ?? '—'}</Text>
                   <Text style={[styles.summaryValue, styles.rightValue]}>{right.max_rate ?? '—'}</Text>
+                </View>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Норма для расчёта, л/га</Text>
+                <View style={styles.summaryValues}>
+                  <Text style={[styles.summaryValue, styles.leftValue]}>{left.rate_used ?? '—'}</Text>
+                  <Text style={[styles.summaryValue, styles.rightValue]}>{right.rate_used ?? '—'}</Text>
                 </View>
               </View>
               <View style={styles.summaryRow}>
@@ -508,11 +571,47 @@ export default function SeedTreatmentCompareScreen() {
                 />
               </View>
             </View>
+
+            <View style={styles.priceInputRow}>
+              <View style={styles.priceInputContainer}>
+                <Text style={styles.priceInputLabel}>Норма препарата А</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder="Напр. 0,8"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="decimal-pad"
+                  value={leftRate}
+                  onChangeText={setLeftRate}
+                />
+              </View>
+              <View style={styles.priceInputContainer}>
+                <Text style={styles.priceInputLabel}>Норма препарата Б</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder="Напр. 1,0"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="decimal-pad"
+                  value={rightRate}
+                  onChangeText={setRightRate}
+                />
+              </View>
+            </View>
+
+            <View style={styles.cropInputContainer}>
+              <Text style={styles.priceInputLabel}>Культура для проверки регистрации</Text>
+              <TextInput
+                style={styles.priceInput}
+                placeholder="Напр. подсолнечник"
+                placeholderTextColor="#9CA3AF"
+                value={crop}
+                onChangeText={setCrop}
+              />
+            </View>
             
             <TouchableOpacity 
               style={styles.calculateButton}
               onPress={handlePriceCalculation}
-              disabled={priceLoading || (!leftPrice && !rightPrice)}
+              disabled={priceLoading}
             >
               {priceLoading ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
@@ -528,7 +627,7 @@ export default function SeedTreatmentCompareScreen() {
             {price_analysis && (price_analysis.left_price_per_unit || price_analysis.right_price_per_unit) && (
               <View style={styles.priceResults}>
                 <View style={styles.priceResultRow}>
-                  <Text style={styles.priceResultLabel}>Стоимость 1 га, ₽</Text>
+                  <Text style={styles.priceResultLabel}>Стоимость обработки 1 га, ₽</Text>
                   <View style={styles.priceResultValues}>
                     <Text style={[
                       styles.priceResultValue, 
@@ -549,25 +648,29 @@ export default function SeedTreatmentCompareScreen() {
                   </View>
                 </View>
                 
-                <View style={styles.priceResultRow}>
-                  <Text style={styles.priceResultLabel}>Стоимость 1 г ДВ, ₽</Text>
-                  <View style={styles.priceResultValues}>
-                    <Text style={[
-                      styles.priceResultValue, 
-                      styles.leftValue,
-                      price_analysis.left_cost_per_gram_ai && price_analysis.right_cost_per_gram_ai && 
-                      price_analysis.left_cost_per_gram_ai < price_analysis.right_cost_per_gram_ai ? styles.winnerValue : null
-                    ]}>
-                      {price_analysis.left_cost_per_gram_ai?.toFixed(2) ?? '—'}
-                    </Text>
-                    <Text style={[
-                      styles.priceResultValue, 
-                      styles.rightValue,
-                      price_analysis.left_cost_per_gram_ai && price_analysis.right_cost_per_gram_ai && 
-                      price_analysis.right_cost_per_gram_ai < price_analysis.left_cost_per_gram_ai ? styles.winnerValue : null
-                    ]}>
-                      {price_analysis.right_cost_per_gram_ai?.toFixed(2) ?? '—'}
-                    </Text>
+                <View style={styles.substanceCostBlock}>
+                  <Text style={styles.substanceCostTitle}>Стоимость действующих веществ</Text>
+                  <View style={styles.substanceCostColumns}>
+                    <View style={styles.substanceCostColumn}>
+                      {(price_analysis.left_substances_cost ?? price_analysis.substances_cost.filter(item => item.side === 'left')).map((item, idx) => (
+                        <View key={`left-cost-${idx}`} style={styles.substanceCostItem}>
+                          <Text style={[styles.substanceCostName, styles.leftValue]}>{item.substance_name || item.name}</Text>
+                          <Text style={styles.substanceCostText}>{item.grams_per_ha?.toFixed(2) ?? '—'} г/га</Text>
+                          <Text style={styles.substanceCostText}>{item.estimated_cost_share_per_ha?.toFixed(0) ?? '—'} ₽/га</Text>
+                          <Text style={styles.substanceCostText}>{item.estimated_cost_per_gram?.toFixed(2) ?? '—'} ₽/г</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <View style={styles.substanceCostColumn}>
+                      {(price_analysis.right_substances_cost ?? price_analysis.substances_cost.filter(item => item.side === 'right')).map((item, idx) => (
+                        <View key={`right-cost-${idx}`} style={styles.substanceCostItem}>
+                          <Text style={[styles.substanceCostName, styles.rightValue]}>{item.substance_name || item.name}</Text>
+                          <Text style={styles.substanceCostText}>{item.grams_per_ha?.toFixed(2) ?? '—'} г/га</Text>
+                          <Text style={styles.substanceCostText}>{item.estimated_cost_share_per_ha?.toFixed(0) ?? '—'} ₽/га</Text>
+                          <Text style={styles.substanceCostText}>{item.estimated_cost_per_gram?.toFixed(2) ?? '—'} ₽/г</Text>
+                        </View>
+                      ))}
+                    </View>
                   </View>
                 </View>
               </View>
@@ -730,6 +833,17 @@ const styles = StyleSheet.create({
   },
   statusTextInactiveMini: {
     color: '#DC2626',
+  },
+  cropRegistrationBadge: {
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  cropRegistrationText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   summarySection: {
     backgroundColor: '#FFFFFF',
@@ -946,6 +1060,9 @@ const styles = StyleSheet.create({
   priceInputContainer: {
     flex: 1,
   },
+  cropInputContainer: {
+    marginTop: 12,
+  },
   priceInputLabel: {
     fontSize: 12,
     color: '#6B7280',
@@ -980,6 +1097,37 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
     gap: 12,
+  },
+  substanceCostBlock: {
+    marginTop: 12,
+  },
+  substanceCostTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  substanceCostColumns: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  substanceCostColumn: {
+    flex: 1,
+    gap: 8,
+  },
+  substanceCostItem: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    padding: 8,
+  },
+  substanceCostName: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  substanceCostText: {
+    fontSize: 11,
+    color: '#6B7280',
   },
   priceResultRow: {
     flexDirection: 'row',

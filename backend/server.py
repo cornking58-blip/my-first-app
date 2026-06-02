@@ -95,6 +95,9 @@ class AdvancedCompareRequest(BaseModel):
     right_key: str
     left_price: Optional[float] = None  # Price per L/kg
     right_price: Optional[float] = None  # Price per L/kg
+    left_rate: Optional[float] = None  # Manual rate for comparison only
+    right_rate: Optional[float] = None  # Manual rate for comparison only
+    crop: Optional[str] = None  # Optional crop to check product registration rows
 
 
 class SearchResult(BaseModel):
@@ -176,6 +179,18 @@ def make_flexible_text_regex(value: str) -> str:
 
 def build_flexible_field_match(field: str, value: str) -> dict:
     return {field: {"$regex": make_flexible_text_regex(value), "$options": "i"}}
+
+
+HARMFUL_OBJECT_FIELDS = (
+    "target_object",
+    "harmful_object",
+    "harmful_objects",
+    "disease",
+    "diseases",
+)
+
+FUNGICIDE_HARMFUL_OBJECT_FIELDS = HARMFUL_OBJECT_FIELDS
+TARGET_OBJECT_IMPORT_COLUMNS = HARMFUL_OBJECT_FIELDS
 
 
 def build_registration_filters(
@@ -491,8 +506,46 @@ def _substance_names_match(left_name: str, right_name: str) -> bool:
     return left_norm == right_norm or left_norm in right_norm or right_norm in left_norm
 
 
+def _known_group_key(substance: Dict) -> Optional[tuple]:
+    system = substance.get("resistance_system")
+    group = substance.get("resistance_group")
+    if not system or not group:
+        return None
+    return (system, group)
+
+
+def _active_substance_name_set(substances: List[Dict]) -> set:
+    return {normalize_substance_name(s.get("name", "")) for s in substances if s.get("name")}
+
+
+def _resistance_reference_groups(substances: List[Dict]) -> List[Dict[str, Optional[str]]]:
+    references = []
+    seen = set()
+    for substance in substances:
+        key = (
+            normalize_substance_name(substance.get("name", "")),
+            substance.get("resistance_system"),
+            substance.get("resistance_group"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        references.append({
+            "substance": substance.get("name"),
+            "system": substance.get("resistance_system"),
+            "group": substance.get("resistance_group"),
+            "group_name": substance.get("resistance_group_name") or "группа не определена",
+            "message": (
+                f"{substance.get('resistance_system')} {substance.get('resistance_group')} — {substance.get('resistance_group_name')}"
+                if substance.get("resistance_system") and substance.get("resistance_group")
+                else "группа не определена"
+            ),
+        })
+    return references
+
+
 def build_resistance_group_analysis(left_active: List[Dict], right_active: List[Dict]) -> Dict[str, Any]:
-    """Compare known resistance groups without replacing the existing category comparison."""
+    """Compare resistance groups as neutral product information, not agronomic advice."""
     unknown_group_substances = []
     seen_unknown = set()
 
@@ -501,8 +554,30 @@ def build_resistance_group_analysis(left_active: List[Dict], right_active: List[
             if not substance.get("resistance_system") or not substance.get("resistance_group"):
                 key = (side, substance.get("name"))
                 if key not in seen_unknown:
-                    unknown_group_substances.append({"side": side, "substance": substance.get("name")})
+                    unknown_group_substances.append({
+                        "side": side,
+                        "substance": substance.get("name"),
+                        "message": "группа не определена",
+                    })
                     seen_unknown.add(key)
+
+    reference_groups = {
+        "left": _resistance_reference_groups(left_active),
+        "right": _resistance_reference_groups(right_active),
+    }
+    left_names = _active_substance_name_set(left_active)
+    right_names = _active_substance_name_set(right_active)
+    identical_sets = bool(left_names or right_names) and left_names == right_names
+
+    if identical_sets:
+        return {
+            "same_group_matches": [],
+            "different_group_matches": [],
+            "unknown_group_substances": unknown_group_substances,
+            "reference_groups": reference_groups,
+            "identical_active_substance_sets": True,
+            "plain_explanation": "Действующие вещества совпадают. Группы устойчивости указаны справочно.",
+        }
 
     same_group_bucket = {}
     different_group_matches = []
@@ -513,15 +588,15 @@ def build_resistance_group_analysis(left_active: List[Dict], right_active: List[
             if _substance_names_match(left_substance.get("name", ""), right_substance.get("name", "")):
                 continue
 
-            left_system = left_substance.get("resistance_system")
-            left_group = left_substance.get("resistance_group")
-            right_system = right_substance.get("resistance_system")
-            right_group = right_substance.get("resistance_group")
-
-            if not left_system or not left_group or not right_system or not right_group:
+            left_key = _known_group_key(left_substance)
+            right_key = _known_group_key(right_substance)
+            if not left_key or not right_key:
                 continue
 
-            if left_system == right_system and left_group == right_group:
+            left_system, left_group = left_key
+            right_system, right_group = right_key
+
+            if left_key == right_key:
                 bucket_key = (left_system, left_group, left_substance.get("resistance_group_name"))
                 bucket = same_group_bucket.setdefault(bucket_key, {"left": set(), "right": set()})
                 bucket["left"].add(left_substance.get("name"))
@@ -534,7 +609,7 @@ def build_resistance_group_analysis(left_active: List[Dict], right_active: List[
                         "left_group": f"{left_system} {left_group}",
                         "right_substance": right_substance.get("name"),
                         "right_group": f"{right_system} {right_group}",
-                        "message": "Группы разные, ротация по механизму действия лучше.",
+                        "message": "Действующие вещества и группы устойчивости разные.",
                     })
                     seen_different.add(pair_key)
 
@@ -545,20 +620,27 @@ def build_resistance_group_analysis(left_active: List[Dict], right_active: List[
             "group_name": group_name,
             "left_substances": sorted(names["left"]),
             "right_substances": sorted(names["right"]),
-            "warning": "Разные действующие вещества, но одна группа устойчивости. Это не полноценная ротация механизма действия.",
+            "warning": "Действующие вещества разные, но группа устойчивости одна. По механизму действия препараты близки.",
         }
         for (system, group, group_name), names in same_group_bucket.items()
     ]
+
+    if same_group_matches:
+        plain_explanation = "Действующие вещества разные, но группа устойчивости одна. По механизму действия препараты близки."
+    elif different_group_matches:
+        plain_explanation = "Действующие вещества и группы устойчивости разные."
+    elif unknown_group_substances:
+        plain_explanation = "Для части действующих веществ группа не определена."
+    else:
+        plain_explanation = "Группы устойчивости указаны справочно."
 
     return {
         "same_group_matches": same_group_matches,
         "different_group_matches": different_group_matches,
         "unknown_group_substances": unknown_group_substances,
-        "plain_explanation": (
-            "Группа устойчивости показывает механизм действия вещества. "
-            "Если разные вещества имеют одну группу HRAC/FRAC/IRAC, вредные организмы могут иметь перекрестную устойчивость, "
-            "поэтому это не считается полноценной ротацией. Если группа неизвестна, система не делает предположений."
-        ),
+        "reference_groups": reference_groups,
+        "identical_active_substance_sets": False,
+        "plain_explanation": plain_explanation,
     }
 
 def parse_rate_max(rate_raw: Optional[str]) -> Optional[float]:
@@ -588,16 +670,301 @@ def parse_rate_max(rate_raw: Optional[str]) -> Optional[float]:
     
     return max(rates) if rates else None
 
+def select_comparison_rate(manual_rate: Optional[float], registered_rate: Optional[float]) -> tuple[Optional[float], str]:
+    """Use a manual comparison rate when provided; otherwise keep max registered rate behavior."""
+    if manual_rate is not None:
+        return manual_rate, "manual"
+    return registered_rate, "max_registered"
+
+
+def get_max_registered_rate(records: List[Dict]) -> Optional[float]:
+    rates = []
+    for record in records:
+        parsed = parse_rate_max(record.get("rate_raw"))
+        if parsed is not None:
+            rates.append(parsed)
+    return max(rates, default=None)
+
+
+def build_substance_cost_breakdown(side: str, substances: List[Dict], price: Optional[float], rate_used: Optional[float]) -> List[Dict[str, Any]]:
+    """Estimate cost metrics for each active substance separately."""
+    if not price or not rate_used:
+        return []
+
+    breakdown = []
+    total_cost_per_ha = price * rate_used
+    total_concentration = sum(s.get("concentration") or 0 for s in substances)
+
+    for substance in substances:
+        concentration = substance.get("concentration") or 0
+        if concentration <= 0:
+            continue
+
+        grams_per_ha = concentration * rate_used
+        estimated_cost_share_per_ha = (
+            total_cost_per_ha * concentration / total_concentration
+            if total_concentration > 0 else None
+        )
+        estimated_cost_per_gram = (
+            estimated_cost_share_per_ha / grams_per_ha
+            if estimated_cost_share_per_ha is not None and grams_per_ha > 0 else None
+        )
+
+        breakdown.append({
+            "side": side,
+            "substance_name": substance.get("name"),
+            "name": substance.get("name"),  # Backward-friendly alias for existing frontend code.
+            "concentration": concentration,
+            "unit": substance.get("unit"),
+            "rate_used": rate_used,
+            "grams_per_ha": round(grams_per_ha, 4),
+            "estimated_cost_share_per_ha": round(estimated_cost_share_per_ha, 4) if estimated_cost_share_per_ha is not None else None,
+            "estimated_cost_per_gram": round(estimated_cost_per_gram, 6) if estimated_cost_per_gram is not None else None,
+        })
+
+    return breakdown
+
+
+def build_price_analysis(
+    left_price: Optional[float],
+    right_price: Optional[float],
+    left_rate_used: Optional[float],
+    right_rate_used: Optional[float],
+    left_active: List[Dict],
+    right_active: List[Dict],
+) -> Optional[Dict[str, Any]]:
+    if not left_price and not right_price:
+        return None
+
+    left_total_concentration = sum(s["concentration"] for s in left_active)
+    right_total_concentration = sum(s["concentration"] for s in right_active)
+    left_substances_cost = build_substance_cost_breakdown("left", left_active, left_price, left_rate_used)
+    right_substances_cost = build_substance_cost_breakdown("right", right_active, right_price, right_rate_used)
+
+    return {
+        "left_price_per_unit": left_price,
+        "right_price_per_unit": right_price,
+        "left_cost_per_ha": round(left_price * left_rate_used, 2) if left_price and left_rate_used else None,
+        "right_cost_per_ha": round(right_price * right_rate_used, 2) if right_price and right_rate_used else None,
+        # Kept for compatibility, but frontend now highlights per-substance costs for multi-component products.
+        "left_cost_per_gram_ai": round(left_price / left_total_concentration, 4) if left_price and left_total_concentration > 0 else None,
+        "right_cost_per_gram_ai": round(right_price / right_total_concentration, 4) if right_price and right_total_concentration > 0 else None,
+        "left_substances_cost": left_substances_cost,
+        "right_substances_cost": right_substances_cost,
+        "substances_cost": left_substances_cost + right_substances_cost,
+    }
+
+
+def normalize_crop_for_registration(crop: Optional[str]) -> str:
+    return normalize_search_text(crop or "")
+
+
+def has_crop_registration(records: List[Dict], crop: Optional[str]) -> bool:
+    target_crop = normalize_crop_for_registration(crop)
+    if not target_crop:
+        return False
+
+    for record in records:
+        record_crop = normalize_crop_for_registration(record.get("crop"))
+        if record_crop and (record_crop == target_crop or target_crop in record_crop or record_crop in target_crop):
+            return True
+    return False
+
+
+def build_crop_registration(crop: Optional[str], left_records: List[Dict], right_records: List[Dict]) -> Optional[Dict[str, Any]]:
+    normalized_crop = (crop or "").strip()
+    if not normalized_crop:
+        return None
+
+    left_has_registration = has_crop_registration(left_records, normalized_crop)
+    right_has_registration = has_crop_registration(right_records, normalized_crop)
+
+    return {
+        "crop": normalized_crop,
+        "left": {
+            "has_registration": left_has_registration,
+            "message": "Есть регистрация на выбранную культуру" if left_has_registration else "Нет регистрации на выбранную культуру",
+        },
+        "right": {
+            "has_registration": right_has_registration,
+            "message": "Есть регистрация на выбранную культуру" if right_has_registration else "Нет регистрации на выбранную культуру",
+        },
+    }
+
+
+async def build_advanced_compare_response(
+    request: AdvancedCompareRequest,
+    collection,
+    pesticide_type: str,
+    left_not_found: str = "Left product not found",
+    right_not_found: str = "Right product not found",
+) -> Dict[str, Any]:
+    """Build one advanced comparison response while endpoint URLs remain unchanged."""
+    left_records = await collection.find({"product_key": request.left_key}).to_list(length=1000)
+    right_records = await collection.find({"product_key": request.right_key}).to_list(length=1000)
+
+    if not left_records:
+        raise HTTPException(status_code=404, detail=left_not_found)
+    if not right_records:
+        raise HTTPException(status_code=404, detail=right_not_found)
+
+    left_first = left_records[0]
+    right_first = right_records[0]
+
+    left_substances = parse_active_substances(left_first.get("active_substances_raw"))
+    right_substances = parse_active_substances(right_first.get("active_substances_raw"))
+
+    left_active = [s for s in left_substances if not s["is_antidote"]]
+    right_active = [s for s in right_substances if not s["is_antidote"]]
+
+    left_antidotes = annotate_substances_with_resistance([s for s in left_substances if s["is_antidote"]], pesticide_type)
+    right_antidotes = annotate_substances_with_resistance([s for s in right_substances if s["is_antidote"]], pesticide_type)
+    left_active = annotate_substances_with_resistance(left_active, pesticide_type)
+    right_active = annotate_substances_with_resistance(right_active, pesticide_type)
+
+    left_max_rate = get_max_registered_rate(left_records)
+    right_max_rate = get_max_registered_rate(right_records)
+    left_rate_used, left_rate_source = select_comparison_rate(request.left_rate, left_max_rate)
+    right_rate_used, right_rate_source = select_comparison_rate(request.right_rate, right_max_rate)
+
+    identical_substances = []
+    similar_by_category = []
+
+    for left_substance in left_active:
+        left_name_norm = normalize_substance_name(left_substance["name"])
+        for right_substance in right_active:
+            right_name_norm = normalize_substance_name(right_substance["name"])
+            if left_name_norm == right_name_norm or left_name_norm in right_name_norm or right_name_norm in left_name_norm:
+                left_per_ha = (left_substance["concentration"] * left_rate_used) if left_rate_used else None
+                right_per_ha = (right_substance["concentration"] * right_rate_used) if right_rate_used else None
+                identical_substances.append({
+                    "name": left_substance["name"],
+                    "left_concentration": left_substance["concentration"],
+                    "right_concentration": right_substance["concentration"],
+                    "left_unit": left_substance["unit"],
+                    "right_unit": right_substance["unit"],
+                    "left_per_ha": round(left_per_ha, 2) if left_per_ha else None,
+                    "right_per_ha": round(right_per_ha, 2) if right_per_ha else None,
+                    "concentration_diff": round(abs(left_substance["concentration"] - right_substance["concentration"]), 2),
+                    "same_concentration": abs(left_substance["concentration"] - right_substance["concentration"]) < 0.01,
+                    "resistance_system": left_substance.get("resistance_system") or right_substance.get("resistance_system"),
+                    "resistance_group": left_substance.get("resistance_group") or right_substance.get("resistance_group"),
+                    "resistance_group_name": left_substance.get("resistance_group_name") or right_substance.get("resistance_group_name"),
+                })
+
+    left_categories = {get_substance_category(s["name"]): s for s in left_active}
+    right_categories = {get_substance_category(s["name"]): s for s in right_active}
+    for category in set(left_categories.keys()) & set(right_categories.keys()):
+        if category != "Другие":
+            left_cat_subs = [s for s in left_active if get_substance_category(s["name"]) == category]
+            right_cat_subs = [s for s in right_active if get_substance_category(s["name"]) == category]
+            if not any(_substance_names_match(l["name"], r["name"]) for l in left_cat_subs for r in right_cat_subs):
+                similar_by_category.append({
+                    "category": category,
+                    "left_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} for s in left_cat_subs],
+                    "right_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} for s in right_cat_subs],
+                    "note": "Разные действующие вещества одной функциональной группы"
+                })
+
+    left_unique = []
+    for substance in left_active:
+        name_norm = normalize_substance_name(substance["name"])
+        if not any(
+            name_norm == normalize_substance_name(item["name"]) or
+            name_norm in normalize_substance_name(item["name"]) or
+            normalize_substance_name(item["name"]) in name_norm
+            for item in identical_substances
+        ):
+            per_ha = (substance["concentration"] * left_rate_used) if left_rate_used else None
+            left_unique.append({
+                **substance,
+                "category": get_substance_category(substance["name"]),
+                "per_ha": round(per_ha, 2) if per_ha else None,
+            })
+
+    right_unique = []
+    for substance in right_active:
+        name_norm = normalize_substance_name(substance["name"])
+        if not any(
+            name_norm == normalize_substance_name(item["name"]) or
+            name_norm in normalize_substance_name(item["name"]) or
+            normalize_substance_name(item["name"]) in name_norm
+            for item in identical_substances
+        ):
+            per_ha = (substance["concentration"] * right_rate_used) if right_rate_used else None
+            right_unique.append({
+                **substance,
+                "category": get_substance_category(substance["name"]),
+                "per_ha": round(per_ha, 2) if per_ha else None,
+            })
+
+    left_total_concentration = sum(s["concentration"] for s in left_active)
+    right_total_concentration = sum(s["concentration"] for s in right_active)
+    left_total_per_ha = (left_total_concentration * left_rate_used) if left_rate_used else None
+    right_total_per_ha = (right_total_concentration * right_rate_used) if right_rate_used else None
+
+    group_analysis = build_resistance_group_analysis(left_active, right_active)
+    price_analysis = build_price_analysis(
+        request.left_price,
+        request.right_price,
+        left_rate_used,
+        right_rate_used,
+        left_active,
+        right_active,
+    )
+    crop_registration = build_crop_registration(request.crop, left_records, right_records)
+
+    analysis = {
+        "identical_substances": identical_substances,
+        "similar_by_category": similar_by_category,
+        "left_unique_substances": left_unique,
+        "right_unique_substances": right_unique,
+    }
+    response = {
+        "left": {
+            "product_key": left_first.get("product_key"),
+            "product_name": left_first.get("product_name"),
+            "formulation": left_first.get("formulation"),
+            "active_substances_raw": left_first.get("active_substances_raw"),
+            "registration_status": left_first.get("registration_status"),
+            "max_rate": left_max_rate,
+            "rate_used": left_rate_used,
+            "rate_source": left_rate_source,
+            "substances": left_active,
+            "antidotes": left_antidotes,
+            "total_concentration": left_total_concentration,
+            "total_per_ha": round(left_total_per_ha, 2) if left_total_per_ha else None,
+            "substance_count": len(left_active),
+        },
+        "right": {
+            "product_key": right_first.get("product_key"),
+            "product_name": right_first.get("product_name"),
+            "formulation": right_first.get("formulation"),
+            "active_substances_raw": right_first.get("active_substances_raw"),
+            "registration_status": right_first.get("registration_status"),
+            "max_rate": right_max_rate,
+            "rate_used": right_rate_used,
+            "rate_source": right_rate_source,
+            "substances": right_active,
+            "antidotes": right_antidotes,
+            "total_concentration": right_total_concentration,
+            "total_per_ha": round(right_total_per_ha, 2) if right_total_per_ha else None,
+            "substance_count": len(right_active),
+        },
+        "analysis": analysis,
+        "identical_substances": identical_substances,
+        "similar_by_category": similar_by_category,
+        "left_unique_substances": left_unique,
+        "right_unique_substances": right_unique,
+        "group_analysis": group_analysis,
+        "price_analysis": price_analysis,
+    }
+    if crop_registration:
+        response["crop_registration"] = crop_registration
+    return response
+
 
 # ==================== HELPER FUNCTIONS ====================
-
-TARGET_OBJECT_IMPORT_COLUMNS = (
-    "target_object",
-    "harmful_object",
-    "harmful_objects",
-    "disease",
-    "diseases",
-)
 
 
 def clean_value(val) -> Optional[str]:
@@ -915,246 +1282,20 @@ async def compare_herbicides(request: CompareRequest):
 
 @api_router.post("/herbicides/compare-advanced")
 async def compare_herbicides_advanced(request: AdvancedCompareRequest):
-    """
-    Advanced comparison of two herbicides with active substance analysis.
-    
-    Compares:
-    1. Identical active substances by name
-    2. Concentration comparison
-    3. Per hectare at max application rate
-    4. Similar substances by functional category
-    5. Price analysis (if prices provided)
-    """
+    """Advanced comparison endpoint; URL unchanged, shared implementation."""
     try:
-        # Fetch product records
-        left_records = await db.herbicide_records.find(
-            {"product_key": request.left_key}
-        ).to_list(length=1000)
-        
-        right_records = await db.herbicide_records.find(
-            {"product_key": request.right_key}
-        ).to_list(length=1000)
-        
-        if not left_records:
-            raise HTTPException(status_code=404, detail="Left product not found")
-        if not right_records:
-            raise HTTPException(status_code=404, detail="Right product not found")
-        
-        left_first = left_records[0]
-        right_first = right_records[0]
-        
-        # Parse active substances
-        left_substances = parse_active_substances(left_first.get("active_substances_raw"))
-        right_substances = parse_active_substances(right_first.get("active_substances_raw"))
-        
-        # Filter out antidotes for main comparison
-        left_active = [s for s in left_substances if not s["is_antidote"]]
-        right_active = [s for s in right_substances if not s["is_antidote"]]
-        
-        left_antidotes = annotate_substances_with_resistance([s for s in left_substances if s["is_antidote"]], "herbicide")
-        right_antidotes = annotate_substances_with_resistance([s for s in right_substances if s["is_antidote"]], "herbicide")
-        left_active = annotate_substances_with_resistance(left_active, "herbicide")
-        right_active = annotate_substances_with_resistance(right_active, "herbicide")
-        
-        # Get max application rates
-        left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
-        right_rates = [r.get("rate_raw") for r in right_records if r.get("rate_raw")]
-        
-        left_max_rate = max([parse_rate_max(r) for r in left_rates if parse_rate_max(r)], default=None)
-        right_max_rate = max([parse_rate_max(r) for r in right_rates if parse_rate_max(r)], default=None)
-        
-        # 1. Find identical substances
-        identical_substances = []
-        for l_sub in left_active:
-            l_name_norm = normalize_substance_name(l_sub["name"])
-            for r_sub in right_active:
-                r_name_norm = normalize_substance_name(r_sub["name"])
-                if l_name_norm == r_name_norm or l_name_norm in r_name_norm or r_name_norm in l_name_norm:
-                    # Calculate per hectare at max rate
-                    l_per_ha = (l_sub["concentration"] * left_max_rate) if left_max_rate else None
-                    r_per_ha = (r_sub["concentration"] * right_max_rate) if right_max_rate else None
-                    
-                    identical_substances.append({
-                        "name": l_sub["name"],
-                        "left_concentration": l_sub["concentration"],
-                        "left_unit": l_sub["unit"],
-                        "right_concentration": r_sub["concentration"],
-                        "right_unit": r_sub["unit"],
-                        "left_per_ha": round(l_per_ha, 2) if l_per_ha else None,
-                        "right_per_ha": round(r_per_ha, 2) if r_per_ha else None,
-                        "winner": "left" if (l_per_ha and r_per_ha and l_per_ha > r_per_ha) else 
-                                  ("right" if (l_per_ha and r_per_ha and r_per_ha > l_per_ha) else "equal")
-                    })
-        
-        # 2. Find similar by category (different substance, same mechanism)
-        similar_by_category = []
-        
-        # Get categories for all substances
-        left_categories = {s["name"]: get_substance_category(s["name"]) for s in left_active}
-        right_categories = {s["name"]: get_substance_category(s["name"]) for s in right_active}
-        
-        # Group by category
-        left_by_category = {}
-        for s in left_active:
-            cat = get_substance_category(s["name"])
-            if cat not in left_by_category:
-                left_by_category[cat] = []
-            left_by_category[cat].append(s)
-        
-        right_by_category = {}
-        for s in right_active:
-            cat = get_substance_category(s["name"])
-            if cat not in right_by_category:
-                right_by_category[cat] = []
-            right_by_category[cat].append(s)
-        
-        # Find common categories with different substances
-        for cat in left_by_category:
-            if cat in right_by_category and cat != "Другие":
-                left_names = set(normalize_substance_name(s["name"]) for s in left_by_category[cat])
-                right_names = set(normalize_substance_name(s["name"]) for s in right_by_category[cat])
-                
-                # If substances are different but category is same
-                if not (left_names & right_names):
-                    similar_by_category.append({
-                        "category": cat,
-                        "left_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
-                                           for s in left_by_category[cat]],
-                        "right_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
-                                            for s in right_by_category[cat]]
-                    })
-        
-        # 3. Unique substances (only in one product)
-        identical_names_left = set(normalize_substance_name(s["name"]) for s in [i for i in identical_substances])
-        identical_names_right = identical_names_left
-        
-        left_unique = []
-        for s in left_active:
-            name_norm = normalize_substance_name(s["name"])
-            if not any(name_norm == normalize_substance_name(i["name"]) or 
-                      name_norm in normalize_substance_name(i["name"]) or
-                      normalize_substance_name(i["name"]) in name_norm
-                      for i in identical_substances):
-                per_ha = (s["concentration"] * left_max_rate) if left_max_rate else None
-                left_unique.append({
-                    **s,
-                    "category": get_substance_category(s["name"]),
-                    "per_ha": round(per_ha, 2) if per_ha else None
-                })
-        
-        right_unique = []
-        for s in right_active:
-            name_norm = normalize_substance_name(s["name"])
-            if not any(name_norm == normalize_substance_name(i["name"]) or 
-                      name_norm in normalize_substance_name(i["name"]) or
-                      normalize_substance_name(i["name"]) in name_norm
-                      for i in identical_substances):
-                per_ha = (s["concentration"] * right_max_rate) if right_max_rate else None
-                right_unique.append({
-                    **s,
-                    "category": get_substance_category(s["name"]),
-                    "per_ha": round(per_ha, 2) if per_ha else None
-                })
-        
-        # 4. Total concentration sums
-        left_total_concentration = sum(s["concentration"] for s in left_active)
-        right_total_concentration = sum(s["concentration"] for s in right_active)
-        
-        left_total_per_ha = (left_total_concentration * left_max_rate) if left_max_rate else None
-        right_total_per_ha = (right_total_concentration * right_max_rate) if right_max_rate else None
-        
-        # 5. Price analysis
-        price_analysis = None
-        if request.left_price or request.right_price:
-            price_analysis = {
-                "left_price_per_unit": request.left_price,
-                "right_price_per_unit": request.right_price,
-                "left_cost_per_ha": round(request.left_price * left_max_rate, 2) if request.left_price and left_max_rate else None,
-                "right_cost_per_ha": round(request.right_price * right_max_rate, 2) if request.right_price and right_max_rate else None,
-                "left_cost_per_gram_ai": None,
-                "right_cost_per_gram_ai": None,
-                "substances_cost": []
-            }
-            
-            # Cost per gram of active ingredient
-            if request.left_price and left_total_concentration > 0:
-                # Price per L or kg / concentration in g/L or g/kg = price per gram
-                price_analysis["left_cost_per_gram_ai"] = round(request.left_price / left_total_concentration, 4)
-            
-            if request.right_price and right_total_concentration > 0:
-                price_analysis["right_cost_per_gram_ai"] = round(request.right_price / right_total_concentration, 4)
-            
-            # Per-substance cost analysis
-            for s in left_active:
-                if request.left_price and s["concentration"] > 0:
-                    cost_per_g = request.left_price / s["concentration"] if s["concentration"] > 0 else None
-                    cost_per_ha = (s["concentration"] * left_max_rate * request.left_price / 1000) if left_max_rate else None
-                    price_analysis["substances_cost"].append({
-                        "side": "left",
-                        "name": s["name"],
-                        "concentration": s["concentration"],
-                        "cost_contribution_pct": round(s["concentration"] / left_total_concentration * 100, 1) if left_total_concentration > 0 else 0
-                    })
-            
-            for s in right_active:
-                if request.right_price and s["concentration"] > 0:
-                    cost_per_g = request.right_price / s["concentration"] if s["concentration"] > 0 else None
-                    cost_per_ha = (s["concentration"] * right_max_rate * request.right_price / 1000) if right_max_rate else None
-                    price_analysis["substances_cost"].append({
-                        "side": "right",
-                        "name": s["name"],
-                        "concentration": s["concentration"],
-                        "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
-                    })
-        
-        group_analysis = build_resistance_group_analysis(left_active, right_active)
-
-        # Build response
-        return {
-            "left": {
-                "product_key": left_first.get("product_key"),
-                "product_name": left_first.get("product_name"),
-                "formulation": left_first.get("formulation"),
-                "active_substances_raw": left_first.get("active_substances_raw"),
-                "registration_status": left_first.get("registration_status"),
-                "max_rate": left_max_rate,
-                "substances": left_active,
-                "antidotes": left_antidotes,
-                "total_concentration": left_total_concentration,
-                "total_per_ha": round(left_total_per_ha, 2) if left_total_per_ha else None,
-                "substance_count": len(left_active)
-            },
-            "right": {
-                "product_key": right_first.get("product_key"),
-                "product_name": right_first.get("product_name"),
-                "formulation": right_first.get("formulation"),
-                "active_substances_raw": right_first.get("active_substances_raw"),
-                "registration_status": right_first.get("registration_status"),
-                "max_rate": right_max_rate,
-                "substances": right_active,
-                "antidotes": right_antidotes,
-                "total_concentration": right_total_concentration,
-                "total_per_ha": round(right_total_per_ha, 2) if right_total_per_ha else None,
-                "substance_count": len(right_active)
-            },
-            "analysis": {
-                "identical_substances": identical_substances,
-                "similar_by_category": similar_by_category,
-                "left_unique_substances": left_unique,
-                "right_unique_substances": right_unique
-            },
-            "group_analysis": group_analysis,
-            "price_analysis": price_analysis
-        }
-        
+        return await build_advanced_compare_response(
+            request,
+            db.herbicide_records,
+            "herbicide",
+            "Left product not found",
+            "Right product not found",
+        )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Advanced compare failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==================== INSECTICIDE ENDPOINTS ====================
 
 @api_router.post("/admin/import-insecticides")
 async def import_insecticides(file: UploadFile = File(...)):
@@ -1339,219 +1480,20 @@ async def get_insecticide(product_key: str):
 
 @api_router.post("/insecticides/compare-advanced")
 async def compare_insecticides_advanced(request: AdvancedCompareRequest):
-    """Advanced comparison of two insecticides with active substance analysis."""
+    """Advanced comparison endpoint; URL unchanged, shared implementation."""
     try:
-        left_records = await db.insecticide_records.find(
-            {"product_key": request.left_key}
-        ).to_list(length=1000)
-        
-        right_records = await db.insecticide_records.find(
-            {"product_key": request.right_key}
-        ).to_list(length=1000)
-        
-        if not left_records:
-            raise HTTPException(status_code=404, detail="Left insecticide not found")
-        if not right_records:
-            raise HTTPException(status_code=404, detail="Right insecticide not found")
-        
-        left_first = left_records[0]
-        right_first = right_records[0]
-        
-        left_substances = parse_active_substances(left_first.get("active_substances_raw"))
-        right_substances = parse_active_substances(right_first.get("active_substances_raw"))
-        
-        left_active = [s for s in left_substances if not s["is_antidote"]]
-        right_active = [s for s in right_substances if not s["is_antidote"]]
-        
-        left_antidotes = annotate_substances_with_resistance([s for s in left_substances if s["is_antidote"]], "insecticide")
-        right_antidotes = annotate_substances_with_resistance([s for s in right_substances if s["is_antidote"]], "insecticide")
-        left_active = annotate_substances_with_resistance(left_active, "insecticide")
-        right_active = annotate_substances_with_resistance(right_active, "insecticide")
-        
-        left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
-        right_rates = [r.get("rate_raw") for r in right_records if r.get("rate_raw")]
-        
-        left_max_rate = max([parse_rate_max(r) for r in left_rates if parse_rate_max(r)], default=None)
-        right_max_rate = max([parse_rate_max(r) for r in right_rates if parse_rate_max(r)], default=None)
-        
-        identical_substances = []
-        for l_sub in left_active:
-            l_name_norm = normalize_substance_name(l_sub["name"])
-            for r_sub in right_active:
-                r_name_norm = normalize_substance_name(r_sub["name"])
-                if l_name_norm == r_name_norm or l_name_norm in r_name_norm or r_name_norm in l_name_norm:
-                    l_per_ha = (l_sub["concentration"] * left_max_rate) if left_max_rate else None
-                    r_per_ha = (r_sub["concentration"] * right_max_rate) if right_max_rate else None
-                    
-                    identical_substances.append({
-                        "name": l_sub["name"],
-                        "left_concentration": l_sub["concentration"],
-                        "left_unit": l_sub["unit"],
-                        "right_concentration": r_sub["concentration"],
-                        "right_unit": r_sub["unit"],
-                        "left_per_ha": round(l_per_ha, 2) if l_per_ha else None,
-                        "right_per_ha": round(r_per_ha, 2) if r_per_ha else None,
-                        "winner": "left" if (l_per_ha and r_per_ha and l_per_ha > r_per_ha) else 
-                                  ("right" if (l_per_ha and r_per_ha and r_per_ha > l_per_ha) else "equal")
-                    })
-        
-        similar_by_category = []
-        left_by_category = {}
-        for s in left_active:
-            cat = get_substance_category(s["name"])
-            if cat not in left_by_category:
-                left_by_category[cat] = []
-            left_by_category[cat].append(s)
-        
-        right_by_category = {}
-        for s in right_active:
-            cat = get_substance_category(s["name"])
-            if cat not in right_by_category:
-                right_by_category[cat] = []
-            right_by_category[cat].append(s)
-        
-        for cat in left_by_category:
-            if cat in right_by_category and cat != "Другие":
-                left_names = set(normalize_substance_name(s["name"]) for s in left_by_category[cat])
-                right_names = set(normalize_substance_name(s["name"]) for s in right_by_category[cat])
-                if not (left_names & right_names):
-                    similar_by_category.append({
-                        "category": cat,
-                        "left_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
-                                           for s in left_by_category[cat]],
-                        "right_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
-                                            for s in right_by_category[cat]]
-                    })
-        
-        left_unique = []
-        for s in left_active:
-            name_norm = normalize_substance_name(s["name"])
-            if not any(name_norm == normalize_substance_name(i["name"]) or 
-                      name_norm in normalize_substance_name(i["name"]) or
-                      normalize_substance_name(i["name"]) in name_norm
-                      for i in identical_substances):
-                per_ha = (s["concentration"] * left_max_rate) if left_max_rate else None
-                left_unique.append({
-                    **s,
-                    "category": get_substance_category(s["name"]),
-                    "per_ha": round(per_ha, 2) if per_ha else None
-                })
-        
-        right_unique = []
-        for s in right_active:
-            name_norm = normalize_substance_name(s["name"])
-            if not any(name_norm == normalize_substance_name(i["name"]) or 
-                      name_norm in normalize_substance_name(i["name"]) or
-                      normalize_substance_name(i["name"]) in name_norm
-                      for i in identical_substances):
-                per_ha = (s["concentration"] * right_max_rate) if right_max_rate else None
-                right_unique.append({
-                    **s,
-                    "category": get_substance_category(s["name"]),
-                    "per_ha": round(per_ha, 2) if per_ha else None
-                })
-        
-        left_total_concentration = sum(s["concentration"] for s in left_active)
-        right_total_concentration = sum(s["concentration"] for s in right_active)
-        
-        left_total_per_ha = (left_total_concentration * left_max_rate) if left_max_rate else None
-        right_total_per_ha = (right_total_concentration * right_max_rate) if right_max_rate else None
-        
-        price_analysis = None
-        if request.left_price or request.right_price:
-            price_analysis = {
-                "left_price_per_unit": request.left_price,
-                "right_price_per_unit": request.right_price,
-                "left_cost_per_ha": round(request.left_price * left_max_rate, 2) if request.left_price and left_max_rate else None,
-                "right_cost_per_ha": round(request.right_price * right_max_rate, 2) if request.right_price and right_max_rate else None,
-                "left_cost_per_gram_ai": None,
-                "right_cost_per_gram_ai": None,
-                "substances_cost": []
-            }
-            
-            if request.left_price and left_total_concentration > 0:
-                price_analysis["left_cost_per_gram_ai"] = round(request.left_price / left_total_concentration, 4)
-            if request.right_price and right_total_concentration > 0:
-                price_analysis["right_cost_per_gram_ai"] = round(request.right_price / right_total_concentration, 4)
-            
-            for s in left_active:
-                if request.left_price and s["concentration"] > 0:
-                    price_analysis["substances_cost"].append({
-                        "side": "left",
-                        "name": s["name"],
-                        "concentration": s["concentration"],
-                        "cost_contribution_pct": round(s["concentration"] / left_total_concentration * 100, 1) if left_total_concentration > 0 else 0
-                    })
-            
-            for s in right_active:
-                if request.right_price and s["concentration"] > 0:
-                    price_analysis["substances_cost"].append({
-                        "side": "right",
-                        "name": s["name"],
-                        "concentration": s["concentration"],
-                        "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
-                    })
-        
-        group_analysis = build_resistance_group_analysis(left_active, right_active)
-
-        return {
-            "left": {
-                "product_key": left_first.get("product_key"),
-                "product_name": left_first.get("product_name"),
-                "formulation": left_first.get("formulation"),
-                "active_substances_raw": left_first.get("active_substances_raw"),
-                "registration_status": left_first.get("registration_status"),
-                "max_rate": left_max_rate,
-                "substances": left_active,
-                "antidotes": left_antidotes,
-                "total_concentration": left_total_concentration,
-                "total_per_ha": round(left_total_per_ha, 2) if left_total_per_ha else None,
-                "substance_count": len(left_active)
-            },
-            "right": {
-                "product_key": right_first.get("product_key"),
-                "product_name": right_first.get("product_name"),
-                "formulation": right_first.get("formulation"),
-                "active_substances_raw": right_first.get("active_substances_raw"),
-                "registration_status": right_first.get("registration_status"),
-                "max_rate": right_max_rate,
-                "substances": right_active,
-                "antidotes": right_antidotes,
-                "total_concentration": right_total_concentration,
-                "total_per_ha": round(right_total_per_ha, 2) if right_total_per_ha else None,
-                "substance_count": len(right_active)
-            },
-            "analysis": {
-                "identical_substances": identical_substances,
-                "similar_by_category": similar_by_category,
-                "left_unique_substances": left_unique,
-                "right_unique_substances": right_unique
-            },
-            "group_analysis": group_analysis,
-            "price_analysis": price_analysis
-        }
-        
+        return await build_advanced_compare_response(
+            request,
+            db.insecticide_records,
+            "insecticide",
+            "Left insecticide not found",
+            "Right insecticide not found",
+        )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Advanced insecticide compare failed: {e}")
+        logger.error(f"Advanced compare failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-
-
-
-
-FUNGICIDE_HARMFUL_OBJECT_FIELDS = (
-    "target_object",
-    "harmful_object",
-    "harmful_objects",
-    "disease",
-    "diseases",
-)
-
-
-# ==================== FUNGICIDE ENDPOINTS ====================
 
 @api_router.post("/admin/import-fungicides")
 async def import_fungicides(file: UploadFile = File(...)):
@@ -1738,208 +1680,20 @@ async def get_fungicide(product_key: str):
 
 @api_router.post("/fungicides/compare-advanced")
 async def compare_fungicides_advanced(request: AdvancedCompareRequest):
-    """Advanced comparison of two fungicides with active substance analysis."""
+    """Advanced comparison endpoint; URL unchanged, shared implementation."""
     try:
-        left_records = await db.fungicide_records.find(
-            {"product_key": request.left_key}
-        ).to_list(length=1000)
-        
-        right_records = await db.fungicide_records.find(
-            {"product_key": request.right_key}
-        ).to_list(length=1000)
-        
-        if not left_records:
-            raise HTTPException(status_code=404, detail="Left fungicide not found")
-        if not right_records:
-            raise HTTPException(status_code=404, detail="Right fungicide not found")
-        
-        left_first = left_records[0]
-        right_first = right_records[0]
-        
-        left_substances = parse_active_substances(left_first.get("active_substances_raw"))
-        right_substances = parse_active_substances(right_first.get("active_substances_raw"))
-        
-        left_active = [s for s in left_substances if not s["is_antidote"]]
-        right_active = [s for s in right_substances if not s["is_antidote"]]
-        
-        left_antidotes = annotate_substances_with_resistance([s for s in left_substances if s["is_antidote"]], "fungicide")
-        right_antidotes = annotate_substances_with_resistance([s for s in right_substances if s["is_antidote"]], "fungicide")
-        left_active = annotate_substances_with_resistance(left_active, "fungicide")
-        right_active = annotate_substances_with_resistance(right_active, "fungicide")
-        
-        left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
-        right_rates = [r.get("rate_raw") for r in right_records if r.get("rate_raw")]
-        
-        left_max_rate = max([parse_rate_max(r) for r in left_rates if parse_rate_max(r)], default=None)
-        right_max_rate = max([parse_rate_max(r) for r in right_rates if parse_rate_max(r)], default=None)
-        
-        identical_substances = []
-        for l_sub in left_active:
-            l_name_norm = normalize_substance_name(l_sub["name"])
-            for r_sub in right_active:
-                r_name_norm = normalize_substance_name(r_sub["name"])
-                if l_name_norm == r_name_norm or l_name_norm in r_name_norm or r_name_norm in l_name_norm:
-                    l_per_ha = (l_sub["concentration"] * left_max_rate) if left_max_rate else None
-                    r_per_ha = (r_sub["concentration"] * right_max_rate) if right_max_rate else None
-                    
-                    identical_substances.append({
-                        "name": l_sub["name"],
-                        "left_concentration": l_sub["concentration"],
-                        "left_unit": l_sub["unit"],
-                        "right_concentration": r_sub["concentration"],
-                        "right_unit": r_sub["unit"],
-                        "left_per_ha": round(l_per_ha, 2) if l_per_ha else None,
-                        "right_per_ha": round(r_per_ha, 2) if r_per_ha else None,
-                        "winner": "left" if (l_per_ha and r_per_ha and l_per_ha > r_per_ha) else 
-                                  ("right" if (l_per_ha and r_per_ha and r_per_ha > l_per_ha) else "equal")
-                    })
-        
-        similar_by_category = []
-        left_by_category = {}
-        for s in left_active:
-            cat = get_substance_category(s["name"])
-            if cat not in left_by_category:
-                left_by_category[cat] = []
-            left_by_category[cat].append(s)
-        
-        right_by_category = {}
-        for s in right_active:
-            cat = get_substance_category(s["name"])
-            if cat not in right_by_category:
-                right_by_category[cat] = []
-            right_by_category[cat].append(s)
-        
-        for cat in left_by_category:
-            if cat in right_by_category and cat != "Другие":
-                left_names = set(normalize_substance_name(s["name"]) for s in left_by_category[cat])
-                right_names = set(normalize_substance_name(s["name"]) for s in right_by_category[cat])
-                if not (left_names & right_names):
-                    similar_by_category.append({
-                        "category": cat,
-                        "left_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
-                                           for s in left_by_category[cat]],
-                        "right_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
-                                            for s in right_by_category[cat]]
-                    })
-        
-        left_unique = []
-        for s in left_active:
-            name_norm = normalize_substance_name(s["name"])
-            if not any(name_norm == normalize_substance_name(i["name"]) or 
-                      name_norm in normalize_substance_name(i["name"]) or
-                      normalize_substance_name(i["name"]) in name_norm
-                      for i in identical_substances):
-                per_ha = (s["concentration"] * left_max_rate) if left_max_rate else None
-                left_unique.append({
-                    **s,
-                    "category": get_substance_category(s["name"]),
-                    "per_ha": round(per_ha, 2) if per_ha else None
-                })
-        
-        right_unique = []
-        for s in right_active:
-            name_norm = normalize_substance_name(s["name"])
-            if not any(name_norm == normalize_substance_name(i["name"]) or 
-                      name_norm in normalize_substance_name(i["name"]) or
-                      normalize_substance_name(i["name"]) in name_norm
-                      for i in identical_substances):
-                per_ha = (s["concentration"] * right_max_rate) if right_max_rate else None
-                right_unique.append({
-                    **s,
-                    "category": get_substance_category(s["name"]),
-                    "per_ha": round(per_ha, 2) if per_ha else None
-                })
-        
-        left_total_concentration = sum(s["concentration"] for s in left_active)
-        right_total_concentration = sum(s["concentration"] for s in right_active)
-        
-        left_total_per_ha = (left_total_concentration * left_max_rate) if left_max_rate else None
-        right_total_per_ha = (right_total_concentration * right_max_rate) if right_max_rate else None
-        
-        price_analysis = None
-        if request.left_price or request.right_price:
-            price_analysis = {
-                "left_price_per_unit": request.left_price,
-                "right_price_per_unit": request.right_price,
-                "left_cost_per_ha": round(request.left_price * left_max_rate, 2) if request.left_price and left_max_rate else None,
-                "right_cost_per_ha": round(request.right_price * right_max_rate, 2) if request.right_price and right_max_rate else None,
-                "left_cost_per_gram_ai": None,
-                "right_cost_per_gram_ai": None,
-                "substances_cost": []
-            }
-            
-            if request.left_price and left_total_concentration > 0:
-                price_analysis["left_cost_per_gram_ai"] = round(request.left_price / left_total_concentration, 4)
-            if request.right_price and right_total_concentration > 0:
-                price_analysis["right_cost_per_gram_ai"] = round(request.right_price / right_total_concentration, 4)
-            
-            for s in left_active:
-                if request.left_price and s["concentration"] > 0:
-                    price_analysis["substances_cost"].append({
-                        "side": "left",
-                        "name": s["name"],
-                        "concentration": s["concentration"],
-                        "cost_contribution_pct": round(s["concentration"] / left_total_concentration * 100, 1) if left_total_concentration > 0 else 0
-                    })
-            
-            for s in right_active:
-                if request.right_price and s["concentration"] > 0:
-                    price_analysis["substances_cost"].append({
-                        "side": "right",
-                        "name": s["name"],
-                        "concentration": s["concentration"],
-                        "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
-                    })
-        
-        group_analysis = build_resistance_group_analysis(left_active, right_active)
-
-        return {
-            "left": {
-                "product_key": left_first.get("product_key"),
-                "product_name": left_first.get("product_name"),
-                "formulation": left_first.get("formulation"),
-                "active_substances_raw": left_first.get("active_substances_raw"),
-                "registration_status": left_first.get("registration_status"),
-                "max_rate": left_max_rate,
-                "substances": left_active,
-                "antidotes": left_antidotes,
-                "total_concentration": left_total_concentration,
-                "total_per_ha": round(left_total_per_ha, 2) if left_total_per_ha else None,
-                "substance_count": len(left_active)
-            },
-            "right": {
-                "product_key": right_first.get("product_key"),
-                "product_name": right_first.get("product_name"),
-                "formulation": right_first.get("formulation"),
-                "active_substances_raw": right_first.get("active_substances_raw"),
-                "registration_status": right_first.get("registration_status"),
-                "max_rate": right_max_rate,
-                "substances": right_active,
-                "antidotes": right_antidotes,
-                "total_concentration": right_total_concentration,
-                "total_per_ha": round(right_total_per_ha, 2) if right_total_per_ha else None,
-                "substance_count": len(right_active)
-            },
-            "analysis": {
-                "identical_substances": identical_substances,
-                "similar_by_category": similar_by_category,
-                "left_unique_substances": left_unique,
-                "right_unique_substances": right_unique
-            },
-            "group_analysis": group_analysis,
-            "price_analysis": price_analysis
-        }
-        
+        return await build_advanced_compare_response(
+            request,
+            db.fungicide_records,
+            "fungicide",
+            "Left fungicide not found",
+            "Right fungicide not found",
+        )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Advanced fungicide compare failed: {e}")
+        logger.error(f"Advanced compare failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-
-
-# ==================== SEED TREATMENT ENDPOINTS ====================
 
 @api_router.post("/admin/import-seed-treatments")
 async def import_seed_treatments(file: UploadFile = File(...)):
@@ -2128,221 +1882,20 @@ async def get_seed_treatment(product_key: str):
 
 @api_router.post("/seed-treatments/compare-advanced")
 async def compare_seed_treatments_advanced(request: AdvancedCompareRequest):
-    """Advanced comparison of two seed treatments with active substance analysis."""
+    """Advanced comparison endpoint; URL unchanged, shared implementation."""
     try:
-        left_records = await db.seed_treatment_records.find(
-            {"product_key": request.left_key}
-        ).to_list(length=1000)
-        
-        right_records = await db.seed_treatment_records.find(
-            {"product_key": request.right_key}
-        ).to_list(length=1000)
-        
-        if not left_records:
-            raise HTTPException(status_code=404, detail="Left seed treatment not found")
-        if not right_records:
-            raise HTTPException(status_code=404, detail="Right seed treatment not found")
-        
-        left_first = left_records[0]
-        right_first = right_records[0]
-        
-        left_substances = parse_active_substances(left_first.get("active_substances_raw"))
-        right_substances = parse_active_substances(right_first.get("active_substances_raw"))
-        
-        left_active = [s for s in left_substances if not s["is_antidote"]]
-        right_active = [s for s in right_substances if not s["is_antidote"]]
-        
-        left_antidotes = annotate_substances_with_resistance([s for s in left_substances if s["is_antidote"]], "seed-treatment")
-        right_antidotes = annotate_substances_with_resistance([s for s in right_substances if s["is_antidote"]], "seed-treatment")
-        left_active = annotate_substances_with_resistance(left_active, "seed-treatment")
-        right_active = annotate_substances_with_resistance(right_active, "seed-treatment")
-        
-        left_rates = [r.get("rate_raw") for r in left_records if r.get("rate_raw")]
-        right_rates = [r.get("rate_raw") for r in right_records if r.get("rate_raw")]
-        
-        left_max_rate = max([parse_rate_max(r) for r in left_rates if parse_rate_max(r)], default=None)
-        right_max_rate = max([parse_rate_max(r) for r in right_rates if parse_rate_max(r)], default=None)
-        
-        identical_substances = []
-        for l_sub in left_active:
-            l_name_norm = normalize_substance_name(l_sub["name"])
-            for r_sub in right_active:
-                r_name_norm = normalize_substance_name(r_sub["name"])
-                if l_name_norm == r_name_norm or l_name_norm in r_name_norm or r_name_norm in l_name_norm:
-                    l_per_ha = (l_sub["concentration"] * left_max_rate) if left_max_rate else None
-                    r_per_ha = (r_sub["concentration"] * right_max_rate) if right_max_rate else None
-                    
-                    identical_substances.append({
-                        "name": l_sub["name"],
-                        "left_concentration": l_sub["concentration"],
-                        "left_unit": l_sub["unit"],
-                        "right_concentration": r_sub["concentration"],
-                        "right_unit": r_sub["unit"],
-                        "left_per_ha": round(l_per_ha, 2) if l_per_ha else None,
-                        "right_per_ha": round(r_per_ha, 2) if r_per_ha else None,
-                        "winner": "left" if (l_per_ha and r_per_ha and l_per_ha > r_per_ha) else 
-                                  ("right" if (l_per_ha and r_per_ha and r_per_ha > l_per_ha) else "equal")
-                    })
-        
-        similar_by_category = []
-        left_by_category = {}
-        for s in left_active:
-            cat = get_substance_category(s["name"])
-            if cat not in left_by_category:
-                left_by_category[cat] = []
-            left_by_category[cat].append(s)
-        
-        right_by_category = {}
-        for s in right_active:
-            cat = get_substance_category(s["name"])
-            if cat not in right_by_category:
-                right_by_category[cat] = []
-            right_by_category[cat].append(s)
-        
-        for cat in left_by_category:
-            if cat in right_by_category and cat != "Другие":
-                left_names = set(normalize_substance_name(s["name"]) for s in left_by_category[cat])
-                right_names = set(normalize_substance_name(s["name"]) for s in right_by_category[cat])
-                if not (left_names & right_names):
-                    similar_by_category.append({
-                        "category": cat,
-                        "left_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
-                                           for s in left_by_category[cat]],
-                        "right_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} 
-                                            for s in right_by_category[cat]]
-                    })
-        
-        left_unique = []
-        for s in left_active:
-            name_norm = normalize_substance_name(s["name"])
-            if not any(name_norm == normalize_substance_name(i["name"]) or 
-                      name_norm in normalize_substance_name(i["name"]) or
-                      normalize_substance_name(i["name"]) in name_norm
-                      for i in identical_substances):
-                per_ha = (s["concentration"] * left_max_rate) if left_max_rate else None
-                left_unique.append({
-                    **s,
-                    "category": get_substance_category(s["name"]),
-                    "per_ha": round(per_ha, 2) if per_ha else None
-                })
-        
-        right_unique = []
-        for s in right_active:
-            name_norm = normalize_substance_name(s["name"])
-            if not any(name_norm == normalize_substance_name(i["name"]) or 
-                      name_norm in normalize_substance_name(i["name"]) or
-                      normalize_substance_name(i["name"]) in name_norm
-                      for i in identical_substances):
-                per_ha = (s["concentration"] * right_max_rate) if right_max_rate else None
-                right_unique.append({
-                    **s,
-                    "category": get_substance_category(s["name"]),
-                    "per_ha": round(per_ha, 2) if per_ha else None
-                })
-        
-        left_total_concentration = sum(s["concentration"] for s in left_active)
-        right_total_concentration = sum(s["concentration"] for s in right_active)
-        
-        left_total_per_ha = (left_total_concentration * left_max_rate) if left_max_rate else None
-        right_total_per_ha = (right_total_concentration * right_max_rate) if right_max_rate else None
-        
-        price_analysis = None
-        if request.left_price or request.right_price:
-            price_analysis = {
-                "left_price_per_unit": request.left_price,
-                "right_price_per_unit": request.right_price,
-                "left_cost_per_ha": round(request.left_price * left_max_rate, 2) if request.left_price and left_max_rate else None,
-                "right_cost_per_ha": round(request.right_price * right_max_rate, 2) if request.right_price and right_max_rate else None,
-                "left_cost_per_gram_ai": None,
-                "right_cost_per_gram_ai": None,
-                "substances_cost": []
-            }
-            
-            if request.left_price and left_total_concentration > 0:
-                price_analysis["left_cost_per_gram_ai"] = round(request.left_price / left_total_concentration, 4)
-            if request.right_price and right_total_concentration > 0:
-                price_analysis["right_cost_per_gram_ai"] = round(request.right_price / right_total_concentration, 4)
-            
-            for s in left_active:
-                if request.left_price and s["concentration"] > 0:
-                    price_analysis["substances_cost"].append({
-                        "side": "left",
-                        "name": s["name"],
-                        "concentration": s["concentration"],
-                        "cost_contribution_pct": round(s["concentration"] / left_total_concentration * 100, 1) if left_total_concentration > 0 else 0
-                    })
-            
-            for s in right_active:
-                if request.right_price and s["concentration"] > 0:
-                    price_analysis["substances_cost"].append({
-                        "side": "right",
-                        "name": s["name"],
-                        "concentration": s["concentration"],
-                        "cost_contribution_pct": round(s["concentration"] / right_total_concentration * 100, 1) if right_total_concentration > 0 else 0
-                    })
-        
-        group_analysis = build_resistance_group_analysis(left_active, right_active)
-
-        return {
-            "left": {
-                "product_key": left_first.get("product_key"),
-                "product_name": left_first.get("product_name"),
-                "formulation": left_first.get("formulation"),
-                "active_substances_raw": left_first.get("active_substances_raw"),
-                "registration_status": left_first.get("registration_status"),
-                "pesticide_type": left_first.get("pesticide_type"),
-                "max_rate": left_max_rate,
-                "substances": left_active,
-                "antidotes": left_antidotes,
-                "total_concentration": left_total_concentration,
-                "total_per_ha": round(left_total_per_ha, 2) if left_total_per_ha else None,
-                "substance_count": len(left_active)
-            },
-            "right": {
-                "product_key": right_first.get("product_key"),
-                "product_name": right_first.get("product_name"),
-                "formulation": right_first.get("formulation"),
-                "active_substances_raw": right_first.get("active_substances_raw"),
-                "registration_status": right_first.get("registration_status"),
-                "pesticide_type": right_first.get("pesticide_type"),
-                "max_rate": right_max_rate,
-                "substances": right_active,
-                "antidotes": right_antidotes,
-                "total_concentration": right_total_concentration,
-                "total_per_ha": round(right_total_per_ha, 2) if right_total_per_ha else None,
-                "substance_count": len(right_active)
-            },
-            "analysis": {
-                "identical_substances": identical_substances,
-                "similar_by_category": similar_by_category,
-                "left_unique_substances": left_unique,
-                "right_unique_substances": right_unique
-            },
-            "group_analysis": group_analysis,
-            "price_analysis": price_analysis
-        }
-        
+        return await build_advanced_compare_response(
+            request,
+            db.seed_treatment_records,
+            "seed-treatment",
+            "Left seed treatment not found",
+            "Right seed treatment not found",
+        )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Advanced seed treatment compare failed: {e}")
+        logger.error(f"Advanced compare failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-async def get_distinct_values(collection_name: str, field: str, filter_query: Optional[dict] = None) -> List[str]:
-    values = await db[collection_name].distinct(field, filter_query or {})
-    return sorted([v for v in values if isinstance(v, str) and v.strip()])
-
-
-async def get_distinct_values_from_fields(
-    collection_name: str, fields: Sequence[str], filter_query: Optional[dict] = None
-) -> List[str]:
-    values = set()
-    for field in fields:
-        field_values = await db[collection_name].distinct(field, filter_query or {})
-        values.update(v for v in field_values if isinstance(v, str) and v.strip())
-    return sorted(values)
-
 
 @api_router.get("/herbicides/crops", response_model=List[str])
 async def herbicide_crops():
