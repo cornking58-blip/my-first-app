@@ -14,6 +14,8 @@ exec("RUSSIAN_ENDINGS =" + HELPER_SOURCE, namespace)
 make_flexible_text_regex = namespace["make_flexible_text_regex"]
 build_registration_filters = namespace["build_registration_filters"]
 build_search_match = namespace["build_search_match"]
+FUNGICIDE_HARMFUL_OBJECT_FIELDS = namespace["FUNGICIDE_HARMFUL_OBJECT_FIELDS"]
+TARGET_OBJECT_IMPORT_COLUMNS = namespace["TARGET_OBJECT_IMPORT_COLUMNS"]
 
 
 class FlexibleFilterHelpersTest(unittest.TestCase):
@@ -28,6 +30,26 @@ class FlexibleFilterHelpersTest(unittest.TestCase):
 
     def test_ocr_broken_word_matches_unbroken_query(self):
         self.assert_matches("подсолнечник", "Подсолнечн ик")
+
+
+    def test_fungicide_harmful_object_fields_are_defined_for_search(self):
+        self.assertEqual(
+            FUNGICIDE_HARMFUL_OBJECT_FIELDS,
+            ("target_object", "harmful_object", "harmful_objects", "disease", "diseases"),
+        )
+        self.assertEqual(TARGET_OBJECT_IMPORT_COLUMNS, FUNGICIDE_HARMFUL_OBJECT_FIELDS)
+
+    def test_fungicide_registration_filters_check_all_harmful_object_fields(self):
+        filters = build_registration_filters(
+            culture="подсолнечник",
+            harmful_object="ржавчина",
+            harmful_object_fields=FUNGICIDE_HARMFUL_OBJECT_FIELDS,
+        )
+
+        self.assertIn("crop", filters)
+        self.assertIn("$or", filters)
+        fields = {next(iter(item.keys())) for item in filters["$or"]}
+        self.assertEqual(fields, set(FUNGICIDE_HARMFUL_OBJECT_FIELDS))
 
     def test_registration_filters_are_row_level_crop_and_target_matches(self):
         filters = build_registration_filters(culture="пшеница", harmful_object="сорняки")

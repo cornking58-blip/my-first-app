@@ -181,6 +181,18 @@ def build_flexible_field_match(field: str, value: str) -> dict:
     return {field: {"$regex": make_flexible_text_regex(value), "$options": "i"}}
 
 
+HARMFUL_OBJECT_FIELDS = (
+    "target_object",
+    "harmful_object",
+    "harmful_objects",
+    "disease",
+    "diseases",
+)
+
+FUNGICIDE_HARMFUL_OBJECT_FIELDS = HARMFUL_OBJECT_FIELDS
+TARGET_OBJECT_IMPORT_COLUMNS = HARMFUL_OBJECT_FIELDS
+
+
 def build_registration_filters(
     culture: str = "",
     crop: str = "",
@@ -953,14 +965,6 @@ async def build_advanced_compare_response(
 
 
 # ==================== HELPER FUNCTIONS ====================
-
-TARGET_OBJECT_IMPORT_COLUMNS = (
-    "target_object",
-    "harmful_object",
-    "harmful_objects",
-    "disease",
-    "diseases",
-)
 
 
 def clean_value(val) -> Optional[str]:
