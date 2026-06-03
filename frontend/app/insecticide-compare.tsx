@@ -280,6 +280,15 @@ export default function InsecticideCompareScreen() {
 
   const getSubstanceKey = (name: string) => name.trim().toLowerCase();
 
+  const shouldShowSubstanceCost = (cost: SubstanceCost | undefined, hasPrice: boolean) => {
+    return hasPrice
+      && cost?.grams_per_ha !== null
+      && cost?.grams_per_ha !== undefined
+      && cost.grams_per_ha > 0
+      && cost.estimated_cost_per_gram !== null
+      && cost.estimated_cost_per_gram !== undefined;
+  };
+
   const renderGroupLabel = (substance?: Substance | null) => {
     if (!substance?.resistance_group) return 'группа не определена';
     const system = substance.resistance_system ? `${substance.resistance_system} ` : '';
@@ -305,7 +314,7 @@ export default function InsecticideCompareScreen() {
     if (!substance) return null;
     const cost = getSubstanceCost(side, substance.name);
     const product = side === 'left' ? compareData?.left : compareData?.right;
-    const showCost = side === 'left' ? hasLeftPrice : hasRightPrice;
+    const showCost = shouldShowSubstanceCost(cost, side === 'left' ? hasLeftPrice : hasRightPrice);
     const calculatedPerHa = perHa ?? substance.per_ha ?? calculateActiveAmount(substance, product);
 
     return (
@@ -314,8 +323,8 @@ export default function InsecticideCompareScreen() {
         <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatNumber(substance.concentration)} {substance.unit}</Text>
         <Text style={styles.uniqueSubstanceInfo}>Норма: {formatRate(product?.rate_used, product?.rate_unit)}</Text>
         <Text style={styles.uniqueSubstanceInfo}>ДВ на 1 га: {formatNumber(calculatedPerHa)} г/га</Text>
-        {showCost && cost?.estimated_cost_per_gram !== null && cost?.estimated_cost_per_gram !== undefined && (
-          <Text style={styles.uniqueSubstanceInfo}>Стоимость: {formatNumber(cost.estimated_cost_per_gram)} ₽/г</Text>
+        {showCost && (
+          <Text style={styles.uniqueSubstanceInfo}>Стоимость 1 г ДВ: {formatNumber(cost?.estimated_cost_per_gram)} ₽/г</Text>
         )}
         <Text style={styles.uniqueSubstanceInfo}>Группа: {renderGroupLabel(substance)}</Text>
         {renderEffectSummary(substance.effect_summary)}
@@ -324,7 +333,9 @@ export default function InsecticideCompareScreen() {
   };
 
   const renderUniqueSubstance = (sub: Substance & { category: string; per_ha: number | null }, side: 'left' | 'right') => {
+    const cost = getSubstanceCost(side, sub.name);
     const product = side === 'left' ? compareData?.left : compareData?.right;
+    const showCost = shouldShowSubstanceCost(cost, side === 'left' ? hasLeftPrice : hasRightPrice);
     const calculatedPerHa = sub.per_ha ?? calculateActiveAmount(sub, product);
 
     return (
@@ -332,6 +343,9 @@ export default function InsecticideCompareScreen() {
         <Text style={styles.uniqueSubstanceName}>{sub.name}</Text>
         <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatNumber(sub.concentration)} {sub.unit}</Text>
         <Text style={styles.uniqueSubstanceInfo}>ДВ на 1 га: {formatNumber(calculatedPerHa)} г/га</Text>
+        {showCost && (
+          <Text style={styles.uniqueSubstanceInfo}>Стоимость 1 г ДВ: {formatNumber(cost?.estimated_cost_per_gram)} ₽/г</Text>
+        )}
         <Text style={styles.uniqueSubstanceInfo}>Группа: {renderGroupLabel(sub)}</Text>
         {renderEffectSummary(sub.effect_summary)}
         <Text style={styles.uniqueSubstanceInfo}>Прямое сопоставление не найдено.</Text>

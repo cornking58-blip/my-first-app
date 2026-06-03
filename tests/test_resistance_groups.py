@@ -367,6 +367,28 @@ class AdvancedCompareResponseTest(unittest.TestCase):
         self.assertIsNotNone(right_costs[0]["estimated_cost_per_gram"])
         self.assertIn("substances_cost", response["price_analysis"])
 
+    def test_price_analysis_returns_cost_per_gram_for_unmatched_substance(self):
+        response = self.compare(left_price=1200, right_price=900)
+        left_costs = response["price_analysis"]["left_substances_cost"]
+
+        unmatched_cost = next(
+            item for item in left_costs
+            if item["substance_name"] == "азоксистробин"
+        )
+
+        self.assertEqual(unmatched_cost["grams_per_ha"], 200.0)
+        self.assertGreater(unmatched_cost["estimated_cost_share_per_ha"], 0)
+        self.assertGreater(unmatched_cost["estimated_cost_per_gram"], 0)
+        self.assertEqual(unmatched_cost["rate_unit"], None)
+
+    def test_price_analysis_does_not_return_fake_substance_cost_without_price(self):
+        response = self.compare(left_price=1200, right_price=None)
+
+        self.assertEqual(response["price_analysis"]["right_substances_cost"], [])
+        self.assertFalse(
+            any(item["side"] == "right" for item in response["price_analysis"]["substances_cost"])
+        )
+
     def test_crop_provided_and_product_has_row_returns_true(self):
         response = self.compare(crop="подсолнечник")
 
