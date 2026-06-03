@@ -80,6 +80,18 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertEqual(group["system"], "HRAC")
         self.assertEqual(group["group"], "9")
         self.assertEqual(group["name"], "EPSPS inhibitors")
+        self.assertEqual(group["effect_summary"], "Кратко: нарушает синтез важных аминокислот у растения.")
+
+    def test_known_group_annotation_keeps_existing_fields_and_adds_effect_summary(self):
+        annotated = annotate_substances_with_resistance(
+            parse_active_substances("(250 г/л тебуконазол)"),
+            "fungicide",
+        )
+
+        self.assertEqual(annotated[0]["resistance_system"], "FRAC")
+        self.assertEqual(annotated[0]["resistance_group"], "3")
+        self.assertEqual(annotated[0]["resistance_group_name"], "DMI fungicides")
+        self.assertEqual(annotated[0]["effect_summary"], "Кратко: нарушает синтез клеточной мембраны гриба.")
 
     def test_unknown_group_returns_clear_unknown_name(self):
         group = get_resistance_group("неизвестное вещество", "fungicide")
@@ -87,6 +99,7 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertIsNone(group["system"])
         self.assertIsNone(group["group"])
         self.assertEqual(group["name"], "группа не определена")
+        self.assertNotIn("effect_summary", group)
 
     def test_identical_active_sets_are_reference_only_without_forbidden_wording(self):
         left = annotate_substances_with_resistance(
@@ -136,6 +149,7 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertEqual(match["system"], "HRAC")
         self.assertEqual(match["group"], "2")
         self.assertEqual(match["group_name"], "ALS inhibitors")
+        self.assertEqual(match["effect_summary"], "Кратко: нарушает синтез важных аминокислот у растения.")
         self.assertEqual(
             match["warning"],
             "Действующие вещества разные, но группа устойчивости одна. По механизму действия препараты близки.",
@@ -181,6 +195,7 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertEqual(len(analysis["unknown_group_substances"]), 2)
         self.assertIn("группа не определена", analysis["plain_explanation"])
         self.assertEqual(analysis["unknown_group_substances"][0]["message"], "группа не определена")
+        self.assertNotIn("effect_summary", analysis["unknown_group_substances"][0])
 
     def test_seed_treatment_uses_mixed_frac_and_irac_lookup(self):
         fungicide_group = get_resistance_group("тебуконазол", "seed-treatment")
