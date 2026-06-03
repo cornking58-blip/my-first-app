@@ -4,6 +4,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import json
 import re
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -399,42 +400,124 @@ UNKNOWN_RESISTANCE_GROUP = {
 }
 
 
-RESISTANCE_GROUPS = {
-    "herbicide": {
-        "глифосат": {"system": "HRAC", "group": "9", "name": "EPSPS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
-        "трибенурон-метил": {"system": "HRAC", "group": "2", "name": "ALS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
-        "метсульфурон-метил": {"system": "HRAC", "group": "2", "name": "ALS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
-        "имазамокс": {"system": "HRAC", "group": "2", "name": "ALS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
-        "имазетапир": {"system": "HRAC", "group": "2", "name": "ALS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
-        "клетодим": {"system": "HRAC", "group": "1", "name": "ACCase inhibitors", "effect_summary": "Кратко: нарушает синтез жирных кислот у растения."},
-        "хизалофоп-п-этил": {"system": "HRAC", "group": "1", "name": "ACCase inhibitors", "effect_summary": "Кратко: нарушает синтез жирных кислот у растения."},
-        "2,4-д": {"system": "HRAC", "group": "4", "name": "Synthetic auxins", "effect_summary": "Кратко: нарушает гормональную регуляцию роста растения."},
-        "дикамба": {"system": "HRAC", "group": "4", "name": "Synthetic auxins", "effect_summary": "Кратко: нарушает гормональную регуляцию роста растения."},
-        "клопиралид": {"system": "HRAC", "group": "4", "name": "Synthetic auxins", "effect_summary": "Кратко: нарушает гормональную регуляцию роста растения."},
-        "мезотрион": {"system": "HRAC", "group": "27", "name": "HPPD inhibitors", "effect_summary": "Кратко: нарушает образование защитных пигментов растения."},
-        "метрибузин": {"system": "HRAC", "group": "5", "name": "PSII inhibitors", "effect_summary": "Кратко: нарушает фотосинтез растения."},
-    },
-    "fungicide": {
-        "тебуконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides", "effect_summary": "Кратко: нарушает синтез клеточной мембраны гриба."},
-        "пропиконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides", "effect_summary": "Кратко: нарушает синтез клеточной мембраны гриба."},
-        "дифеноконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides", "effect_summary": "Кратко: нарушает синтез клеточной мембраны гриба."},
-        "азоксистробин": {"system": "FRAC", "group": "11", "name": "QoI fungicides", "effect_summary": "Кратко: нарушает дыхание гриба."},
-        "пираклостробин": {"system": "FRAC", "group": "11", "name": "QoI fungicides", "effect_summary": "Кратко: нарушает дыхание гриба."},
-        "карбендазим": {"system": "FRAC", "group": "1", "name": "MBC fungicides", "effect_summary": "Кратко: нарушает деление клеток гриба."},
-        "флудиоксонил": {"system": "FRAC", "group": "12", "name": "Phenylpyrroles", "effect_summary": "Кратко: нарушает осморегуляцию клетки гриба."},
-        "металаксил-м": {"system": "FRAC", "group": "4", "name": "Phenylamides", "effect_summary": "Кратко: нарушает синтез РНК у гриба."},
-    },
-    "insecticide": {
-        "имидаклоприд": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids", "effect_summary": "Кратко: нарушает передачу нервных сигналов у насекомого."},
-        "тиаметоксам": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids", "effect_summary": "Кратко: нарушает передачу нервных сигналов у насекомого."},
-        "клотианидин": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids", "effect_summary": "Кратко: нарушает передачу нервных сигналов у насекомого."},
-        "лямбда-цигалотрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids", "effect_summary": "Кратко: нарушает работу натриевых каналов нервной системы насекомого."},
-        "альфа-циперметрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids", "effect_summary": "Кратко: нарушает работу натриевых каналов нервной системы насекомого."},
-        "дельтаметрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids", "effect_summary": "Кратко: нарушает работу натриевых каналов нервной системы насекомого."},
-        "хлорантранилипрол": {"system": "IRAC", "group": "28", "name": "Diamides", "effect_summary": "Кратко: нарушает работу мышц насекомого."},
-        "абамектин": {"system": "IRAC", "group": "6", "name": "Avermectins", "effect_summary": "Кратко: нарушает передачу нервных и мышечных сигналов у насекомого."},
-    },
+OLD_HARDCODED_RESISTANCE_GROUP_COUNT = 28
+
+
+MANUAL_RU_ALIASES = {
+    "глифосат": "glyphosate",
+    "трибенурон-метил": "tribenuron_methyl",
+    "метсульфурон-метил": "metsulfuron_methyl",
+    "имазамокс": "imazamox",
+    "имазетапир": "imazethapyr",
+    "клетодим": "clethodim",
+    "хизалофоп-п-этил": "quizalofop_ethyl",
+    "2,4-д": "24_d",
+    "дикамба": "dicamba",
+    "клопиралид": "clopyralid",
+    "мезотрион": "mesotrione",
+    "метрибузин": "metribuzin",
+    "имидаклоприд": "imidacloprid",
+    "тиаметоксам": "thiamethoxam",
+    "клотианидин": "clothianidin",
+    "лямбда-цигалотрин": "lambda_cyhalothrin",
+    "альфа-циперметрин": "alpha_cypermethrin",
+    "дельтаметрин": "deltamethrin",
+    "хлорантранилипрол": "chlorantraniliprole",
+    "абамектин": "abamectin",
+    "карбендазим": "carbendazim",
+    "тебуконазол": "tebuconazole",
+    "дифеноконазол": "difenoconazole",
+    "азоксистробин": "azoxystrobin",
+    "пираклостробин": "pyraclostrobin",
+    "флудиоксонил": "fludioxonil",
+    "металаксил-м": "metalaxyl_m",
 }
+
+
+RESISTANCE_GROUPS_PATH = ROOT_DIR / "data" / "resistance_groups.json"
+RESISTANCE_PESTICIDE_TYPES_BY_SYSTEM = {
+    "HRAC": "herbicide",
+    "FRAC": "fungicide",
+    "IRAC": "insecticide",
+}
+
+
+def _resistance_record_to_group_info(record: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    return {
+        "system": record.get("system"),
+        "group": record.get("group_code"),
+        "name": record.get("group_name") or "группа не определена",
+        "effect_summary": record.get("effect_summary"),
+    }
+
+
+def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
+    """Load HRAC/FRAC/IRAC records from backend/data/resistance_groups.json and build lookup indexes."""
+    data_path = Path(path) if path else RESISTANCE_GROUPS_PATH
+    with data_path.open("r", encoding="utf-8") as file:
+        payload = json.load(file)
+
+    records = payload.get("records", [])
+    if not isinstance(records, list):
+        raise ValueError("resistance_groups.json must contain a records list")
+
+    indexes = {
+        "herbicide": {},
+        "fungicide": {},
+        "insecticide": {},
+    }
+    record_entries = {
+        "herbicide": [],
+        "fungicide": [],
+        "insecticide": [],
+    }
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        pesticide_type = (record.get("pesticide_type") or RESISTANCE_PESTICIDE_TYPES_BY_SYSTEM.get(record.get("system"), "")).strip().lower()
+        if pesticide_type not in indexes:
+            continue
+
+        group_info = _resistance_record_to_group_info(record)
+        entry = {
+            "record": record,
+            "group_info": group_info,
+            "lookup_names": set(),
+        }
+
+        for field in ("active_ingredient_ru", "active_ingredient_en", "active_ingredient_key"):
+            value = record.get(field)
+            if value:
+                normalized = normalize_resistance_lookup_name(str(value))
+                entry["lookup_names"].add(normalized)
+                indexes[pesticide_type].setdefault(normalized, group_info)
+
+        key = record.get("active_ingredient_key")
+        if key:
+            underscored = normalize_resistance_lookup_name(str(key).replace("_", "-"))
+            entry["lookup_names"].add(underscored)
+            indexes[pesticide_type].setdefault(underscored, group_info)
+
+        record_entries[pesticide_type].append(entry)
+
+    for russian_name, active_key in MANUAL_RU_ALIASES.items():
+        normalized_alias = normalize_resistance_lookup_name(russian_name)
+        normalized_key = normalize_resistance_lookup_name(active_key)
+        normalized_hyphen_key = normalize_resistance_lookup_name(active_key.replace("_", "-"))
+        for pesticide_type, table in indexes.items():
+            group_info = table.get(normalized_key) or table.get(normalized_hyphen_key)
+            if group_info:
+                table[normalized_alias] = group_info
+                break
+
+    return {
+        "records": records,
+        "record_count": len(records),
+        "indexes": indexes,
+        "record_entries": record_entries,
+    }
+
 
 
 def normalize_resistance_lookup_name(name: str) -> str:
@@ -446,20 +529,36 @@ def normalize_resistance_lookup_name(name: str) -> str:
     return normalized
 
 
+RESISTANCE_GROUP_DATA = load_resistance_groups()
+RESISTANCE_GROUPS = RESISTANCE_GROUP_DATA["indexes"]
+
+
 def _lookup_resistance_group_in_table(substance_name: str, pesticide_type: str) -> Optional[Dict[str, Optional[str]]]:
     table = RESISTANCE_GROUPS.get(pesticide_type, {})
     normalized = normalize_resistance_lookup_name(substance_name)
 
+    # Exact lookup order: Russian name, English name, active ingredient key, and manual Russian aliases
+    # are all indexed by load_resistance_groups(). Think of this as a fast dictionary: one normalized
+    # name points to one HRAC/FRAC/IRAC record.
     if normalized in table:
         return table[normalized]
 
-    # Careful partial matching: only accept an explicit known key as a full token/phrase
-    # inside parser leftovers such as "глифосат кислоты". This avoids guessing by family.
+    # Safe partial matching: accept a match only if exactly one JSON/alias key is found as a full
+    # token/phrase inside parser leftovers such as "глифосат кислоты". If two records match, we
+    # return unknown instead of guessing.
+    matches = []
+    seen = set()
     for known_name, group_info in table.items():
         known_normalized = normalize_resistance_lookup_name(known_name)
         pattern = rf"(?<![а-яa-z0-9]){re.escape(known_normalized)}(?![а-яa-z0-9])"
         if re.search(pattern, normalized, re.IGNORECASE):
-            return group_info
+            key = (group_info.get("system"), group_info.get("group"), group_info.get("name"))
+            if key not in seen:
+                seen.add(key)
+                matches.append(group_info)
+
+    if len(matches) == 1:
+        return matches[0]
 
     return None
 
