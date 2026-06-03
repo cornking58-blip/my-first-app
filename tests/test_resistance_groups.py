@@ -54,6 +54,8 @@ parse_active_substances = namespace["parse_active_substances"]
 get_resistance_group = namespace["get_resistance_group"]
 annotate_substances_with_resistance = namespace["annotate_substances_with_resistance"]
 build_resistance_group_analysis = namespace["build_resistance_group_analysis"]
+parse_rate_max_with_unit = namespace["parse_rate_max_with_unit"]
+calculate_active_amount = namespace["calculate_active_amount"]
 build_advanced_compare_response = namespace["build_advanced_compare_response"]
 
 
@@ -71,6 +73,29 @@ class FakeCollection:
 
     def find(self, query):
         return FakeCursor(self.records_by_key.get(query["product_key"], []))
+
+
+class RateUnitParsingTest(unittest.TestCase):
+    def test_rate_parser_normalizes_supported_units(self):
+        cases = [
+            ("25-50 г/га", 0.05, "кг/га"),
+            ("до 50 г/га", 0.05, "кг/га"),
+            ("30–50 г/га", 0.05, "кг/га"),
+            ("125 мл/га", 0.125, "л/га"),
+            ("0,125 л/га", 0.125, "л/га"),
+            ("1,5 кг/га", 1.5, "кг/га"),
+        ]
+
+        for raw_rate, expected_rate, expected_unit in cases:
+            with self.subTest(raw_rate=raw_rate):
+                parsed_rate, parsed_unit = parse_rate_max_with_unit(raw_rate)
+
+                self.assertAlmostEqual(parsed_rate, expected_rate)
+                self.assertEqual(parsed_unit, expected_unit)
+
+    def test_active_amount_uses_compatible_concentration_and_rate_units(self):
+        self.assertEqual(calculate_active_amount(750, "г/кг", 0.05, "кг/га"), 37.5)
+        self.assertEqual(calculate_active_amount(100, "г/л", 0.5, "л/га"), 50)
 
 
 class ResistanceGroupHelpersTest(unittest.TestCase):
@@ -268,6 +293,59 @@ class AdvancedCompareResponseTest(unittest.TestCase):
         self.assertEqual(response["right"]["rate_used"], 0.9)
         self.assertEqual(response["left"]["rate_source"], "manual")
         self.assertEqual(response["right"]["rate_source"], "manual")
+        self.assertEqual(response["left"]["max_rate_unit"], None)
+        self.assertEqual(response["left"]["rate_unit"], None)
+
+    def test_registered_gram_rate_sets_unit_fields_and_manual_keeps_same_unit(self):
+        collection = FakeCollection({
+            "left": [
+                {
+                    "product_key": "left",
+                    "product_name": "Сухой препарат",
+                    "formulation": "ВДГ",
+                    "active_substances_raw": "(750 г/кг трибенурон-метил)",
+                    "registration_status": "Действует",
+                    "rate_raw": "25-50 г/га",
+                    "crop": "пшеница",
+                }
+            ],
+            "right": [
+                {
+                    "product_key": "right",
+                    "product_name": "Жидкий препарат",
+                    "formulation": "КС",
+                    "active_substances_raw": "(100 г/л дифеноконазол)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,5 л/га",
+                    "crop": "пшеница",
+                }
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="left",
+            right_key="right",
+            left_price=1000,
+            right_price=800,
+            left_rate=0.04,
+            right_rate=None,
+            crop=None,
+        )
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "herbicide"))
+
+        self.assertEqual(response["left"]["max_rate"], 0.05)
+        self.assertEqual(response["left"]["max_rate_unit"], "кг/га")
+        self.assertEqual(response["left"]["rate_used"], 0.04)
+        self.assertEqual(response["left"]["rate_unit"], "кг/га")
+        self.assertEqual(response["left"]["rate_source"], "manual")
+        self.assertEqual(response["left"]["total_per_ha"], 30.0)
+        self.assertEqual(response["right"]["max_rate"], 0.5)
+        self.assertEqual(response["right"]["max_rate_unit"], "л/га")
+        self.assertEqual(response["right"]["rate_used"], 0.5)
+        self.assertEqual(response["right"]["rate_unit"], "л/га")
+        self.assertEqual(response["right"]["total_per_ha"], 50.0)
+        self.assertEqual(response["price_analysis"]["left_substances_cost"][0]["grams_per_ha"], 30.0)
+        self.assertEqual(response["price_analysis"]["left_substances_cost"][0]["rate_unit"], "кг/га")
 
     def test_absent_manual_rate_keeps_max_registered_rate_behavior(self):
         response = self.compare()

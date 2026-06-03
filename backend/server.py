@@ -651,67 +651,146 @@ def build_resistance_group_analysis(left_active: List[Dict], right_active: List[
         "plain_explanation": plain_explanation,
     }
 
-def parse_rate_max(rate_raw: Optional[str]) -> Optional[float]:
-    """
-    Parse the maximum application rate from raw string.
-    Examples:
-    - "0,6-0,8" -> 0.8
-    - "1,5" -> 1.5
-    - "0,4-0,6" -> 0.6
-    """
+SUPPORTED_RATE_UNITS = {"л/га", "л/т", "кг/га", "кг/т", "г/га", "г/т", "мл/га", "мл/т"}
+NORMALIZED_RATE_UNITS = {
+    "г/га": ("кг/га", 1000),
+    "г/т": ("кг/т", 1000),
+    "мл/га": ("л/га", 1000),
+    "мл/т": ("л/т", 1000),
+}
+RATE_UNIT_REGEX = re.compile(r"(мл|л|кг|г)\s*/\s*(га|т)", flags=re.IGNORECASE)
+
+
+def normalize_rate_unit(unit: Optional[str]) -> Optional[str]:
+    if not unit:
+        return None
+    compact_unit = re.sub(r"\s+", "", unit.lower().replace("ё", "е"))
+    return compact_unit if compact_unit in SUPPORTED_RATE_UNITS else None
+
+
+def normalize_rate_value(rate: float, unit: Optional[str]) -> tuple[float, Optional[str]]:
+    normalized_unit = normalize_rate_unit(unit)
+    if normalized_unit in NORMALIZED_RATE_UNITS:
+        target_unit, divisor = NORMALIZED_RATE_UNITS[normalized_unit]
+        return rate / divisor, target_unit
+    return rate, normalized_unit
+
+
+def parse_rate_max_with_unit(rate_raw: Optional[str]) -> tuple[Optional[float], Optional[str]]:
+    """Parse max application rate and normalize small units to kg or l units."""
     if not rate_raw:
-        return None
-    
-    # Find all numbers in the string
-    numbers = re.findall(r'(\d+(?:[.,]\d+)?)', rate_raw)
-    
+        return None, None
+
+    numbers = re.findall(r"(\d+(?:[.,]\d+)?)", rate_raw)
     if not numbers:
-        return None
-    
-    # Convert to floats and get max
+        return None, None
+
     rates = []
-    for n in numbers:
+    for number in numbers:
         try:
-            rates.append(float(n.replace(',', '.')))
-        except:
+            rates.append(float(number.replace(",", ".")))
+        except ValueError:
             pass
-    
-    return max(rates) if rates else None
 
-def select_comparison_rate(manual_rate: Optional[float], registered_rate: Optional[float]) -> tuple[Optional[float], str]:
-    """Use a manual comparison rate when provided; otherwise keep max registered rate behavior."""
+    if not rates:
+        return None, None
+
+    unit_match = RATE_UNIT_REGEX.search(rate_raw)
+    raw_unit = f"{unit_match.group(1).lower()}/{unit_match.group(2).lower()}" if unit_match else None
+    return normalize_rate_value(max(rates), raw_unit)
+
+
+def parse_rate_max(rate_raw: Optional[str]) -> Optional[float]:
+    """Backward-compatible helper that returns only the numeric max application rate."""
+    rate, _unit = parse_rate_max_with_unit(rate_raw)
+    return rate
+
+
+def select_comparison_rate(
+    manual_rate: Optional[float],
+    registered_rate: Optional[float],
+    registered_unit: Optional[str],
+) -> tuple[Optional[float], Optional[str], str]:
+    """Use manual numeric rate with the registered normalized unit, otherwise use registered rate."""
     if manual_rate is not None:
-        return manual_rate, "manual"
-    return registered_rate, "max_registered"
+        return manual_rate, registered_unit, "manual"
+    return registered_rate, registered_unit, "max_registered"
 
 
-def get_max_registered_rate(records: List[Dict]) -> Optional[float]:
+def get_max_registered_rate(records: List[Dict]) -> tuple[Optional[float], Optional[str]]:
     rates = []
     for record in records:
-        parsed = parse_rate_max(record.get("rate_raw"))
-        if parsed is not None:
-            rates.append(parsed)
-    return max(rates, default=None)
+        parsed_rate, parsed_unit = parse_rate_max_with_unit(record.get("rate_raw"))
+        if parsed_rate is not None:
+            rates.append((parsed_rate, parsed_unit))
+    return max(rates, key=lambda item: item[0], default=(None, None))
 
 
-def build_substance_cost_breakdown(side: str, substances: List[Dict], price: Optional[float], rate_used: Optional[float]) -> List[Dict[str, Any]]:
+def normalize_concentration_unit(unit: Optional[str]) -> Optional[str]:
+    if not unit:
+        return None
+    compact_unit = re.sub(r"\s+", "", unit.lower().replace("ё", "е"))
+    return compact_unit if compact_unit in {"г/кг", "г/л"} else None
+
+
+def calculate_active_amount(concentration: Optional[float], concentration_unit: Optional[str], rate_used: Optional[float], rate_unit: Optional[str]) -> Optional[float]:
+    """Calculate active substance amount for compatible concentration and rate units."""
+    if concentration is None or rate_used is None:
+        return None
+
+    normalized_concentration_unit = normalize_concentration_unit(concentration_unit)
+    normalized_rate_unit = normalize_rate_unit(rate_unit)
+
+    # Backward compatibility for old rows that had no application unit parsed.
+    if normalized_rate_unit is None:
+        return concentration * rate_used
+
+    if normalized_concentration_unit == "г/кг" and normalized_rate_unit.startswith("кг/"):
+        return concentration * rate_used
+    if normalized_concentration_unit == "г/л" and normalized_rate_unit.startswith("л/"):
+        return concentration * rate_used
+
+    return None
+
+
+def calculate_total_active_amount(substances: List[Dict], rate_used: Optional[float], rate_unit: Optional[str]) -> Optional[float]:
+    amounts = [
+        calculate_active_amount(substance.get("concentration"), substance.get("unit"), rate_used, rate_unit)
+        for substance in substances
+    ]
+    compatible_amounts = [amount for amount in amounts if amount is not None]
+    if not compatible_amounts:
+        return None
+    return sum(compatible_amounts)
+
+
+def build_substance_cost_breakdown(
+    side: str,
+    substances: List[Dict],
+    price: Optional[float],
+    rate_used: Optional[float],
+    rate_unit: Optional[str],
+) -> List[Dict[str, Any]]:
     """Estimate cost metrics for each active substance separately."""
     if not price or not rate_used:
         return []
 
     breakdown = []
     total_cost_per_ha = price * rate_used
-    total_concentration = sum(s.get("concentration") or 0 for s in substances)
+    total_amount = calculate_total_active_amount(substances, rate_used, rate_unit)
 
     for substance in substances:
         concentration = substance.get("concentration") or 0
         if concentration <= 0:
             continue
 
-        grams_per_ha = concentration * rate_used
+        grams_per_ha = calculate_active_amount(concentration, substance.get("unit"), rate_used, rate_unit)
+        if grams_per_ha is None or grams_per_ha <= 0:
+            continue
+
         estimated_cost_share_per_ha = (
-            total_cost_per_ha * concentration / total_concentration
-            if total_concentration > 0 else None
+            total_cost_per_ha * grams_per_ha / total_amount
+            if total_amount and total_amount > 0 else None
         )
         estimated_cost_per_gram = (
             estimated_cost_share_per_ha / grams_per_ha
@@ -725,6 +804,7 @@ def build_substance_cost_breakdown(side: str, substances: List[Dict], price: Opt
             "concentration": concentration,
             "unit": substance.get("unit"),
             "rate_used": rate_used,
+            "rate_unit": rate_unit,
             "grams_per_ha": round(grams_per_ha, 4),
             "estimated_cost_share_per_ha": round(estimated_cost_share_per_ha, 4) if estimated_cost_share_per_ha is not None else None,
             "estimated_cost_per_gram": round(estimated_cost_per_gram, 6) if estimated_cost_per_gram is not None else None,
@@ -738,6 +818,8 @@ def build_price_analysis(
     right_price: Optional[float],
     left_rate_used: Optional[float],
     right_rate_used: Optional[float],
+    left_rate_unit: Optional[str],
+    right_rate_unit: Optional[str],
     left_active: List[Dict],
     right_active: List[Dict],
 ) -> Optional[Dict[str, Any]]:
@@ -746,8 +828,8 @@ def build_price_analysis(
 
     left_total_concentration = sum(s["concentration"] for s in left_active)
     right_total_concentration = sum(s["concentration"] for s in right_active)
-    left_substances_cost = build_substance_cost_breakdown("left", left_active, left_price, left_rate_used)
-    right_substances_cost = build_substance_cost_breakdown("right", right_active, right_price, right_rate_used)
+    left_substances_cost = build_substance_cost_breakdown("left", left_active, left_price, left_rate_used, left_rate_unit)
+    right_substances_cost = build_substance_cost_breakdown("right", right_active, right_price, right_rate_used, right_rate_unit)
 
     return {
         "left_price_per_unit": left_price,
@@ -872,10 +954,10 @@ async def build_advanced_compare_response(
     left_active = annotate_substances_with_resistance(left_active, pesticide_type)
     right_active = annotate_substances_with_resistance(right_active, pesticide_type)
 
-    left_max_rate = get_max_registered_rate(left_records)
-    right_max_rate = get_max_registered_rate(right_records)
-    left_rate_used, left_rate_source = select_comparison_rate(request.left_rate, left_max_rate)
-    right_rate_used, right_rate_source = select_comparison_rate(request.right_rate, right_max_rate)
+    left_max_rate, left_max_rate_unit = get_max_registered_rate(left_records)
+    right_max_rate, right_max_rate_unit = get_max_registered_rate(right_records)
+    left_rate_used, left_rate_unit, left_rate_source = select_comparison_rate(request.left_rate, left_max_rate, left_max_rate_unit)
+    right_rate_used, right_rate_unit, right_rate_source = select_comparison_rate(request.right_rate, right_max_rate, right_max_rate_unit)
 
     identical_substances = []
     similar_by_category = []
@@ -885,8 +967,8 @@ async def build_advanced_compare_response(
         for right_substance in right_active:
             right_name_norm = normalize_substance_name(right_substance["name"])
             if left_name_norm == right_name_norm or left_name_norm in right_name_norm or right_name_norm in left_name_norm:
-                left_per_ha = (left_substance["concentration"] * left_rate_used) if left_rate_used else None
-                right_per_ha = (right_substance["concentration"] * right_rate_used) if right_rate_used else None
+                left_per_ha = (calculate_active_amount(left_substance["concentration"], left_substance.get("unit"), left_rate_used, left_rate_unit)) if left_rate_used else None
+                right_per_ha = (calculate_active_amount(right_substance["concentration"], right_substance.get("unit"), right_rate_used, right_rate_unit)) if right_rate_used else None
                 identical_substances.append({
                     "name": left_substance["name"],
                     "left_concentration": left_substance["concentration"],
@@ -926,7 +1008,7 @@ async def build_advanced_compare_response(
             normalize_substance_name(item["name"]) in name_norm
             for item in identical_substances
         ):
-            per_ha = (substance["concentration"] * left_rate_used) if left_rate_used else None
+            per_ha = (calculate_active_amount(substance["concentration"], substance.get("unit"), left_rate_used, left_rate_unit)) if left_rate_used else None
             left_unique.append({
                 **substance,
                 "category": get_substance_category(substance["name"]),
@@ -942,7 +1024,7 @@ async def build_advanced_compare_response(
             normalize_substance_name(item["name"]) in name_norm
             for item in identical_substances
         ):
-            per_ha = (substance["concentration"] * right_rate_used) if right_rate_used else None
+            per_ha = (calculate_active_amount(substance["concentration"], substance.get("unit"), right_rate_used, right_rate_unit)) if right_rate_used else None
             right_unique.append({
                 **substance,
                 "category": get_substance_category(substance["name"]),
@@ -951,8 +1033,8 @@ async def build_advanced_compare_response(
 
     left_total_concentration = sum(s["concentration"] for s in left_active)
     right_total_concentration = sum(s["concentration"] for s in right_active)
-    left_total_per_ha = (left_total_concentration * left_rate_used) if left_rate_used else None
-    right_total_per_ha = (right_total_concentration * right_rate_used) if right_rate_used else None
+    left_total_per_ha = calculate_total_active_amount(left_active, left_rate_used, left_rate_unit)
+    right_total_per_ha = calculate_total_active_amount(right_active, right_rate_used, right_rate_unit)
 
     group_analysis = build_resistance_group_analysis(left_active, right_active)
     price_analysis = build_price_analysis(
@@ -960,6 +1042,8 @@ async def build_advanced_compare_response(
         request.right_price,
         left_rate_used,
         right_rate_used,
+        left_rate_unit,
+        right_rate_unit,
         left_active,
         right_active,
     )
@@ -979,7 +1063,9 @@ async def build_advanced_compare_response(
             "active_substances_raw": left_first.get("active_substances_raw"),
             "registration_status": left_first.get("registration_status"),
             "max_rate": left_max_rate,
+            "max_rate_unit": left_max_rate_unit,
             "rate_used": left_rate_used,
+            "rate_unit": left_rate_unit,
             "rate_source": left_rate_source,
             "substances": left_active,
             "antidotes": left_antidotes,
@@ -994,7 +1080,9 @@ async def build_advanced_compare_response(
             "active_substances_raw": right_first.get("active_substances_raw"),
             "registration_status": right_first.get("registration_status"),
             "max_rate": right_max_rate,
+            "max_rate_unit": right_max_rate_unit,
             "rate_used": right_rate_used,
+            "rate_unit": right_rate_unit,
             "rate_source": right_rate_source,
             "substances": right_active,
             "antidotes": right_antidotes,

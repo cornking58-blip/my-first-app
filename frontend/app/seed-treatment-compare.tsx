@@ -65,7 +65,9 @@ interface ProductInfo {
   active_substances_raw: string | null;
   registration_status: string | null;
   max_rate: number | null;
+  max_rate_unit?: string | null;
   rate_used: number | null;
+  rate_unit?: string | null;
   rate_source: 'manual' | 'max_registered';
   substances: Substance[];
   antidotes: Substance[];
@@ -105,6 +107,7 @@ interface SubstanceCost {
   concentration: number;
   unit: string;
   rate_used: number;
+  rate_unit?: string | null;
   grams_per_ha: number;
   estimated_cost_share_per_ha: number | null;
   estimated_cost_per_gram: number | null;
@@ -169,6 +172,27 @@ export default function SeedTreatmentCompareScreen() {
   const parseOptionalNumber = (value: string) => {
     const parsed = value ? parseFloat(value.replace(',', '.')) : undefined;
     return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const formatRate = (rate?: number | null, unit?: string | null) => {
+    if (rate === null || rate === undefined) return '—';
+    return unit ? `${formatNumber(rate)} ${unit}` : formatNumber(rate);
+  };
+
+  const getManualRatePlaceholder = (fallback: string, unit?: string | null) => (
+    unit ? `${fallback} ${unit}` : fallback
+  );
+
+  const calculateActiveAmount = (substance?: Substance, product?: ProductInfo) => {
+    if (!substance || !product?.rate_used) return null;
+    if (!product.rate_unit) return substance.concentration * product.rate_used;
+    if (substance.unit === 'г/кг' && product.rate_unit.startsWith('кг/')) {
+      return substance.concentration * product.rate_used;
+    }
+    if (substance.unit === 'г/л' && product.rate_unit.startsWith('л/')) {
+      return substance.concentration * product.rate_used;
+    }
+    return null;
   };
 
   const fetchCompareData = async (withInputs = false) => {
@@ -282,13 +306,13 @@ export default function SeedTreatmentCompareScreen() {
     const cost = getSubstanceCost(side, substance.name);
     const product = side === 'left' ? compareData?.left : compareData?.right;
     const showCost = side === 'left' ? hasLeftPrice : hasRightPrice;
-    const calculatedPerHa = perHa ?? substance.per_ha ?? (product?.rate_used ? substance.concentration * product.rate_used : null);
+    const calculatedPerHa = perHa ?? substance.per_ha ?? calculateActiveAmount(substance, product);
 
     return (
       <View style={[styles.metricSubstanceCard, side === 'left' ? styles.leftColumnCard : styles.rightColumnCard]}>
         <Text style={styles.uniqueSubstanceName}>{substance.name}</Text>
         <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatNumber(substance.concentration)} {substance.unit}</Text>
-        <Text style={styles.uniqueSubstanceInfo}>Норма: {formatNumber(product?.rate_used)} л/га</Text>
+        <Text style={styles.uniqueSubstanceInfo}>Норма: {formatRate(product?.rate_used, product?.rate_unit)}</Text>
         <Text style={styles.uniqueSubstanceInfo}>ДВ на 1 га: {formatNumber(calculatedPerHa)} г/га</Text>
         {showCost && cost?.estimated_cost_per_gram !== null && cost?.estimated_cost_per_gram !== undefined && (
           <Text style={styles.uniqueSubstanceInfo}>Стоимость: {formatNumber(cost.estimated_cost_per_gram)} ₽/г</Text>
@@ -301,7 +325,7 @@ export default function SeedTreatmentCompareScreen() {
 
   const renderUniqueSubstance = (sub: Substance & { category: string; per_ha: number | null }, side: 'left' | 'right') => {
     const product = side === 'left' ? compareData?.left : compareData?.right;
-    const calculatedPerHa = sub.per_ha ?? (product?.rate_used ? sub.concentration * product.rate_used : null);
+    const calculatedPerHa = sub.per_ha ?? calculateActiveAmount(sub, product);
 
     return (
       <View style={[styles.uniqueSubstance, side === 'left' ? styles.leftColumnCard : styles.rightColumnCard]}>
@@ -490,7 +514,7 @@ export default function SeedTreatmentCompareScreen() {
                 <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Норма: {left.product_name}</Text>
                 <TextInput
                   style={styles.priceInput}
-                  placeholder="Напр. 0,8"
+                  placeholder={getManualRatePlaceholder('Напр. 0,8', left.rate_unit)}
                   placeholderTextColor="#9CA3AF"
                   keyboardType="decimal-pad"
                   value={leftRate}
@@ -512,7 +536,7 @@ export default function SeedTreatmentCompareScreen() {
                 <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Норма: {right.product_name}</Text>
                 <TextInput
                   style={styles.priceInput}
-                  placeholder="Напр. 1,0"
+                  placeholder={getManualRatePlaceholder('Напр. 1,0', right.rate_unit)}
                   placeholderTextColor="#9CA3AF"
                   keyboardType="decimal-pad"
                   value={rightRate}
@@ -616,17 +640,17 @@ export default function SeedTreatmentCompareScreen() {
                 </View>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Макс. норма, л/га</Text>
+                <Text style={styles.summaryLabel}>Максимальная норма</Text>
                 <View style={styles.summaryValues}>
-                  <Text style={[styles.summaryValue, styles.leftValue]}>{left.max_rate ?? '—'}</Text>
-                  <Text style={[styles.summaryValue, styles.rightValue]}>{right.max_rate ?? '—'}</Text>
+                  <Text style={[styles.summaryValue, styles.leftValue]}>{formatRate(left.max_rate, left.max_rate_unit)}</Text>
+                  <Text style={[styles.summaryValue, styles.rightValue]}>{formatRate(right.max_rate, right.max_rate_unit)}</Text>
                 </View>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Используемая норма, л/га</Text>
+                <Text style={styles.summaryLabel}>Норма для расчёта</Text>
                 <View style={styles.summaryValues}>
-                  <Text style={[styles.summaryValue, styles.leftValue]}>{left.rate_used ?? '—'}</Text>
-                  <Text style={[styles.summaryValue, styles.rightValue]}>{right.rate_used ?? '—'}</Text>
+                  <Text style={[styles.summaryValue, styles.leftValue]}>{formatRate(left.rate_used, left.rate_unit)}</Text>
+                  <Text style={[styles.summaryValue, styles.rightValue]}>{formatRate(right.rate_used, right.rate_unit)}</Text>
                 </View>
               </View>
               <View style={styles.summaryRow}>
