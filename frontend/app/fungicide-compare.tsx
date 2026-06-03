@@ -191,7 +191,7 @@ export default function FungicideCompareScreen() {
       if (rPrice !== undefined) body.right_price = rPrice;
       if (lRate !== undefined) body.left_rate = lRate;
       if (rRate !== undefined) body.right_rate = rRate;
-      if (crop.trim()) body.crop = crop.trim();
+      if (crop.trim().length > 0) body.crop = crop.trim();
 
       const response = await axios.post(`${API_URL}/api/fungicides/compare-advanced`, body);
       setCompareData(response.data);
@@ -346,6 +346,13 @@ export default function FungicideCompareScreen() {
   }
 
   const { left, right, analysis, group_analysis, price_analysis, crop_registration } = compareData;
+  const hasCropInput = crop.trim().length > 0;
+  const hasLeftComposition = (left.active_substances_raw?.trim().length ?? 0) > 0;
+  const hasRightComposition = (right.active_substances_raw?.trim().length ?? 0) > 0;
+  const hasLeftFormulation = (left.formulation?.trim().length ?? 0) > 0;
+  const hasRightFormulation = (right.formulation?.trim().length ?? 0) > 0;
+  const hasPriceResultValues = price_analysis !== null
+    && (price_analysis.left_price_per_unit !== null || price_analysis.right_price_per_unit !== null);
   const usedLeftSubstances = new Set(analysis.identical_substances.map(item => getSubstanceKey(item.name)));
   const usedRightSubstances = new Set(analysis.identical_substances.map(item => getSubstanceKey(item.name)));
   const sameGroupMatches = (group_analysis?.same_group_matches ?? [])
@@ -389,14 +396,14 @@ export default function FungicideCompareScreen() {
             <View style={[styles.productHeaderLeft, styles.leftHeaderAccent]}>
               <Text style={styles.productSideLabel}>Препарат А</Text>
               <Text style={styles.productHeaderName} numberOfLines={2}>{left.product_name}</Text>
-              {left.active_substances_raw && (
+              {hasLeftComposition ? (
                 <Text style={styles.productComposition} numberOfLines={4}>д.в.: {left.active_substances_raw}</Text>
-              )}
-              {left.formulation && (
+              ) : null}
+              {hasLeftFormulation ? (
                 <View style={styles.formulationBadge}>
                   <Text style={styles.formulationText}>{left.formulation}</Text>
                 </View>
-              )}
+              ) : null}
               <View style={[
                 styles.statusBadgeMini,
                 isActive(left.registration_status) ? styles.statusActiveMini : styles.statusInactiveMini
@@ -408,7 +415,7 @@ export default function FungicideCompareScreen() {
                   {isActive(left.registration_status) ? 'Действует' : 'Не действует'}
                 </Text>
               </View>
-              {crop.trim() && crop_registration && (
+              {hasCropInput && crop_registration ? (
                 <View style={[
                   styles.cropRegistrationBadge,
                   crop_registration.left.has_registration ? styles.statusActiveMini : styles.statusInactiveMini
@@ -418,7 +425,7 @@ export default function FungicideCompareScreen() {
                     crop_registration.left.has_registration ? styles.statusTextActiveMini : styles.statusTextInactiveMini
                   ]}>{crop_registration.left.message}</Text>
                 </View>
-              )}
+              ) : null}
             </View>
 
             <View style={styles.vsContainer}>
@@ -428,14 +435,14 @@ export default function FungicideCompareScreen() {
             <View style={[styles.productHeaderRight, styles.rightHeaderAccent]}>
               <Text style={styles.productSideLabel}>Препарат Б</Text>
               <Text style={styles.productHeaderName} numberOfLines={2}>{right.product_name}</Text>
-              {right.active_substances_raw && (
+              {hasRightComposition ? (
                 <Text style={styles.productComposition} numberOfLines={4}>д.в.: {right.active_substances_raw}</Text>
-              )}
-              {right.formulation && (
+              ) : null}
+              {hasRightFormulation ? (
                 <View style={styles.formulationBadge}>
                   <Text style={styles.formulationText}>{right.formulation}</Text>
                 </View>
-              )}
+              ) : null}
               <View style={[
                 styles.statusBadgeMini,
                 isActive(right.registration_status) ? styles.statusActiveMini : styles.statusInactiveMini
@@ -447,7 +454,7 @@ export default function FungicideCompareScreen() {
                   {isActive(right.registration_status) ? 'Действует' : 'Не действует'}
                 </Text>
               </View>
-              {crop.trim() && crop_registration && (
+              {hasCropInput && crop_registration ? (
                 <View style={[
                   styles.cropRegistrationBadge,
                   crop_registration.right.has_registration ? styles.statusActiveMini : styles.statusInactiveMini
@@ -457,7 +464,7 @@ export default function FungicideCompareScreen() {
                     crop_registration.right.has_registration ? styles.statusTextActiveMini : styles.statusTextInactiveMini
                   ]}>{crop_registration.right.message}</Text>
                 </View>
-              )}
+              ) : null}
             </View>
           </View>
 
@@ -481,7 +488,7 @@ export default function FungicideCompareScreen() {
                   onChangeText={setLeftRate}
                 />
                 <Text style={styles.inputHint}>По умолчанию: максимальная зарегистрированная норма</Text>
-                <Text style={styles.inputHint}>Источник нормы: {leftRate.trim() ? 'введена вручную' : 'максимальная зарегистрированная'}</Text>
+                <Text style={styles.inputHint}>Источник нормы: {leftRate.trim().length > 0 ? 'введена вручную' : 'максимальная зарегистрированная'}</Text>
                 <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Цена препарата А</Text>
                 <TextInput
                   style={styles.priceInput}
@@ -503,7 +510,7 @@ export default function FungicideCompareScreen() {
                   onChangeText={setRightRate}
                 />
                 <Text style={styles.inputHint}>По умолчанию: максимальная зарегистрированная норма</Text>
-                <Text style={styles.inputHint}>Источник нормы: {rightRate.trim() ? 'введена вручную' : 'максимальная зарегистрированная'}</Text>
+                <Text style={styles.inputHint}>Источник нормы: {rightRate.trim().length > 0 ? 'введена вручную' : 'максимальная зарегистрированная'}</Text>
                 <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Цена препарата Б</Text>
                 <TextInput
                   style={styles.priceInput}
@@ -526,7 +533,7 @@ export default function FungicideCompareScreen() {
                 onChangeText={setCrop}
               />
             </View>
-            {crop.trim() && crop_registration && (
+            {hasCropInput && crop_registration ? (
               <View style={styles.cropResultRow}>
                 <View style={[styles.cropResultCard, styles.leftColumnCard]}>
                   <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>Препарат А</Text>
@@ -537,7 +544,7 @@ export default function FungicideCompareScreen() {
                   <Text style={styles.registrationLine}>{crop_registration.right.message}</Text>
                 </View>
               </View>
-            )}
+            ) : null}
 
             <TouchableOpacity
               style={styles.calculateButton}
@@ -558,7 +565,7 @@ export default function FungicideCompareScreen() {
               <Text style={styles.neutralEconomyText}>Цена не указана, экономика не рассчитана.</Text>
             )}
 
-            {hasAnyPrice && price_analysis && (price_analysis.left_price_per_unit || price_analysis.right_price_per_unit) && (
+            {hasAnyPrice && hasPriceResultValues && price_analysis ? (
               <View style={styles.priceResults}>
                 <View style={styles.priceResultRow}>
                   <Text style={styles.priceResultLabel}>Стоимость обработки 1 га, ₽</Text>
@@ -578,7 +585,7 @@ export default function FungicideCompareScreen() {
                   </View>
                 </View>
               </View>
-            )}
+            ) : null}
           </View>
 
           {/* Summary Stats */}
