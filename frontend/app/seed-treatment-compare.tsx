@@ -267,18 +267,24 @@ export default function SeedTreatmentCompareScreen() {
     return (side === 'left' && leftValue > rightValue) || (side === 'right' && rightValue > leftValue) ? 'выше' : 'ниже';
   };
 
+  const getSubstanceKey = (name: string) => name.trim().toLowerCase();
+
+  const namesMatch = (leftName?: string | null, rightName?: string | null) => {
+    const leftKey = getSubstanceKey(leftName ?? '');
+    const rightKey = getSubstanceKey(rightName ?? '');
+    return Boolean(leftKey && rightKey && (leftKey === rightKey || leftKey.includes(rightKey) || rightKey.includes(leftKey)));
+  };
+
   const getSubstanceDetails = (product: ProductInfo, substanceName: string) => {
-    return product.substances.find(item => item.name.toLowerCase() === substanceName.toLowerCase());
+    return product.substances.find(item => namesMatch(item.name, substanceName));
   };
 
   const getSubstanceCost = (side: 'left' | 'right', substanceName: string) => {
     const costs = side === 'left'
       ? compareData?.price_analysis?.left_substances_cost ?? compareData?.price_analysis?.substances_cost.filter(item => item.side === 'left')
       : compareData?.price_analysis?.right_substances_cost ?? compareData?.price_analysis?.substances_cost.filter(item => item.side === 'right');
-    return costs?.find(item => (item.substance_name || item.name || '').toLowerCase() === substanceName.toLowerCase());
+    return costs?.find(item => namesMatch(item.substance_name || item.name, substanceName));
   };
-
-  const getSubstanceKey = (name: string) => name.trim().toLowerCase();
 
   const shouldShowSubstanceCost = (cost: SubstanceCost | undefined, hasPrice: boolean) => {
     return hasPrice
@@ -697,6 +703,10 @@ export default function SeedTreatmentCompareScreen() {
               {analysis.identical_substances.map((sub, idx) => {
                 const leftDetails = getSubstanceDetails(left, sub.name);
                 const rightDetails = getSubstanceDetails(right, sub.name);
+                const leftCost = getSubstanceCost('left', leftDetails?.name ?? sub.name);
+                const rightCost = getSubstanceCost('right', rightDetails?.name ?? sub.name);
+                const showLeftCost = shouldShowSubstanceCost(leftCost, hasLeftPrice);
+                const showRightCost = shouldShowSubstanceCost(rightCost, hasRightPrice);
                 return (
                   <View key={idx} style={styles.substanceCard}>
                     <Text style={styles.substanceName}>{sub.name}</Text>
@@ -711,6 +721,12 @@ export default function SeedTreatmentCompareScreen() {
                         <Text style={styles.comparisonTag}>{getValueLabel(sub.left_concentration, sub.right_concentration, 'left')}</Text>
                         <Text style={styles.valueLabel}>ДВ на 1 га</Text>
                         <Text style={styles.substancePerHa}>{formatNumber(sub.left_per_ha)} г/га</Text>
+                        {showLeftCost && (
+                          <>
+                            <Text style={styles.valueLabel}>Стоимость 1 г ДВ</Text>
+                            <Text style={styles.substancePerHa}>{formatNumber(leftCost?.estimated_cost_per_gram)} ₽/г</Text>
+                          </>
+                        )}
                         <Text style={styles.valueLabel}>Группа</Text>
                         <Text style={styles.groupInlineText}>{renderGroupLabel(leftDetails)}</Text>
                         {renderEffectSummary(leftDetails?.effect_summary)}
@@ -721,6 +737,12 @@ export default function SeedTreatmentCompareScreen() {
                         <Text style={styles.comparisonTag}>{getValueLabel(sub.left_concentration, sub.right_concentration, 'right')}</Text>
                         <Text style={styles.valueLabel}>ДВ на 1 га</Text>
                         <Text style={styles.substancePerHa}>{formatNumber(sub.right_per_ha)} г/га</Text>
+                        {showRightCost && (
+                          <>
+                            <Text style={styles.valueLabel}>Стоимость 1 г ДВ</Text>
+                            <Text style={styles.substancePerHa}>{formatNumber(rightCost?.estimated_cost_per_gram)} ₽/г</Text>
+                          </>
+                        )}
                         <Text style={styles.valueLabel}>Группа</Text>
                         <Text style={styles.groupInlineText}>{renderGroupLabel(rightDetails)}</Text>
                         {renderEffectSummary(rightDetails?.effect_summary)}
