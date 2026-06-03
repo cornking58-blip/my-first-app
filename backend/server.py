@@ -401,38 +401,38 @@ UNKNOWN_RESISTANCE_GROUP = {
 
 RESISTANCE_GROUPS = {
     "herbicide": {
-        "глифосат": {"system": "HRAC", "group": "9", "name": "EPSPS inhibitors"},
-        "трибенурон-метил": {"system": "HRAC", "group": "2", "name": "ALS inhibitors"},
-        "метсульфурон-метил": {"system": "HRAC", "group": "2", "name": "ALS inhibitors"},
-        "имазамокс": {"system": "HRAC", "group": "2", "name": "ALS inhibitors"},
-        "имазетапир": {"system": "HRAC", "group": "2", "name": "ALS inhibitors"},
-        "клетодим": {"system": "HRAC", "group": "1", "name": "ACCase inhibitors"},
-        "хизалофоп-п-этил": {"system": "HRAC", "group": "1", "name": "ACCase inhibitors"},
-        "2,4-д": {"system": "HRAC", "group": "4", "name": "Synthetic auxins"},
-        "дикамба": {"system": "HRAC", "group": "4", "name": "Synthetic auxins"},
-        "клопиралид": {"system": "HRAC", "group": "4", "name": "Synthetic auxins"},
-        "мезотрион": {"system": "HRAC", "group": "27", "name": "HPPD inhibitors"},
-        "метрибузин": {"system": "HRAC", "group": "5", "name": "PSII inhibitors"},
+        "глифосат": {"system": "HRAC", "group": "9", "name": "EPSPS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
+        "трибенурон-метил": {"system": "HRAC", "group": "2", "name": "ALS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
+        "метсульфурон-метил": {"system": "HRAC", "group": "2", "name": "ALS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
+        "имазамокс": {"system": "HRAC", "group": "2", "name": "ALS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
+        "имазетапир": {"system": "HRAC", "group": "2", "name": "ALS inhibitors", "effect_summary": "Кратко: нарушает синтез важных аминокислот у растения."},
+        "клетодим": {"system": "HRAC", "group": "1", "name": "ACCase inhibitors", "effect_summary": "Кратко: нарушает синтез жирных кислот у растения."},
+        "хизалофоп-п-этил": {"system": "HRAC", "group": "1", "name": "ACCase inhibitors", "effect_summary": "Кратко: нарушает синтез жирных кислот у растения."},
+        "2,4-д": {"system": "HRAC", "group": "4", "name": "Synthetic auxins", "effect_summary": "Кратко: нарушает гормональную регуляцию роста растения."},
+        "дикамба": {"system": "HRAC", "group": "4", "name": "Synthetic auxins", "effect_summary": "Кратко: нарушает гормональную регуляцию роста растения."},
+        "клопиралид": {"system": "HRAC", "group": "4", "name": "Synthetic auxins", "effect_summary": "Кратко: нарушает гормональную регуляцию роста растения."},
+        "мезотрион": {"system": "HRAC", "group": "27", "name": "HPPD inhibitors", "effect_summary": "Кратко: нарушает образование защитных пигментов растения."},
+        "метрибузин": {"system": "HRAC", "group": "5", "name": "PSII inhibitors", "effect_summary": "Кратко: нарушает фотосинтез растения."},
     },
     "fungicide": {
-        "тебуконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides"},
-        "пропиконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides"},
-        "дифеноконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides"},
-        "азоксистробин": {"system": "FRAC", "group": "11", "name": "QoI fungicides"},
-        "пираклостробин": {"system": "FRAC", "group": "11", "name": "QoI fungicides"},
-        "карбендазим": {"system": "FRAC", "group": "1", "name": "MBC fungicides"},
-        "флудиоксонил": {"system": "FRAC", "group": "12", "name": "Phenylpyrroles"},
-        "металаксил-м": {"system": "FRAC", "group": "4", "name": "Phenylamides"},
+        "тебуконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides", "effect_summary": "Кратко: нарушает синтез клеточной мембраны гриба."},
+        "пропиконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides", "effect_summary": "Кратко: нарушает синтез клеточной мембраны гриба."},
+        "дифеноконазол": {"system": "FRAC", "group": "3", "name": "DMI fungicides", "effect_summary": "Кратко: нарушает синтез клеточной мембраны гриба."},
+        "азоксистробин": {"system": "FRAC", "group": "11", "name": "QoI fungicides", "effect_summary": "Кратко: нарушает дыхание гриба."},
+        "пираклостробин": {"system": "FRAC", "group": "11", "name": "QoI fungicides", "effect_summary": "Кратко: нарушает дыхание гриба."},
+        "карбендазим": {"system": "FRAC", "group": "1", "name": "MBC fungicides", "effect_summary": "Кратко: нарушает деление клеток гриба."},
+        "флудиоксонил": {"system": "FRAC", "group": "12", "name": "Phenylpyrroles", "effect_summary": "Кратко: нарушает осморегуляцию клетки гриба."},
+        "металаксил-м": {"system": "FRAC", "group": "4", "name": "Phenylamides", "effect_summary": "Кратко: нарушает синтез РНК у гриба."},
     },
     "insecticide": {
-        "имидаклоприд": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids"},
-        "тиаметоксам": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids"},
-        "клотианидин": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids"},
-        "лямбда-цигалотрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids"},
-        "альфа-циперметрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids"},
-        "дельтаметрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids"},
-        "хлорантранилипрол": {"system": "IRAC", "group": "28", "name": "Diamides"},
-        "абамектин": {"system": "IRAC", "group": "6", "name": "Avermectins"},
+        "имидаклоприд": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids", "effect_summary": "Кратко: нарушает передачу нервных сигналов у насекомого."},
+        "тиаметоксам": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids", "effect_summary": "Кратко: нарушает передачу нервных сигналов у насекомого."},
+        "клотианидин": {"system": "IRAC", "group": "4A", "name": "Neonicotinoids", "effect_summary": "Кратко: нарушает передачу нервных сигналов у насекомого."},
+        "лямбда-цигалотрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids", "effect_summary": "Кратко: нарушает работу натриевых каналов нервной системы насекомого."},
+        "альфа-циперметрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids", "effect_summary": "Кратко: нарушает работу натриевых каналов нервной системы насекомого."},
+        "дельтаметрин": {"system": "IRAC", "group": "3A", "name": "Pyrethroids", "effect_summary": "Кратко: нарушает работу натриевых каналов нервной системы насекомого."},
+        "хлорантранилипрол": {"system": "IRAC", "group": "28", "name": "Diamides", "effect_summary": "Кратко: нарушает работу мышц насекомого."},
+        "абамектин": {"system": "IRAC", "group": "6", "name": "Avermectins", "effect_summary": "Кратко: нарушает передачу нервных и мышечных сигналов у насекомого."},
     },
 }
 
@@ -496,6 +496,7 @@ def annotate_substances_with_resistance(substances: List[Dict], pesticide_type: 
             "resistance_system": group_info["system"],
             "resistance_group": group_info["group"],
             "resistance_group_name": group_info["name"],
+            "effect_summary": group_info.get("effect_summary"),
         })
     return annotated
 
@@ -535,6 +536,7 @@ def _resistance_reference_groups(substances: List[Dict]) -> List[Dict[str, Optio
             "system": substance.get("resistance_system"),
             "group": substance.get("resistance_group"),
             "group_name": substance.get("resistance_group_name") or "группа не определена",
+            "effect_summary": substance.get("effect_summary"),
             "message": (
                 f"{substance.get('resistance_system')} {substance.get('resistance_group')} — {substance.get('resistance_group_name')}"
                 if substance.get("resistance_system") and substance.get("resistance_group")
@@ -597,7 +599,12 @@ def build_resistance_group_analysis(left_active: List[Dict], right_active: List[
             right_system, right_group = right_key
 
             if left_key == right_key:
-                bucket_key = (left_system, left_group, left_substance.get("resistance_group_name"))
+                bucket_key = (
+                    left_system,
+                    left_group,
+                    left_substance.get("resistance_group_name"),
+                    left_substance.get("effect_summary") or right_substance.get("effect_summary"),
+                )
                 bucket = same_group_bucket.setdefault(bucket_key, {"left": set(), "right": set()})
                 bucket["left"].add(left_substance.get("name"))
                 bucket["right"].add(right_substance.get("name"))
@@ -618,11 +625,12 @@ def build_resistance_group_analysis(left_active: List[Dict], right_active: List[
             "system": system,
             "group": group,
             "group_name": group_name,
+            "effect_summary": effect_summary,
             "left_substances": sorted(names["left"]),
             "right_substances": sorted(names["right"]),
             "warning": "Действующие вещества разные, но группа устойчивости одна. По механизму действия препараты близки.",
         }
-        for (system, group, group_name), names in same_group_bucket.items()
+        for (system, group, group_name, effect_summary), names in same_group_bucket.items()
     ]
 
     if same_group_matches:
@@ -892,6 +900,7 @@ async def build_advanced_compare_response(
                     "resistance_system": left_substance.get("resistance_system") or right_substance.get("resistance_system"),
                     "resistance_group": left_substance.get("resistance_group") or right_substance.get("resistance_group"),
                     "resistance_group_name": left_substance.get("resistance_group_name") or right_substance.get("resistance_group_name"),
+                    "effect_summary": left_substance.get("effect_summary") or right_substance.get("effect_summary"),
                 })
 
     left_categories = {get_substance_category(s["name"]): s for s in left_active}

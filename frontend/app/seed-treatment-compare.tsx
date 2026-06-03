@@ -37,6 +37,7 @@ interface Substance {
   resistance_system?: string | null;
   resistance_group?: string | null;
   resistance_group_name?: string;
+  effect_summary?: string | null;
   category?: string;
   per_ha?: number;
 }
@@ -78,6 +79,7 @@ interface GroupAnalysis {
     system: string;
     group: string;
     group_name: string;
+    effect_summary?: string | null;
     left_substances: string[];
     right_substances: string[];
     warning: string;
@@ -261,6 +263,11 @@ export default function SeedTreatmentCompareScreen() {
     return `${system}${substance.resistance_group}${groupName}`;
   };
 
+  const renderEffectSummary = (effectSummary?: string | null) => {
+    if (!effectSummary) return null;
+    return <Text style={styles.groupEffectText}>{effectSummary}</Text>;
+  };
+
   const renderProductColumnLabel = (side: 'left' | 'right', productName: string) => (
     <View style={[styles.columnLabel, side === 'left' ? styles.columnLabelLeft : styles.columnLabelRight]}>
       <Text style={[styles.columnLabelText, side === 'left' ? styles.leftAccentText : styles.rightAccentText]}>
@@ -287,6 +294,7 @@ export default function SeedTreatmentCompareScreen() {
           <Text style={styles.uniqueSubstanceInfo}>Стоимость: {formatNumber(cost.estimated_cost_per_gram)} ₽/г</Text>
         )}
         <Text style={styles.uniqueSubstanceInfo}>Группа: {renderGroupLabel(substance)}</Text>
+        {renderEffectSummary(substance.effect_summary)}
       </View>
     );
   };
@@ -301,6 +309,7 @@ export default function SeedTreatmentCompareScreen() {
         <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatNumber(sub.concentration)} {sub.unit}</Text>
         <Text style={styles.uniqueSubstanceInfo}>ДВ на 1 га: {formatNumber(calculatedPerHa)} г/га</Text>
         <Text style={styles.uniqueSubstanceInfo}>Группа: {renderGroupLabel(sub)}</Text>
+        {renderEffectSummary(sub.effect_summary)}
         <Text style={styles.uniqueSubstanceInfo}>Прямое сопоставление не найдено.</Text>
       </View>
     );
@@ -666,6 +675,7 @@ export default function SeedTreatmentCompareScreen() {
                         <Text style={styles.substancePerHa}>{formatNumber(sub.left_per_ha)} г/га</Text>
                         <Text style={styles.valueLabel}>Группа</Text>
                         <Text style={styles.groupInlineText}>{renderGroupLabel(leftDetails)}</Text>
+                        {renderEffectSummary(leftDetails?.effect_summary)}
                       </View>
                       <View style={[styles.substanceValue, styles.rightColumnCard, getValueTone(sub.left_concentration, sub.right_concentration, 'right')]}>
                         <Text style={styles.valueLabel}>Концентрация</Text>
@@ -675,6 +685,7 @@ export default function SeedTreatmentCompareScreen() {
                         <Text style={styles.substancePerHa}>{formatNumber(sub.right_per_ha)} г/га</Text>
                         <Text style={styles.valueLabel}>Группа</Text>
                         <Text style={styles.groupInlineText}>{renderGroupLabel(rightDetails)}</Text>
+                        {renderEffectSummary(rightDetails?.effect_summary)}
                       </View>
                     </View>
                   </View>
@@ -693,6 +704,7 @@ export default function SeedTreatmentCompareScreen() {
               {sameGroupMatches.map((match, idx) => (
                 <View key={`same-${idx}`} style={styles.groupCard}>
                   <Text style={styles.groupTitle}>{match.system} {match.group}{match.group_name ? ` • ${match.group_name}` : ''}</Text>
+                  {renderEffectSummary(match.effect_summary)}
                   <Text style={styles.groupNeutralText}>Разные действующие вещества, но одна группа действия.</Text>
                   <View style={styles.categoryComparison}>
                     <View style={styles.categoryColumn}>
@@ -965,6 +977,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 15,
     color: '#374151',
+  },
+  groupEffectText: {
+    alignSelf: 'stretch',
+    flexShrink: 1,
+    flexWrap: 'wrap',
+    fontSize: 10,
+    lineHeight: 14,
+    color: '#6B7280',
+    marginTop: 3,
   },
   columnSmallTitle: {
     fontSize: 11,
