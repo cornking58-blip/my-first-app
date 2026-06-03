@@ -759,15 +759,57 @@ def normalize_crop_for_registration(crop: Optional[str]) -> str:
     return normalize_search_text(crop or "")
 
 
+def normalize_crop_compact_for_registration(crop: Optional[str]) -> str:
+    """Normalize crop text for direct comparisons across OCR/PDF spacing issues."""
+    return normalize_crop_for_registration(crop).replace(" ", "")
+
+
+CROP_REGISTRATION_ENDINGS = (
+    "иями", "ями", "ами", "ого", "ему", "ыми", "ими", "ая", "яя", "ое", "ее",
+    "ые", "ие", "ый", "ий", "ой", "ую", "юю", "ом", "ем", "ах", "ях",
+    "ов", "ев", "ей", "ам", "ям", "ою", "ею", "а", "я", "ы", "и",
+    "у", "ю", "е", "о", "ь",
+)
+
+
+def crop_registration_stems(crop: Optional[str]) -> set[str]:
+    """Return tolerant crop forms for registration checks, including inflected Russian words."""
+    normalized = normalize_crop_for_registration(crop)
+    if not normalized:
+        return set()
+
+    forms = {normalized.replace(" ", "")}
+    for token in normalized.split():
+        compact_token = token.replace(" ", "")
+        if len(compact_token) < 3:
+            continue
+        forms.add(compact_token)
+        for ending in CROP_REGISTRATION_ENDINGS:
+            if compact_token.endswith(ending) and len(compact_token) - len(ending) >= 3:
+                forms.add(compact_token[: -len(ending)])
+                break
+    return forms
+
+
 def has_crop_registration(records: List[Dict], crop: Optional[str]) -> bool:
-    target_crop = normalize_crop_for_registration(crop)
-    if not target_crop:
+    target_forms = crop_registration_stems(crop)
+    if not target_forms:
         return False
 
     for record in records:
-        record_crop = normalize_crop_for_registration(record.get("crop"))
-        if record_crop and (record_crop == target_crop or target_crop in record_crop or record_crop in target_crop):
+        record_forms = crop_registration_stems(str(record.get("crop") or ""))
+        if not record_forms:
+            continue
+
+        if any(
+            target_form == record_form
+            or target_form in record_form
+            or record_form in target_form
+            for target_form in target_forms
+            for record_form in record_forms
+        ):
             return True
+
     return False
 
 

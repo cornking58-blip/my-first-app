@@ -136,11 +136,11 @@ export default function SeedTreatmentDetailScreen() {
           <View style={styles.productHeader}>
             <View style={styles.productTitleRow}>
               <Text style={styles.productName}>{product.product_name}</Text>
-              {product.formulation && (
+              {(product.formulation?.trim().length ?? 0) > 0 ? (
                 <View style={styles.formulationBadge}>
                   <Text style={styles.formulationText}>{product.formulation}</Text>
                 </View>
-              )}
+              ) : null}
             </View>
             <View style={[
               styles.statusBadge,

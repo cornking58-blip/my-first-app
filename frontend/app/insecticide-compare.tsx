@@ -264,9 +264,9 @@ export default function InsecticideCompareScreen() {
   const renderProductColumnLabel = (side: 'left' | 'right', productName: string) => (
     <View style={[styles.columnLabel, side === 'left' ? styles.columnLabelLeft : styles.columnLabelRight]}>
       <Text style={[styles.columnLabelText, side === 'left' ? styles.leftAccentText : styles.rightAccentText]}>
-        {side === 'left' ? 'Препарат А' : 'Препарат Б'}
+        {side === 'left' ? 'A' : 'B'}
       </Text>
-      <Text style={styles.columnLabelName} numberOfLines={1}>{productName}</Text>
+      <Text style={styles.columnLabelName}>{productName}</Text>
     </View>
   );
 
@@ -478,7 +478,7 @@ export default function InsecticideCompareScreen() {
 
             <View style={styles.priceInputRow}>
               <View style={[styles.priceInputContainer, styles.leftControlCard]}>
-                <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Норма препарата А</Text>
+                <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Норма: {left.product_name}</Text>
                 <TextInput
                   style={styles.priceInput}
                   placeholder="Напр. 0,8"
@@ -489,7 +489,7 @@ export default function InsecticideCompareScreen() {
                 />
                 <Text style={styles.inputHint}>По умолчанию: максимальная зарегистрированная норма</Text>
                 <Text style={styles.inputHint}>Источник нормы: {leftRate.trim().length > 0 ? 'введена вручную' : 'максимальная зарегистрированная'}</Text>
-                <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Цена препарата А</Text>
+                <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Цена: {left.product_name}</Text>
                 <TextInput
                   style={styles.priceInput}
                   placeholder="Цена, ₽"
@@ -500,7 +500,7 @@ export default function InsecticideCompareScreen() {
                 />
               </View>
               <View style={[styles.priceInputContainer, styles.rightControlCard]}>
-                <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Норма препарата Б</Text>
+                <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Норма: {right.product_name}</Text>
                 <TextInput
                   style={styles.priceInput}
                   placeholder="Напр. 1,0"
@@ -511,7 +511,7 @@ export default function InsecticideCompareScreen() {
                 />
                 <Text style={styles.inputHint}>По умолчанию: максимальная зарегистрированная норма</Text>
                 <Text style={styles.inputHint}>Источник нормы: {rightRate.trim().length > 0 ? 'введена вручную' : 'максимальная зарегистрированная'}</Text>
-                <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Цена препарата Б</Text>
+                <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Цена: {right.product_name}</Text>
                 <TextInput
                   style={styles.priceInput}
                   placeholder="Цена, ₽"
@@ -536,11 +536,11 @@ export default function InsecticideCompareScreen() {
             {hasCropInput && crop_registration ? (
               <View style={styles.cropResultRow}>
                 <View style={[styles.cropResultCard, styles.leftColumnCard]}>
-                  <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>Препарат А</Text>
+                  <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>{left.product_name}</Text>
                   <Text style={styles.registrationLine}>{crop_registration.left.message}</Text>
                 </View>
                 <View style={[styles.cropResultCard, styles.rightColumnCard]}>
-                  <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>Препарат Б</Text>
+                  <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>{right.product_name}</Text>
                   <Text style={styles.registrationLine}>{crop_registration.right.message}</Text>
                 </View>
               </View>
@@ -696,7 +696,7 @@ export default function InsecticideCompareScreen() {
                   <Text style={styles.groupNeutralText}>Разные действующие вещества, но одна группа действия.</Text>
                   <View style={styles.categoryComparison}>
                     <View style={styles.categoryColumn}>
-                      <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>Препарат А</Text>
+                      <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>{left.product_name}</Text>
                       {match.left_substances.map((name, itemIdx) => (
                         <React.Fragment key={`left-same-${itemIdx}`}>
                           {renderSubstanceMetrics(getSubstanceDetails(left, name), 'left')}
@@ -704,7 +704,7 @@ export default function InsecticideCompareScreen() {
                       ))}
                     </View>
                     <View style={styles.categoryColumn}>
-                      <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>Препарат Б</Text>
+                      <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>{right.product_name}</Text>
                       {match.right_substances.map((name, itemIdx) => (
                         <React.Fragment key={`right-same-${itemIdx}`}>
                           {renderSubstanceMetrics(getSubstanceDetails(right, name), 'right')}
@@ -738,7 +738,7 @@ export default function InsecticideCompareScreen() {
               </View>
               <View style={styles.uniqueColumns}>
                 <View style={styles.uniqueBlock}>
-                  <Text style={[styles.uniqueBlockTitle, styles.leftAccentText]}>У препарата А дополнительно:</Text>
+                  <Text style={[styles.uniqueBlockTitle, styles.leftAccentText]}>У {left.product_name} дополнительно:</Text>
                   {leftAdditionalSubstances.length > 0 ? (
                     leftAdditionalSubstances.map((sub, idx) => (
                       <React.Fragment key={`left-unique-${idx}`}>{renderUniqueSubstance(sub, 'left')}</React.Fragment>
@@ -748,7 +748,7 @@ export default function InsecticideCompareScreen() {
                   )}
                 </View>
                 <View style={styles.uniqueBlock}>
-                  <Text style={[styles.uniqueBlockTitle, styles.rightAccentText]}>У препарата Б дополнительно:</Text>
+                  <Text style={[styles.uniqueBlockTitle, styles.rightAccentText]}>У {right.product_name} дополнительно:</Text>
                   {rightAdditionalSubstances.length > 0 ? (
                     rightAdditionalSubstances.map((sub, idx) => (
                       <React.Fragment key={`right-unique-${idx}`}>{renderUniqueSubstance(sub, 'right')}</React.Fragment>
@@ -984,6 +984,7 @@ const styles = StyleSheet.create({
   },
   uniqueColumns: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   emptyColumnText: {
@@ -1194,6 +1195,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   categoryName: {
+    flexShrink: 1,
+    flexWrap: 'wrap',
     fontSize: 13,
     fontWeight: '600',
     color: '#92400E',
@@ -1203,38 +1206,51 @@ const styles = StyleSheet.create({
   },
   categoryColumn: {
     flex: 1,
+    minWidth: 0,
     padding: 10,
   },
   categorySubstance: {
+    flexShrink: 1,
+    flexWrap: 'wrap',
     fontSize: 13,
     color: '#374151',
     marginBottom: 4,
   },
   uniqueBlock: {
+    flex: 1,
+    minWidth: 0,
     marginBottom: 12,
   },
   uniqueBlockTitle: {
+    flexShrink: 1,
+    flexWrap: 'wrap',
     fontSize: 13,
     fontWeight: '500',
     color: '#6B7280',
     marginBottom: 8,
   },
   uniqueSubstance: {
+    minWidth: 0,
     padding: 10,
     borderRadius: 8,
     marginBottom: 6,
   },
   metricSubstanceCard: {
+    minWidth: 0,
     padding: 8,
     borderRadius: 8,
     marginBottom: 6,
   },
   uniqueSubstanceName: {
+    flexShrink: 1,
+    flexWrap: 'wrap',
     fontSize: 14,
     fontWeight: '600',
     color: '#111827',
   },
   uniqueSubstanceInfo: {
+    flexShrink: 1,
+    flexWrap: 'wrap',
     fontSize: 12,
     color: '#6B7280',
     marginTop: 4,
@@ -1254,12 +1270,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
   },
   groupTitle: {
+    flexShrink: 1,
+    flexWrap: 'wrap',
     fontSize: 13,
     fontWeight: '700',
     color: '#111827',
     marginBottom: 4,
   },
   groupText: {
+    flexShrink: 1,
+    flexWrap: 'wrap',
     fontSize: 12,
     color: '#374151',
     marginTop: 2,
@@ -1293,6 +1313,7 @@ const styles = StyleSheet.create({
   },
   priceInputContainer: {
     flex: 1,
+    minWidth: 0,
   },
   leftControlCard: {
     backgroundColor: '#EFF6FF',
@@ -1318,10 +1339,13 @@ const styles = StyleSheet.create({
   },
   cropResultCard: {
     flex: 1,
+    minWidth: 0,
     borderRadius: 10,
     padding: 8,
   },
   priceInputLabel: {
+    flexShrink: 1,
+    flexWrap: 'wrap',
     fontSize: 12,
     color: '#6B7280',
     marginBottom: 6,
