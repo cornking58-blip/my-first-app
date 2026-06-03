@@ -143,11 +143,11 @@ export default function SeedTreatmentsScreen() {
           <View style={styles.cardHeader}>
             <View style={styles.cardTitleRow}>
               <Text style={styles.productName} numberOfLines={1}>{item.product_name}</Text>
-              {item.formulation && (
+              {(item.formulation?.trim().length ?? 0) > 0 ? (
                 <View style={styles.formulationBadge}>
                   <Text style={styles.formulationText}>{item.formulation}</Text>
                 </View>
-              )}
+              ) : null}
             </View>
             <View style={[
               styles.statusBadge,
@@ -168,18 +168,18 @@ export default function SeedTreatmentsScreen() {
 
           <PesticideTypeBadge type={item.pesticide_type} />
 
-          {item.active_substances_raw && (
+          {(item.active_substances_raw?.trim().length ?? 0) > 0 ? (
             <Text style={styles.substances} numberOfLines={2}>
               {item.active_substances_raw}
             </Text>
-          )}
+          ) : null}
 
-          {item.manufacturer && (
+          {(item.manufacturer?.trim().length ?? 0) > 0 ? (
             <View style={styles.manufacturerRow}>
               <Ionicons name="business-outline" size={14} color="#9CA3AF" />
               <Text style={styles.manufacturer} numberOfLines={1}>{item.manufacturer}</Text>
             </View>
-          )}
+          ) : null}
         </TouchableOpacity>
 
         <View style={styles.cardFooter}>

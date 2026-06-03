@@ -205,7 +205,7 @@ class AdvancedCompareResponseTest(unittest.TestCase):
                     "active_substances_raw": "(100 г/л дифеноконазол + 200 г/л азоксистробин)",
                     "registration_status": "Действует",
                     "rate_raw": "0,5-1,0",
-                    "crop": "подсолнечник",
+                    "crop": "подсолнечн ик",
                 },
                 {
                     "product_key": "left",
@@ -285,6 +285,47 @@ class AdvancedCompareResponseTest(unittest.TestCase):
 
         self.assertFalse(response["crop_registration"]["right"]["has_registration"])
         self.assertEqual(response["crop_registration"]["right"]["message"], "Нет регистрации на выбранную культуру")
+
+
+    def test_crop_registration_matches_case_yo_and_inflected_list_text(self):
+        collection = FakeCollection({
+            "left": [
+                {
+                    "product_key": "left",
+                    "product_name": "Препарат А",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л дифеноконазол)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,5",
+                    "crop": "Подсолнечника, рапса и свёклы",
+                }
+            ],
+            "right": [
+                {
+                    "product_key": "right",
+                    "product_name": "Препарат Б",
+                    "formulation": "КС",
+                    "active_substances_raw": "(250 г/л тебуконазол)",
+                    "registration_status": "Действует",
+                    "rate_raw": "1,0",
+                    "crop": "кукуруза",
+                }
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="left",
+            right_key="right",
+            left_price=None,
+            right_price=None,
+            left_rate=None,
+            right_rate=None,
+            crop="  подсолнечник  ",
+        )
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "fungicide"))
+
+        self.assertTrue(response["crop_registration"]["left"]["has_registration"])
+        self.assertFalse(response["crop_registration"]["right"]["has_registration"])
 
     def test_crop_absent_comparison_still_works_without_crop_registration_block(self):
         response = self.compare()
