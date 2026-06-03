@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import unittest
 from pathlib import Path
@@ -38,6 +39,9 @@ class AdvancedCompareRequest:
 
 namespace = {
     "re": re,
+    "json": json,
+    "Path": Path,
+    "ROOT_DIR": SERVER_SOURCE.parent,
     "Any": Any,
     "Dict": Dict,
     "List": List,
@@ -57,6 +61,10 @@ build_resistance_group_analysis = namespace["build_resistance_group_analysis"]
 parse_rate_max_with_unit = namespace["parse_rate_max_with_unit"]
 calculate_active_amount = namespace["calculate_active_amount"]
 build_advanced_compare_response = namespace["build_advanced_compare_response"]
+load_resistance_groups = namespace["load_resistance_groups"]
+RESISTANCE_GROUP_DATA = namespace["RESISTANCE_GROUP_DATA"]
+OLD_HARDCODED_RESISTANCE_GROUP_COUNT = namespace["OLD_HARDCODED_RESISTANCE_GROUP_COUNT"]
+MANUAL_RU_ALIASES = namespace["MANUAL_RU_ALIASES"]
 
 
 class FakeCursor:
@@ -73,6 +81,23 @@ class FakeCollection:
 
     def find(self, query):
         return FakeCursor(self.records_by_key.get(query["product_key"], []))
+
+
+class ResistanceGroupDataFileTest(unittest.TestCase):
+    def test_correct_resistance_groups_file_exists_and_wrong_path_is_removed(self):
+        repo_root = SERVER_SOURCE.parents[1]
+
+        self.assertTrue((repo_root / "backend" / "data" / "resistance_groups.json").exists())
+        self.assertFalse((repo_root / "backend" / "backend" / "data" / "resistance_groups.json").exists())
+
+    def test_resistance_groups_json_loads_and_has_more_records_than_old_mapping(self):
+        loaded = load_resistance_groups(SERVER_SOURCE.parent / "data" / "resistance_groups.json")
+
+        self.assertGreater(loaded["record_count"], OLD_HARDCODED_RESISTANCE_GROUP_COUNT)
+        self.assertEqual(loaded["record_count"], len(loaded["records"]))
+        self.assertGreater(len(loaded["indexes"]["fungicide"]), 0)
+        self.assertGreater(len(loaded["indexes"]["herbicide"]), 0)
+        self.assertGreater(len(loaded["indexes"]["insecticide"]), 0)
 
 
 class RateUnitParsingTest(unittest.TestCase):
@@ -99,13 +124,33 @@ class RateUnitParsingTest(unittest.TestCase):
 
 
 class ResistanceGroupHelpersTest(unittest.TestCase):
-    def test_get_resistance_group_known_herbicide_with_parser_extra_words(self):
+    def test_known_hrac_russian_manual_alias_resolves_with_parser_extra_words(self):
         group = get_resistance_group("Глифосат кислоты", "herbicide")
 
         self.assertEqual(group["system"], "HRAC")
         self.assertEqual(group["group"], "9")
-        self.assertEqual(group["name"], "EPSPS inhibitors")
-        self.assertEqual(group["effect_summary"], "Кратко: нарушает синтез важных аминокислот у растения.")
+        self.assertIn("EPSPS", group["name"])
+        self.assertEqual(group["effect_summary"], "Системное листовое, неселективное.")
+
+    def test_known_irac_russian_manual_alias_resolves_correctly(self):
+        group = get_resistance_group("имидаклоприд", "insecticide")
+
+        self.assertEqual(group["system"], "IRAC")
+        self.assertEqual(group["group"], "4A")
+        self.assertIn("acetylcholine receptor", group["name"])
+
+    def test_manual_russian_aliases_are_preserved_for_known_app_substances(self):
+        expected_aliases = {
+            "глифосат", "трибенурон-метил", "метсульфурон-метил", "имазамокс",
+            "имазетапир", "клетодим", "хизалофоп-п-этил", "2,4-д", "дикамба",
+            "клопиралид", "мезотрион", "метрибузин", "имидаклоприд", "тиаметоксам",
+            "клотианидин", "лямбда-цигалотрин", "альфа-циперметрин", "дельтаметрин",
+            "хлорантранилипрол", "абамектин", "карбендазим", "тебуконазол",
+            "дифеноконазол", "азоксистробин", "пираклостробин", "флудиоксонил",
+            "металаксил-м",
+        }
+
+        self.assertEqual(set(MANUAL_RU_ALIASES), expected_aliases)
 
     def test_known_group_annotation_keeps_existing_fields_and_adds_effect_summary(self):
         annotated = annotate_substances_with_resistance(
@@ -115,8 +160,8 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
 
         self.assertEqual(annotated[0]["resistance_system"], "FRAC")
         self.assertEqual(annotated[0]["resistance_group"], "3")
-        self.assertEqual(annotated[0]["resistance_group_name"], "DMI fungicides")
-        self.assertEqual(annotated[0]["effect_summary"], "Кратко: нарушает синтез клеточной мембраны гриба.")
+        self.assertEqual(annotated[0]["resistance_group_name"], "DMI-fungicides / SBI Class I")
+        self.assertEqual(annotated[0]["effect_summary"], "C14-деметилаза CYP51")
 
     def test_unknown_group_returns_clear_unknown_name(self):
         group = get_resistance_group("неизвестное вещество", "fungicide")
@@ -173,8 +218,8 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         match = analysis["same_group_matches"][0]
         self.assertEqual(match["system"], "HRAC")
         self.assertEqual(match["group"], "2")
-        self.assertEqual(match["group_name"], "ALS inhibitors")
-        self.assertEqual(match["effect_summary"], "Кратко: нарушает синтез важных аминокислот у растения.")
+        self.assertEqual(match["group_name"], "Inhibition of Acetolactate Synthase (ALS)")
+        self.assertEqual(match["effect_summary"], "Системное; почвенное и/или листовое действие.")
         self.assertEqual(
             match["warning"],
             "Действующие вещества разные, но группа устойчивости одна. По механизму действия препараты близки.",
