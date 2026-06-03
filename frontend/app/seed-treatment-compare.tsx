@@ -49,7 +49,6 @@ interface IdenticalSubstance {
   right_unit: string;
   left_per_ha: number | null;
   right_per_ha: number | null;
-  winner: 'left' | 'right' | 'equal';
 }
 
 interface SimilarCategory {
@@ -218,6 +217,65 @@ export default function SeedTreatmentCompareScreen() {
     return status?.toLowerCase().trim() === 'действует';
   };
 
+
+  const formatNumber = (value: number | null | undefined, digits = 2) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+    return Number(value.toFixed(digits)).toString();
+  };
+
+  const getValueTone = (leftValue: number | null | undefined, rightValue: number | null | undefined, side: 'left' | 'right') => {
+    if (leftValue === null || leftValue === undefined || rightValue === null || rightValue === undefined) return null;
+    if (leftValue === rightValue) return styles.equalValue;
+    return (side === 'left' && leftValue > rightValue) || (side === 'right' && rightValue > leftValue)
+      ? styles.higherValue
+      : styles.lowerValue;
+  };
+
+  const getValueLabel = (leftValue: number | null | undefined, rightValue: number | null | undefined, side: 'left' | 'right') => {
+    if (leftValue === null || leftValue === undefined || rightValue === null || rightValue === undefined) return null;
+    if (leftValue === rightValue) return 'одинаково';
+    return (side === 'left' && leftValue > rightValue) || (side === 'right' && rightValue > leftValue) ? 'выше' : 'ниже';
+  };
+
+  const getSubstanceDetails = (product: ProductInfo, substanceName: string) => {
+    return product.substances.find(item => item.name.toLowerCase() === substanceName.toLowerCase());
+  };
+
+  const renderGroupLabel = (substance?: Substance | null) => {
+    if (!substance?.resistance_group) return 'группа не определена';
+    const system = substance.resistance_system ? `${substance.resistance_system} ` : '';
+    const groupName = substance.resistance_group_name ? ` • ${substance.resistance_group_name}` : '';
+    return `${system}${substance.resistance_group}${groupName}`;
+  };
+
+  const renderProductColumnLabel = (side: 'left' | 'right', productName: string) => (
+    <View style={[styles.columnLabel, side === 'left' ? styles.columnLabelLeft : styles.columnLabelRight]}>
+      <Text style={[styles.columnLabelText, side === 'left' ? styles.leftAccentText : styles.rightAccentText]}>
+        {side === 'left' ? 'Препарат А' : 'Препарат Б'}
+      </Text>
+      <Text style={styles.columnLabelName} numberOfLines={1}>{productName}</Text>
+    </View>
+  );
+
+  const renderRegistrationSide = (side: 'left' | 'right', product: ProductInfo, cropSide?: CropRegistrationSide) => (
+    <View style={[styles.registrationColumn, side === 'left' ? styles.leftColumnCard : styles.rightColumnCard]}>
+      <Text style={[styles.registrationProductLabel, side === 'left' ? styles.leftAccentText : styles.rightAccentText]}>
+        {side === 'left' ? 'Препарат А' : 'Препарат Б'}
+      </Text>
+      <Text style={styles.registrationLine}>Регистрация: {isActive(product.registration_status) ? 'Действует' : 'Не действует'}</Text>
+      {cropSide && <Text style={styles.registrationLine}>Культура: {cropSide.message}</Text>}
+    </View>
+  );
+
+  const renderUniqueSubstance = (sub: Substance & { category: string; per_ha: number | null }, side: 'left' | 'right') => (
+    <View style={[styles.uniqueSubstance, side === 'left' ? styles.leftColumnCard : styles.rightColumnCard]}>
+      <Text style={styles.uniqueSubstanceName}>{sub.name}</Text>
+      <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatNumber(sub.concentration)} {sub.unit}</Text>
+      <Text style={styles.uniqueSubstanceInfo}>ДВ на 1 га: {formatNumber(sub.per_ha)} г/га</Text>
+      <Text style={styles.uniqueSubstanceInfo}>Группа: {renderGroupLabel(sub)}</Text>
+    </View>
+  );
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -258,6 +316,17 @@ export default function SeedTreatmentCompareScreen() {
   }
 
   const { left, right, analysis, group_analysis, price_analysis, crop_registration } = compareData;
+  const identicalNames = new Set(analysis.identical_substances.map(item => item.name.toLowerCase()));
+  const sameGroupMatches = (group_analysis?.same_group_matches ?? [])
+    .map(match => ({
+      ...match,
+      left_substances: match.left_substances.filter(name => !identicalNames.has(name.toLowerCase())),
+      right_substances: match.right_substances.filter(name => !identicalNames.has(name.toLowerCase())),
+    }))
+    .filter(match => match.left_substances.length > 0 && match.right_substances.length > 0);
+  const differentGroupMatches = group_analysis?.different_group_matches ?? [];
+  const unknownGroupSubstances = group_analysis?.unknown_group_substances ?? [];
+  const hasDirectComparison = analysis.identical_substances.length > 0 || sameGroupMatches.length > 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -276,7 +345,8 @@ export default function SeedTreatmentCompareScreen() {
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Product Headers */}
           <View style={styles.productHeaders}>
-            <View style={styles.productHeaderLeft}>
+            <View style={[styles.productHeaderLeft, styles.leftHeaderAccent]}>
+              <Text style={styles.productSideLabel}>Препарат А</Text>
               <Text style={styles.productHeaderName} numberOfLines={2}>{left.product_name}</Text>
               {left.formulation && (
                 <View style={styles.formulationBadge}>
@@ -311,7 +381,8 @@ export default function SeedTreatmentCompareScreen() {
               <Text style={styles.vsText}>VS</Text>
             </View>
             
-            <View style={styles.productHeaderRight}>
+            <View style={[styles.productHeaderRight, styles.rightHeaderAccent]}>
+              <Text style={styles.productSideLabel}>Препарат Б</Text>
               <Text style={styles.productHeaderName} numberOfLines={2}>{right.product_name}</Text>
               {right.formulation && (
                 <View style={styles.formulationBadge}>
@@ -378,14 +449,24 @@ export default function SeedTreatmentCompareScreen() {
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>ДВ на 1 га, г</Text>
                 <View style={styles.summaryValues}>
-                  <Text style={[styles.summaryValue, styles.leftValue, left.total_per_ha && right.total_per_ha && left.total_per_ha > right.total_per_ha ? styles.winnerValue : null]}>
-                    {left.total_per_ha ?? '—'}
-                  </Text>
-                  <Text style={[styles.summaryValue, styles.rightValue, left.total_per_ha && right.total_per_ha && right.total_per_ha > left.total_per_ha ? styles.winnerValue : null]}>
-                    {right.total_per_ha ?? '—'}
-                  </Text>
+                  <View style={[styles.summaryValueBox, styles.leftValue, getValueTone(left.total_per_ha, right.total_per_ha, 'left')]}>
+                    <Text style={styles.summaryValueText}>{formatNumber(left.total_per_ha)}</Text>
+                    {getValueLabel(left.total_per_ha, right.total_per_ha, 'left') && (
+                      <Text style={styles.comparisonTag}>{getValueLabel(left.total_per_ha, right.total_per_ha, 'left')}</Text>
+                    )}
+                  </View>
+                  <View style={[styles.summaryValueBox, styles.rightValue, getValueTone(left.total_per_ha, right.total_per_ha, 'right')]}>
+                    <Text style={styles.summaryValueText}>{formatNumber(right.total_per_ha)}</Text>
+                    {getValueLabel(left.total_per_ha, right.total_per_ha, 'right') && (
+                      <Text style={styles.comparisonTag}>{getValueLabel(left.total_per_ha, right.total_per_ha, 'right')}</Text>
+                    )}
+                  </View>
                 </View>
               </View>
+            </View>
+            <View style={styles.registrationComparison}>
+              {renderRegistrationSide('left', left, crop_registration?.left)}
+              {renderRegistrationSide('right', right, crop_registration?.right)}
             </View>
           </View>
 
@@ -394,27 +475,82 @@ export default function SeedTreatmentCompareScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                <Text style={styles.sectionTitle}>Одинаковые ДВ ({analysis.identical_substances.length})</Text>
+                <Text style={styles.sectionTitle}>Одинаковые действующие вещества</Text>
               </View>
-              {analysis.identical_substances.map((sub, idx) => (
-                <View key={idx} style={styles.substanceCard}>
-                  <Text style={styles.substanceName}>{sub.name}</Text>
-                  <View style={styles.substanceComparison}>
-                    <View style={[styles.substanceValue, styles.leftBg, sub.winner === 'left' && styles.winnerBg]}>
-                      <Text style={styles.substanceConc}>{sub.left_concentration} {sub.left_unit}</Text>
-                      {sub.left_per_ha && (
-                        <Text style={styles.substancePerHa}>{sub.left_per_ha} г/га</Text>
-                      )}
+              {analysis.identical_substances.map((sub, idx) => {
+                const leftDetails = getSubstanceDetails(left, sub.name);
+                const rightDetails = getSubstanceDetails(right, sub.name);
+                return (
+                  <View key={idx} style={styles.substanceCard}>
+                    <Text style={styles.substanceName}>{sub.name}</Text>
+                    <View style={styles.sideBySideHeader}>
+                      {renderProductColumnLabel('left', left.product_name)}
+                      {renderProductColumnLabel('right', right.product_name)}
                     </View>
-                    <View style={[styles.substanceValue, styles.rightBg, sub.winner === 'right' && styles.winnerBg]}>
-                      <Text style={styles.substanceConc}>{sub.right_concentration} {sub.right_unit}</Text>
-                      {sub.right_per_ha && (
-                        <Text style={styles.substancePerHa}>{sub.right_per_ha} г/га</Text>
-                      )}
+                    <View style={styles.substanceComparison}>
+                      <View style={[styles.substanceValue, styles.leftColumnCard, getValueTone(sub.left_concentration, sub.right_concentration, 'left')]}>
+                        <Text style={styles.valueLabel}>Концентрация</Text>
+                        <Text style={styles.substanceConc}>{formatNumber(sub.left_concentration)} {sub.left_unit}</Text>
+                        <Text style={styles.comparisonTag}>{getValueLabel(sub.left_concentration, sub.right_concentration, 'left')}</Text>
+                        <Text style={styles.valueLabel}>ДВ на 1 га</Text>
+                        <Text style={styles.substancePerHa}>{formatNumber(sub.left_per_ha)} г/га</Text>
+                        <Text style={styles.valueLabel}>Группа</Text>
+                        <Text style={styles.groupInlineText}>{renderGroupLabel(leftDetails)}</Text>
+                      </View>
+                      <View style={[styles.substanceValue, styles.rightColumnCard, getValueTone(sub.left_concentration, sub.right_concentration, 'right')]}>
+                        <Text style={styles.valueLabel}>Концентрация</Text>
+                        <Text style={styles.substanceConc}>{formatNumber(sub.right_concentration)} {sub.right_unit}</Text>
+                        <Text style={styles.comparisonTag}>{getValueLabel(sub.left_concentration, sub.right_concentration, 'right')}</Text>
+                        <Text style={styles.valueLabel}>ДВ на 1 га</Text>
+                        <Text style={styles.substancePerHa}>{formatNumber(sub.right_per_ha)} г/га</Text>
+                        <Text style={styles.valueLabel}>Группа</Text>
+                        <Text style={styles.groupInlineText}>{renderGroupLabel(rightDetails)}</Text>
+                      </View>
                     </View>
                   </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Same Resistance Groups */}
+          {sameGroupMatches.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="shield-checkmark" size={20} color="#0F766E" />
+                <Text style={styles.sectionTitle}>Одна группа действия</Text>
+              </View>
+              {sameGroupMatches.map((match, idx) => (
+                <View key={`same-${idx}`} style={styles.groupCard}>
+                  <Text style={styles.groupTitle}>{match.system} {match.group} • {match.group_name || 'название группы не указано'}</Text>
+                  <View style={styles.categoryComparison}>
+                    <View style={[styles.categoryColumn, styles.leftColumnCard]}>
+                      <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>Препарат А</Text>
+                      {match.left_substances.map((name, itemIdx) => (
+                        <Text key={`left-same-${itemIdx}`} style={styles.categorySubstance}>{name}</Text>
+                      ))}
+                    </View>
+                    <View style={[styles.categoryColumn, styles.rightColumnCard]}>
+                      <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>Препарат Б</Text>
+                      {match.right_substances.map((name, itemIdx) => (
+                        <Text key={`right-same-${itemIdx}`} style={styles.categorySubstance}>{name}</Text>
+                      ))}
+                    </View>
+                  </View>
+                  <Text style={styles.groupNeutralText}>одна группа действия</Text>
                 </View>
               ))}
+            </View>
+          )}
+
+          {!hasDirectComparison && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="information-circle" size={20} color="#6B7280" />
+                <Text style={styles.sectionTitle}>Прямое сопоставление</Text>
+              </View>
+              <Text style={styles.neutralMessage}>Действующие вещества и группы действия разные.</Text>
+              <Text style={styles.neutralMessage}>Прямое сопоставление не найдено.</Text>
             </View>
           )}
 
@@ -423,7 +559,7 @@ export default function SeedTreatmentCompareScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Ionicons name="git-compare" size={20} color="#F59E0B" />
-                <Text style={styles.sectionTitle}>Сходные по механизму</Text>
+                <Text style={styles.sectionTitle}>Сопоставление по механизму</Text>
               </View>
               {analysis.similar_by_category.map((cat, idx) => (
                 <View key={idx} style={styles.categoryCard}>
@@ -432,17 +568,19 @@ export default function SeedTreatmentCompareScreen() {
                     <Text style={styles.categoryName}>{cat.category}</Text>
                   </View>
                   <View style={styles.categoryComparison}>
-                    <View style={[styles.categoryColumn, styles.leftBg]}>
+                    <View style={[styles.categoryColumn, styles.leftColumnCard]}>
+                      <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>Препарат А</Text>
                       {cat.left_substances.map((s, i) => (
                         <Text key={i} style={styles.categorySubstance}>
-                          {s.name} ({s.concentration} {s.unit})
+                          {s.name} ({formatNumber(s.concentration)} {s.unit})
                         </Text>
                       ))}
                     </View>
-                    <View style={[styles.categoryColumn, styles.rightBg]}>
+                    <View style={[styles.categoryColumn, styles.rightColumnCard]}>
+                      <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>Препарат Б</Text>
                       {cat.right_substances.map((s, i) => (
                         <Text key={i} style={styles.categorySubstance}>
-                          {s.name} ({s.concentration} {s.unit})
+                          {s.name} ({formatNumber(s.concentration)} {s.unit})
                         </Text>
                       ))}
                     </View>
@@ -457,87 +595,80 @@ export default function SeedTreatmentCompareScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Ionicons name="add-circle" size={20} color="#6366F1" />
-                <Text style={styles.sectionTitle}>Уникальные ДВ</Text>
+                <Text style={styles.sectionTitle}>Дополнительные компоненты</Text>
               </View>
-              
-              {analysis.left_unique_substances.length > 0 && (
+              <View style={styles.uniqueColumns}>
                 <View style={styles.uniqueBlock}>
-                  <Text style={styles.uniqueBlockTitle}>Только в {left.product_name}:</Text>
-                  {analysis.left_unique_substances.map((sub, idx) => (
-                    <View key={idx} style={[styles.uniqueSubstance, styles.leftBg]}>
-                      <Text style={styles.uniqueSubstanceName}>{sub.name}</Text>
-                      <Text style={styles.uniqueSubstanceInfo}>
-                        {sub.concentration} {sub.unit} • {sub.category}
-                        {sub.per_ha && ` • ${sub.per_ha} г/га`}
-                      </Text>
-                    </View>
-                  ))}
+                  <Text style={[styles.uniqueBlockTitle, styles.leftAccentText]}>У препарата А дополнительно:</Text>
+                  {analysis.left_unique_substances.length > 0 ? (
+                    analysis.left_unique_substances.map((sub, idx) => (
+                      <React.Fragment key={`left-unique-${idx}`}>{renderUniqueSubstance(sub, 'left')}</React.Fragment>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyColumnText}>Нет дополнительных компонентов</Text>
+                  )}
                 </View>
-              )}
-              
-              {analysis.right_unique_substances.length > 0 && (
                 <View style={styles.uniqueBlock}>
-                  <Text style={styles.uniqueBlockTitle}>Только в {right.product_name}:</Text>
-                  {analysis.right_unique_substances.map((sub, idx) => (
-                    <View key={idx} style={[styles.uniqueSubstance, styles.rightBg]}>
-                      <Text style={styles.uniqueSubstanceName}>{sub.name}</Text>
-                      <Text style={styles.uniqueSubstanceInfo}>
-                        {sub.concentration} {sub.unit} • {sub.category}
-                        {sub.per_ha && ` • ${sub.per_ha} г/га`}
-                      </Text>
-                    </View>
-                  ))}
+                  <Text style={[styles.uniqueBlockTitle, styles.rightAccentText]}>У препарата Б дополнительно:</Text>
+                  {analysis.right_unique_substances.length > 0 ? (
+                    analysis.right_unique_substances.map((sub, idx) => (
+                      <React.Fragment key={`right-unique-${idx}`}>{renderUniqueSubstance(sub, 'right')}</React.Fragment>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyColumnText}>Нет дополнительных компонентов</Text>
+                  )}
                 </View>
-              )}
+              </View>
             </View>
           )}
 
-          {/* Resistance Groups */}
-          {group_analysis && (
-            group_analysis.same_group_matches.length > 0 ||
-            group_analysis.different_group_matches.length > 0 ||
-            group_analysis.unknown_group_substances.length > 0
-          ) && (
+          {/* Other Resistance Groups */}
+          {(differentGroupMatches.length > 0 || unknownGroupSubstances.length > 0) && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="shield-checkmark" size={20} color="#0F766E" />
-                <Text style={styles.sectionTitle}>Группы устойчивости HRAC / FRAC / IRAC</Text>
+                <Ionicons name="shield-outline" size={20} color="#6B7280" />
+                <Text style={styles.sectionTitle}>Дополнительная информация о группах</Text>
               </View>
 
-              {group_analysis.same_group_matches.map((match, idx) => (
-                <View key={`same-${idx}`} style={[styles.groupCard, styles.groupWarningCard]}>
-                  <Text style={styles.groupTitle}>{match.system} {match.group} • {match.group_name}</Text>
-                  <Text style={styles.groupText}>
-                    {match.left_substances.join(', ')} ↔ {match.right_substances.join(', ')}
-                  </Text>
-                  <Text style={styles.groupWarningText}>{match.warning}</Text>
+              {differentGroupMatches.map((match, idx) => (
+                <View key={`different-${idx}`} style={styles.groupCard}>
+                  <View style={styles.categoryComparison}>
+                    <View style={[styles.categoryColumn, styles.leftColumnCard]}>
+                      <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>Препарат А</Text>
+                      <Text style={styles.categorySubstance}>{match.left_substance}</Text>
+                      <Text style={styles.groupInlineText}>Группа: {match.left_group || 'группа не определена'}</Text>
+                    </View>
+                    <View style={[styles.categoryColumn, styles.rightColumnCard]}>
+                      <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>Препарат Б</Text>
+                      <Text style={styles.categorySubstance}>{match.right_substance}</Text>
+                      <Text style={styles.groupInlineText}>Группа: {match.right_group || 'группа не определена'}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.groupNeutralText}>разные группы действия</Text>
                 </View>
               ))}
 
-              {group_analysis.different_group_matches.map((match, idx) => (
-                <View key={`different-${idx}`} style={[styles.groupCard, styles.groupSuccessCard]}>
-                  <Text style={styles.groupTitle}>
-                    {match.left_substance} ({match.left_group}) ↔ {match.right_substance} ({match.right_group})
-                  </Text>
-                  <Text style={styles.groupText}>{match.message}</Text>
-                </View>
-              ))}
-
-              {group_analysis.unknown_group_substances.length > 0 && (
-                <View style={[styles.groupCard, styles.groupUnknownCard]}>
+              {unknownGroupSubstances.length > 0 && (
+                <View style={styles.groupCard}>
                   <Text style={styles.groupTitle}>Группа не определена</Text>
-                  {group_analysis.unknown_group_substances.map((item, idx) => (
-                    <Text key={`unknown-${idx}`} style={styles.groupText}>
-                      {item.side === 'left' ? left.product_name : right.product_name}: {item.substance}
-                    </Text>
-                  ))}
+                  <View style={styles.categoryComparison}>
+                    <View style={[styles.categoryColumn, styles.leftColumnCard]}>
+                      <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>Препарат А</Text>
+                      {unknownGroupSubstances.filter(item => item.side === 'left').map((item, idx) => (
+                        <Text key={`unknown-left-${idx}`} style={styles.categorySubstance}>{item.substance}</Text>
+                      ))}
+                    </View>
+                    <View style={[styles.categoryColumn, styles.rightColumnCard]}>
+                      <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>Препарат Б</Text>
+                      {unknownGroupSubstances.filter(item => item.side === 'right').map((item, idx) => (
+                        <Text key={`unknown-right-${idx}`} style={styles.categorySubstance}>{item.substance}</Text>
+                      ))}
+                    </View>
+                  </View>
                 </View>
               )}
-
-              <Text style={styles.groupExplanation}>{group_analysis.plain_explanation}</Text>
             </View>
           )}
-
           {/* Price Input Section */}
           <View style={styles.priceSection}>
             <View style={styles.sectionHeader}>
@@ -629,22 +760,18 @@ export default function SeedTreatmentCompareScreen() {
                 <View style={styles.priceResultRow}>
                   <Text style={styles.priceResultLabel}>Стоимость обработки 1 га, ₽</Text>
                   <View style={styles.priceResultValues}>
-                    <Text style={[
-                      styles.priceResultValue, 
-                      styles.leftValue,
-                      price_analysis.left_cost_per_ha && price_analysis.right_cost_per_ha && 
-                      price_analysis.left_cost_per_ha < price_analysis.right_cost_per_ha ? styles.winnerValue : null
-                    ]}>
-                      {price_analysis.left_cost_per_ha?.toFixed(0) ?? '—'}
-                    </Text>
-                    <Text style={[
-                      styles.priceResultValue, 
-                      styles.rightValue,
-                      price_analysis.left_cost_per_ha && price_analysis.right_cost_per_ha && 
-                      price_analysis.right_cost_per_ha < price_analysis.left_cost_per_ha ? styles.winnerValue : null
-                    ]}>
-                      {price_analysis.right_cost_per_ha?.toFixed(0) ?? '—'}
-                    </Text>
+                    <View style={[styles.priceResultValueBox, styles.leftValue, getValueTone(price_analysis.left_cost_per_ha, price_analysis.right_cost_per_ha, 'left')]}>
+                      <Text style={styles.summaryValueText}>{formatNumber(price_analysis.left_cost_per_ha, 0)}</Text>
+                      {getValueLabel(price_analysis.left_cost_per_ha, price_analysis.right_cost_per_ha, 'left') && (
+                        <Text style={styles.comparisonTag}>{getValueLabel(price_analysis.left_cost_per_ha, price_analysis.right_cost_per_ha, 'left')}</Text>
+                      )}
+                    </View>
+                    <View style={[styles.priceResultValueBox, styles.rightValue, getValueTone(price_analysis.left_cost_per_ha, price_analysis.right_cost_per_ha, 'right')]}>
+                      <Text style={styles.summaryValueText}>{formatNumber(price_analysis.right_cost_per_ha, 0)}</Text>
+                      {getValueLabel(price_analysis.left_cost_per_ha, price_analysis.right_cost_per_ha, 'right') && (
+                        <Text style={styles.comparisonTag}>{getValueLabel(price_analysis.left_cost_per_ha, price_analysis.right_cost_per_ha, 'right')}</Text>
+                      )}
+                    </View>
                   </View>
                 </View>
                 
@@ -653,7 +780,7 @@ export default function SeedTreatmentCompareScreen() {
                   <View style={styles.substanceCostColumns}>
                     <View style={styles.substanceCostColumn}>
                       {(price_analysis.left_substances_cost ?? price_analysis.substances_cost.filter(item => item.side === 'left')).map((item, idx) => (
-                        <View key={`left-cost-${idx}`} style={styles.substanceCostItem}>
+                        <View key={`left-cost-${idx}`} style={[styles.substanceCostItem, styles.leftColumnCard]}>
                           <Text style={[styles.substanceCostName, styles.leftValue]}>{item.substance_name || item.name}</Text>
                           <Text style={styles.substanceCostText}>{item.grams_per_ha?.toFixed(2) ?? '—'} г/га</Text>
                           <Text style={styles.substanceCostText}>{item.estimated_cost_share_per_ha?.toFixed(0) ?? '—'} ₽/га</Text>
@@ -663,7 +790,7 @@ export default function SeedTreatmentCompareScreen() {
                     </View>
                     <View style={styles.substanceCostColumn}>
                       {(price_analysis.right_substances_cost ?? price_analysis.substances_cost.filter(item => item.side === 'right')).map((item, idx) => (
-                        <View key={`right-cost-${idx}`} style={styles.substanceCostItem}>
+                        <View key={`right-cost-${idx}`} style={[styles.substanceCostItem, styles.rightColumnCard]}>
                           <Text style={[styles.substanceCostName, styles.rightValue]}>{item.substance_name || item.name}</Text>
                           <Text style={styles.substanceCostText}>{item.grams_per_ha?.toFixed(2) ?? '—'} г/га</Text>
                           <Text style={styles.substanceCostText}>{item.estimated_cost_share_per_ha?.toFixed(0) ?? '—'} ₽/га</Text>
@@ -777,12 +904,165 @@ const styles = StyleSheet.create({
   productHeaderLeft: {
     flex: 1,
     alignItems: 'center',
-    paddingRight: 8,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
   },
   productHeaderRight: {
     flex: 1,
     alignItems: 'center',
-    paddingLeft: 8,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+
+  productSideLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 6,
+    color: '#6B7280',
+  },
+  leftHeaderAccent: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  rightHeaderAccent: {
+    backgroundColor: '#F5F3FF',
+    borderColor: '#8B5CF6',
+  },
+  leftColumnCard: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+    borderWidth: 1,
+  },
+  rightColumnCard: {
+    backgroundColor: '#F5F3FF',
+    borderColor: '#C4B5FD',
+    borderWidth: 1,
+  },
+  leftAccentText: {
+    color: '#1D4ED8',
+  },
+  rightAccentText: {
+    color: '#6D28D9',
+  },
+  summaryValueBox: {
+    width: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 5,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  summaryValueText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  comparisonTag: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  sideBySideHeader: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  columnLabel: {
+    flex: 1,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  columnLabelLeft: {
+    backgroundColor: '#DBEAFE',
+  },
+  columnLabelRight: {
+    backgroundColor: '#EDE9FE',
+  },
+  columnLabelText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  columnLabelName: {
+    fontSize: 10,
+    color: '#4B5563',
+    marginTop: 2,
+  },
+  valueLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#6B7280',
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  groupInlineText: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#374151',
+  },
+  columnSmallTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  groupNeutralText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F766E',
+    marginTop: 8,
+  },
+  neutralMessage: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 19,
+  },
+  uniqueColumns: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  emptyColumnText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    lineHeight: 17,
+  },
+  registrationComparison: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
+  registrationColumn: {
+    flex: 1,
+    borderRadius: 10,
+    padding: 10,
+  },
+  registrationProductLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  registrationLine: {
+    fontSize: 12,
+    color: '#374151',
+    lineHeight: 17,
+  },
+  priceResultValueBox: {
+    width: 82,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   productHeaderName: {
     fontSize: 16,
@@ -887,9 +1167,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#EDE9FE',
     color: '#5B21B6',
   },
-  winnerValue: {
-    backgroundColor: '#D1FAE5',
-    color: '#059669',
+  higherValue: {
+    backgroundColor: '#DCFCE7',
+    borderColor: '#22C55E',
+  },
+  lowerValue: {
+    opacity: 0.82,
+  },
+  equalValue: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#9CA3AF',
   },
   section: {
     backgroundColor: '#FFFFFF',
@@ -937,9 +1224,6 @@ const styles = StyleSheet.create({
   },
   rightBg: {
     backgroundColor: '#EDE9FE',
-  },
-  winnerBg: {
-    backgroundColor: '#D1FAE5',
   },
   substanceConc: {
     fontSize: 15,
