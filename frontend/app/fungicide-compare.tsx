@@ -49,7 +49,6 @@ interface IdenticalSubstance {
   right_unit: string;
   left_per_ha: number | null;
   right_per_ha: number | null;
-  winner: 'left' | 'right' | 'equal';
 }
 
 interface SimilarCategory {
@@ -551,7 +550,7 @@ export default function FungicideCompareScreen() {
                 <Text style={styles.sectionTitle}>Прямое сопоставление</Text>
               </View>
               <Text style={styles.neutralMessage}>Действующие вещества и группы действия разные.</Text>
-              <Text style={styles.neutralMessage}>Прямых сопоставимых компонентов не найдено.</Text>
+              <Text style={styles.neutralMessage}>Прямое сопоставление не найдено.</Text>
             </View>
           )}
 
@@ -1225,9 +1224,6 @@ const styles = StyleSheet.create({
   },
   rightBg: {
     backgroundColor: '#EDE9FE',
-  },
-  winnerBg: {
-    backgroundColor: '#D1FAE5',
   },
   substanceConc: {
     fontSize: 15,
