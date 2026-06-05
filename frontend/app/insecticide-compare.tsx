@@ -64,6 +64,7 @@ interface ProductInfo {
   product_name: string;
   formulation: string | null;
   active_substances_raw: string | null;
+  display_manufacturer: string | null;
   registration_status: string | null;
   max_rate: number | null;
   max_rate_unit?: string | null;
@@ -398,6 +399,8 @@ export default function InsecticideCompareScreen() {
   const { left, right, analysis, group_analysis, price_analysis, crop_registration } = compareData;
   const hasCropInput = crop.trim().length > 0;
   const hasLeftComposition = (left.active_substances_raw?.trim().length ?? 0) > 0;
+  const leftDisplayManufacturer = left.display_manufacturer?.trim() || 'Производитель не указан';
+  const rightDisplayManufacturer = right.display_manufacturer?.trim() || 'Производитель не указан';
   const hasRightComposition = (right.active_substances_raw?.trim().length ?? 0) > 0;
   const hasLeftFormulation = (left.formulation?.trim().length ?? 0) > 0;
   const hasRightFormulation = (right.formulation?.trim().length ?? 0) > 0;
@@ -446,6 +449,7 @@ export default function InsecticideCompareScreen() {
             <View style={[styles.productHeaderLeft, styles.leftHeaderAccent]}>
               <Text style={styles.productSideLabel}>Препарат А</Text>
               <Text style={styles.productHeaderName} numberOfLines={2}>{left.product_name}</Text>
+              <Text style={styles.productComposition} numberOfLines={2}>Производитель: {leftDisplayManufacturer}</Text>
               {hasLeftComposition ? (
                 <Text style={styles.productComposition} numberOfLines={4}>д.в.: {left.active_substances_raw}</Text>
               ) : null}
@@ -485,6 +489,7 @@ export default function InsecticideCompareScreen() {
             <View style={[styles.productHeaderRight, styles.rightHeaderAccent]}>
               <Text style={styles.productSideLabel}>Препарат Б</Text>
               <Text style={styles.productHeaderName} numberOfLines={2}>{right.product_name}</Text>
+              <Text style={styles.productComposition} numberOfLines={2}>Производитель: {rightDisplayManufacturer}</Text>
               {hasRightComposition ? (
                 <Text style={styles.productComposition} numberOfLines={4}>д.в.: {right.active_substances_raw}</Text>
               ) : null}

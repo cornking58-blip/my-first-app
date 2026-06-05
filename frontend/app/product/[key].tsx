@@ -43,6 +43,7 @@ interface ProductCard {
   formulation: string | null;
   active_substances_raw: string | null;
   manufacturer: string | null;
+  display_manufacturer: string | null;
   registration_number: string | null;
   registration_start_date: string | null;
   registration_end_date: string | null;
@@ -165,7 +166,7 @@ export default function ProductDetailScreen() {
 
             <View style={styles.detailItem}>
               <Text style={styles.detailLabel}>Производитель</Text>
-              <Text style={styles.detailValue}>{formatValue(product.manufacturer)}</Text>
+              <Text style={styles.detailValue}>{formatValue(product.display_manufacturer)}</Text>
             </View>
 
             <View style={styles.detailRow}>
