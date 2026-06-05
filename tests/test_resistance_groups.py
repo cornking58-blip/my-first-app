@@ -195,6 +195,27 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertEqual(group["group"], "3A")
         self.assertIn("Sodium channel", group["name"])
 
+    def test_high_confidence_herbicide_alias_from_audit_resolves_to_hrac(self):
+        group = get_resistance_group("Изоксафлютол", "herbicide")
+
+        self.assertEqual(group["system"], "HRAC")
+        self.assertEqual(group["group"], "27")
+        self.assertIn("HPPD", group["name"])
+
+    def test_high_confidence_fungicide_alias_from_audit_resolves_to_frac(self):
+        group = get_resistance_group("Пидифлуметофен", "fungicide")
+
+        self.assertEqual(group["system"], "FRAC")
+        self.assertEqual(group["group"], "7")
+        self.assertEqual(group["name"], "SDHI-fungicides")
+
+    def test_high_confidence_insecticide_alias_from_audit_resolves_to_irac(self):
+        group = get_resistance_group("Бифентрин", "insecticide")
+
+        self.assertEqual(group["system"], "IRAC")
+        self.assertEqual(group["group"], "3A")
+        self.assertIn("Sodium channel", group["name"])
+
     def test_insecticide_aliases_do_not_resolve_in_herbicide_lookup(self):
         group = get_resistance_group("ацетамиприд", "herbicide")
 
@@ -222,7 +243,7 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertFalse(diagnostics["checked"][2]["resolved"])
 
     def test_manual_russian_aliases_are_preserved_for_known_app_substances(self):
-        expected_aliases = {
+        existing_aliases = {
             "глифосат", "трибенурон-метил", "метсульфурон-метил", "имазамокс",
             "имазетапир", "клетодим", "хизалофоп-п-этил", "2,4-д", "дикамба",
             "клопиралид", "мезотрион", "метрибузин", "имидаклоприд", "тиаметоксам",
@@ -232,8 +253,18 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
             "дифеноконазол", "азоксистробин", "пираклостробин", "флудиоксонил",
             "металаксил-м",
         }
+        audit_aliases = {
+            "изоксафлютол", "карфентразон-этил", "пендиметалин", "пиноксаден",
+            "прометрин", "пропаквизафоп", "с-метолахлор", "темботрион",
+            "тербутилазин", "флорасулам", "изопиразам", "пидифлуметофен",
+            "фамоксадон", "фенамидон", "фенпропидин", "цифлуфенамид",
+            "бифентрин", "зета-циперметрин", "индоксакарб", "малатион",
+            "пиметрозин", "пиримифос-метил", "спиносад", "спиротетрамат",
+            "фипронил", "хлорпирифос", "циантранилипрол", "циперметрин",
+            "эмамектин бензоат", "эсфенвалерат", "пенфлуфен",
+        }
 
-        self.assertEqual(set(MANUAL_RU_ALIASES), expected_aliases)
+        self.assertEqual(set(MANUAL_RU_ALIASES), existing_aliases | audit_aliases)
 
     def test_known_group_annotation_keeps_existing_fields_and_adds_effect_summary(self):
         annotated = annotate_substances_with_resistance(
@@ -353,12 +384,18 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
     def test_seed_treatment_uses_mixed_frac_and_irac_lookup(self):
         fungicide_group = get_resistance_group("тебуконазол", "seed-treatment")
         insecticide_group = get_resistance_group("имидаклоприд", "seed-treatment")
+        audit_fungicide_group = get_resistance_group("пенфлуфен", "seed-treatment")
+        audit_insecticide_group = get_resistance_group("Фипронил", "seed-treatment")
         unknown_group = get_resistance_group("неизвестное вещество", "seed-treatment")
 
         self.assertEqual(fungicide_group["system"], "FRAC")
         self.assertEqual(fungicide_group["group"], "3")
         self.assertEqual(insecticide_group["system"], "IRAC")
         self.assertEqual(insecticide_group["group"], "4A")
+        self.assertEqual(audit_fungicide_group["system"], "FRAC")
+        self.assertEqual(audit_fungicide_group["group"], "7")
+        self.assertEqual(audit_insecticide_group["system"], "IRAC")
+        self.assertEqual(audit_insecticide_group["group"], "2B")
         self.assertEqual(unknown_group["name"], "группа не определена")
 
 
