@@ -424,6 +424,8 @@ MANUAL_RU_ALIASES = {
     "дельтаметрин": "deltamethrin",
     "хлорантранилипрол": "chlorantraniliprole",
     "абамектин": "abamectin",
+    "ацетамиприд": "acetamiprid",
+    "диметоат": "dimethoate",
     "карбендазим": "carbendazim",
     "тебуконазол": "tebuconazole",
     "дифеноконазол": "difenoconazole",
@@ -431,6 +433,39 @@ MANUAL_RU_ALIASES = {
     "пираклостробин": "pyraclostrobin",
     "флудиоксонил": "fludioxonil",
     "металаксил-м": "metalaxyl_m",
+}
+
+
+MANUAL_RU_ALIAS_PESTICIDE_TYPES = {
+    "глифосат": ("herbicide",),
+    "трибенурон-метил": ("herbicide",),
+    "метсульфурон-метил": ("herbicide",),
+    "имазамокс": ("herbicide",),
+    "имазетапир": ("herbicide",),
+    "клетодим": ("herbicide",),
+    "хизалофоп-п-этил": ("herbicide",),
+    "2,4-д": ("herbicide",),
+    "дикамба": ("herbicide",),
+    "клопиралид": ("herbicide",),
+    "мезотрион": ("herbicide",),
+    "метрибузин": ("herbicide",),
+    "имидаклоприд": ("insecticide",),
+    "тиаметоксам": ("insecticide",),
+    "клотианидин": ("insecticide",),
+    "лямбда-цигалотрин": ("insecticide",),
+    "альфа-циперметрин": ("insecticide",),
+    "дельтаметрин": ("insecticide",),
+    "хлорантранилипрол": ("insecticide",),
+    "абамектин": ("insecticide",),
+    "ацетамиприд": ("insecticide",),
+    "диметоат": ("insecticide",),
+    "карбендазим": ("fungicide",),
+    "тебуконазол": ("fungicide",),
+    "дифеноконазол": ("fungicide",),
+    "азоксистробин": ("fungicide",),
+    "пираклостробин": ("fungicide",),
+    "флудиоксонил": ("fungicide",),
+    "металаксил-м": ("fungicide",),
 }
 
 
@@ -505,11 +540,14 @@ def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
         normalized_alias = normalize_resistance_lookup_name(russian_name)
         normalized_key = normalize_resistance_lookup_name(active_key)
         normalized_hyphen_key = normalize_resistance_lookup_name(active_key.replace("_", "-"))
-        for pesticide_type, table in indexes.items():
+        allowed_pesticide_types = MANUAL_RU_ALIAS_PESTICIDE_TYPES.get(russian_name, tuple(indexes))
+        for pesticide_type in allowed_pesticide_types:
+            table = indexes.get(pesticide_type)
+            if not table:
+                continue
             group_info = table.get(normalized_key) or table.get(normalized_hyphen_key)
             if group_info:
                 table[normalized_alias] = group_info
-                break
 
     return {
         "records": records,
@@ -583,6 +621,30 @@ def get_resistance_group(substance_name: str, pesticide_type: str) -> Dict[str, 
         return group_info.copy()
 
     return UNKNOWN_RESISTANCE_GROUP.copy()
+
+
+def get_resistance_lookup_diagnostics(substance_names: Sequence[str], pesticide_type: str) -> Dict[str, Any]:
+    """Report which active substance names resolve to resistance groups and which stay unknown."""
+    checked = []
+    unresolved = []
+    for substance_name in substance_names:
+        group_info = get_resistance_group(substance_name, pesticide_type)
+        result = {
+            "substance_name": substance_name,
+            "resolved": group_info.get("name") != UNKNOWN_RESISTANCE_GROUP["name"],
+            "system": group_info.get("system"),
+            "group": group_info.get("group"),
+            "resistance_group_name": group_info.get("name"),
+        }
+        checked.append(result)
+        if not result["resolved"]:
+            unresolved.append(substance_name)
+
+    return {
+        "pesticide_type": pesticide_type,
+        "checked": checked,
+        "unresolved": unresolved,
+    }
 
 
 def annotate_substances_with_resistance(substances: List[Dict], pesticide_type: str) -> List[Dict]:

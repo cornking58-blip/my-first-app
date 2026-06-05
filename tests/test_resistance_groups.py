@@ -65,6 +65,7 @@ load_resistance_groups = namespace["load_resistance_groups"]
 RESISTANCE_GROUP_DATA = namespace["RESISTANCE_GROUP_DATA"]
 OLD_HARDCODED_RESISTANCE_GROUP_COUNT = namespace["OLD_HARDCODED_RESISTANCE_GROUP_COUNT"]
 MANUAL_RU_ALIASES = namespace["MANUAL_RU_ALIASES"]
+get_resistance_lookup_diagnostics = namespace["get_resistance_lookup_diagnostics"]
 
 
 class FakeCursor:
@@ -122,6 +123,40 @@ class RateUnitParsingTest(unittest.TestCase):
         self.assertEqual(calculate_active_amount(750, "г/кг", 0.05, "кг/га"), 37.5)
         self.assertEqual(calculate_active_amount(100, "г/л", 0.5, "л/га"), 50)
 
+    def test_api_endpoint_urls_are_unchanged(self):
+        source = SERVER_SOURCE.read_text(encoding="utf-8")
+        actual_paths = re.findall(r'@api_router\.(?:get|post|put|delete|patch)\("([^"]+)"', source)
+
+        self.assertEqual(actual_paths, [
+            "/health",
+            "/admin/import-excel",
+            "/herbicides/search",
+            "/herbicides/{product_key:path}",
+            "/herbicides/compare",
+            "/herbicides/compare-advanced",
+            "/admin/import-insecticides",
+            "/insecticides/search",
+            "/insecticides/{product_key:path}",
+            "/insecticides/compare-advanced",
+            "/admin/import-fungicides",
+            "/fungicides/search",
+            "/fungicides/{product_key:path}",
+            "/fungicides/compare-advanced",
+            "/admin/import-seed-treatments",
+            "/seed-treatments/search",
+            "/seed-treatments/{product_key:path}",
+            "/seed-treatments/compare-advanced",
+            "/herbicides/crops",
+            "/herbicides/harmful-objects",
+            "/insecticides/crops",
+            "/insecticides/harmful-objects",
+            "/fungicides/crops",
+            "/fungicides/harmful-objects",
+            "/seed-treatments/crops",
+            "/seed-treatments/harmful-objects",
+            "/stats",
+        ])
+
 
 class ResistanceGroupHelpersTest(unittest.TestCase):
     def test_known_hrac_russian_manual_alias_resolves_with_parser_extra_words(self):
@@ -139,13 +174,61 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertEqual(group["group"], "4A")
         self.assertIn("acetylcholine receptor", group["name"])
 
+    def test_acetamiprid_russian_manual_alias_resolves_to_irac_4a(self):
+        group = get_resistance_group("ацетамиприд", "insecticide")
+
+        self.assertEqual(group["system"], "IRAC")
+        self.assertEqual(group["group"], "4A")
+        self.assertIn("acetylcholine receptor", group["name"])
+
+    def test_dimethoate_russian_manual_alias_resolves_to_irac_1b(self):
+        group = get_resistance_group("диметоат", "insecticide")
+
+        self.assertEqual(group["system"], "IRAC")
+        self.assertEqual(group["group"], "1B")
+        self.assertIn("Acetylcholinesterase", group["name"])
+
+    def test_existing_lambda_cyhalothrin_alias_still_resolves_to_irac_3a(self):
+        group = get_resistance_group("лямбда-цигалотрин", "insecticide")
+
+        self.assertEqual(group["system"], "IRAC")
+        self.assertEqual(group["group"], "3A")
+        self.assertIn("Sodium channel", group["name"])
+
+    def test_insecticide_aliases_do_not_resolve_in_herbicide_lookup(self):
+        group = get_resistance_group("ацетамиприд", "herbicide")
+
+        self.assertIsNone(group["system"])
+        self.assertIsNone(group["group"])
+        self.assertEqual(group["name"], "группа не определена")
+
+    def test_unknown_insecticide_still_returns_clear_unknown_name(self):
+        group = get_resistance_group("неизвестный инсектицид", "insecticide")
+
+        self.assertIsNone(group["system"])
+        self.assertIsNone(group["group"])
+        self.assertEqual(group["name"], "группа не определена")
+
+    def test_resistance_lookup_diagnostics_reports_unresolved_names_without_failing(self):
+        diagnostics = get_resistance_lookup_diagnostics(
+            ["ацетамиприд", "диметоат", "неизвестный инсектицид"],
+            "insecticide",
+        )
+
+        self.assertEqual(diagnostics["pesticide_type"], "insecticide")
+        self.assertEqual(diagnostics["unresolved"], ["неизвестный инсектицид"])
+        self.assertEqual(diagnostics["checked"][0]["group"], "4A")
+        self.assertEqual(diagnostics["checked"][1]["group"], "1B")
+        self.assertFalse(diagnostics["checked"][2]["resolved"])
+
     def test_manual_russian_aliases_are_preserved_for_known_app_substances(self):
         expected_aliases = {
             "глифосат", "трибенурон-метил", "метсульфурон-метил", "имазамокс",
             "имазетапир", "клетодим", "хизалофоп-п-этил", "2,4-д", "дикамба",
             "клопиралид", "мезотрион", "метрибузин", "имидаклоприд", "тиаметоксам",
             "клотианидин", "лямбда-цигалотрин", "альфа-циперметрин", "дельтаметрин",
-            "хлорантранилипрол", "абамектин", "карбендазим", "тебуконазол",
+            "хлорантранилипрол", "абамектин", "ацетамиприд", "диметоат",
+            "карбендазим", "тебуконазол",
             "дифеноконазол", "азоксистробин", "пираклостробин", "флудиоксонил",
             "металаксил-м",
         }
