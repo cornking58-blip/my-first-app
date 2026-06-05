@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import axios from 'axios';
+import { RetryErrorCard } from '../../src/components/RetryErrorCard';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -107,11 +108,7 @@ export default function ProductDetailScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.errorContainer}>
-          <Ionicons name="warning-outline" size={64} color="#EF4444" />
-          <Text style={styles.errorText}>{error || 'Препарат не найден'}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchProduct}>
-            <Text style={styles.retryText}>Повторить</Text>
-          </TouchableOpacity>
+          <RetryErrorCard onRetry={fetchProduct} />
         </View>
       </SafeAreaView>
     );

@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
 import { useHerbicideStore } from '../src/store/herbicideStore';
+import { RetryErrorCard } from '../src/components/RetryErrorCard';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -223,7 +224,7 @@ export default function SeedTreatmentCompareScreen() {
       setCompareData(response.data);
     } catch (err) {
       console.error('Compare failed:', err);
-      setError('Не удалось сравнить препараты');
+      setError('Не удалось загрузить данные');
     } finally {
       setLoading(false);
       setPriceLoading(false);
@@ -388,11 +389,7 @@ export default function SeedTreatmentCompareScreen() {
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.errorContainer}>
-          <Ionicons name="warning-outline" size={64} color="#EF4444" />
-          <Text style={styles.errorText}>{error || 'Ошибка загрузки'}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => fetchCompareData()}>
-            <Text style={styles.retryText}>Повторить</Text>
-          </TouchableOpacity>
+          <RetryErrorCard onRetry={() => fetchCompareData()} />
         </View>
       </SafeAreaView>
     );
