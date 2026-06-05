@@ -17,6 +17,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
 import { useHerbicideStore } from '../../src/store/herbicideStore';
+import { RetryErrorCard } from '../../src/components/RetryErrorCard';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -66,6 +67,7 @@ export default function SeedTreatmentsScreen() {
   const [harmfulObject, setHarmfulObject] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [onlyActive, setOnlyActive] = useState(false);
   const [stats, setStats] = useState<{ total_records: number; unique_products: number; active_registrations: number } | null>(null);
@@ -79,6 +81,7 @@ export default function SeedTreatmentsScreen() {
       }
     } catch (error) {
       console.error('Failed to fetch stats:', error);
+      setRequestError('Не удалось загрузить данные');
     }
   };
 
@@ -94,8 +97,10 @@ export default function SeedTreatmentsScreen() {
 
       const response = await axios.get(`${API_URL}/api/seed-treatments/search?${params.toString()}`);
       setResults(response.data);
+      setRequestError(null);
     } catch (error) {
       console.error('Search failed:', error);
+      setRequestError('Не удалось загрузить данные');
       setResults([]);
     } finally {
       setLoading(false);
@@ -116,6 +121,11 @@ export default function SeedTreatmentsScreen() {
     setRefreshing(true);
     await Promise.all([fetchStats(), search(searchQuery, onlyActive, crop, harmfulObject)]);
     setRefreshing(false);
+  };
+
+  const handleRetry = () => {
+    fetchStats();
+    search(searchQuery, onlyActive, crop, harmfulObject);
   };
 
   const toggleActiveFilter = () => {
@@ -336,6 +346,8 @@ export default function SeedTreatmentsScreen() {
               <ActivityIndicator size="large" color="#8B5CF6" />
               <Text style={styles.loadingText}>Загрузка...</Text>
             </View>
+          ) : requestError ? (
+            <RetryErrorCard onRetry={handleRetry} compact />
           ) : (
             <FlashList
               data={results}
