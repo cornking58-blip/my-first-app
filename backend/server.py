@@ -708,6 +708,18 @@ def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
                     entry["lookup_names"].add(normalized)
                     indexes[pesticide_type].setdefault(normalized, group_info)
 
+        # Russian product imports often use Cyrillic active-substance names while HRAC/FRAC/IRAC
+        # source records are mostly English. Store those trusted Russian names in JSON so the
+        # data file, not Python code, is the primary alias source. Manual aliases below remain a
+        # fallback for backward compatibility.
+        ru_aliases = record.get("active_ingredient_ru_aliases") or []
+        if isinstance(ru_aliases, list):
+            for alias in ru_aliases:
+                if alias:
+                    for normalized in _resistance_lookup_variants(str(alias)):
+                        entry["lookup_names"].add(normalized)
+                        indexes[pesticide_type].setdefault(normalized, group_info)
+
         key = record.get("active_ingredient_key")
         if key:
             for underscored in _resistance_lookup_variants(str(key).replace("_", "-")):

@@ -106,6 +106,18 @@ class ResistanceGroupDataFileTest(unittest.TestCase):
         self.assertGreater(len(loaded["indexes"]["herbicide"]), 0)
         self.assertGreater(len(loaded["indexes"]["insecticide"]), 0)
 
+    def test_russian_alias_arrays_exist_and_are_indexed(self):
+        loaded = load_resistance_groups(SERVER_SOURCE.parent / "data" / "resistance_groups.json")
+        nicosulfuron = next(
+            record for record in loaded["records"]
+            if record.get("active_ingredient_key") == "nicosulfuron"
+        )
+
+        self.assertIsInstance(nicosulfuron.get("active_ingredient_ru_aliases"), list)
+        self.assertIn("никосульфурон", nicosulfuron["active_ingredient_ru_aliases"])
+        self.assertIn("никосульфурон", loaded["indexes"]["herbicide"])
+        self.assertEqual(loaded["indexes"]["herbicide"]["никосульфурон"]["system"], "HRAC")
+
 
 class RateUnitParsingTest(unittest.TestCase):
     def test_rate_parser_normalizes_supported_units(self):
@@ -165,6 +177,62 @@ class RateUnitParsingTest(unittest.TestCase):
 
 
 class ResistanceGroupHelpersTest(unittest.TestCase):
+    def test_known_hrac_json_ru_aliases_resolve(self):
+        expected = {
+            "никосульфурон": "2",
+            "тифенсульфурон": "2",
+            "трифлусульфурон": "2",
+            "глифосат": "9",
+        }
+
+        for alias, group_code in expected.items():
+            with self.subTest(alias=alias):
+                group = get_resistance_group(alias, "herbicide")
+                self.assertEqual(group["system"], "HRAC")
+                self.assertEqual(group["group"], group_code)
+
+    def test_known_frac_russian_names_resolve(self):
+        expected = {
+            "пираклостробин": "11",
+            "азоксистробин": "11",
+            "карбендазим": "1",
+            "тебуконазол": "3",
+        }
+
+        for alias, group_code in expected.items():
+            with self.subTest(alias=alias):
+                group = get_resistance_group(alias, "fungicide")
+                self.assertEqual(group["system"], "FRAC")
+                self.assertEqual(group["group"], group_code)
+
+    def test_known_irac_json_ru_aliases_resolve(self):
+        expected = {
+            "ацетамиприд": "4A",
+            "диметоат": "1B",
+            "лямбда-цигалотрин": "3A",
+        }
+
+        for alias, group_code in expected.items():
+            with self.subTest(alias=alias):
+                group = get_resistance_group(alias, "insecticide")
+                self.assertEqual(group["system"], "IRAC")
+                self.assertEqual(group["group"], group_code)
+
+    def test_json_alias_case_variants_resolve_to_same_group(self):
+        lowercase_group = get_resistance_group("никосульфурон", "herbicide")
+
+        self.assertEqual(get_resistance_group("Никосульфурон", "herbicide"), lowercase_group)
+        self.assertEqual(get_resistance_group("НИКОСУЛЬФУРОН", "herbicide"), lowercase_group)
+
+    def test_seed_treatment_uses_frac_before_irac_with_json_aliases(self):
+        frac_group = get_resistance_group("пенфлуфен", "seed-treatment")
+        irac_group = get_resistance_group("фипронил", "seed-treatment")
+
+        self.assertEqual(frac_group["system"], "FRAC")
+        self.assertEqual(frac_group["group"], "7")
+        self.assertEqual(irac_group["system"], "IRAC")
+        self.assertEqual(irac_group["group"], "2B")
+
     def test_known_hrac_russian_manual_alias_resolves_with_parser_extra_words(self):
         group = get_resistance_group("Глифосат кислоты", "herbicide")
 
