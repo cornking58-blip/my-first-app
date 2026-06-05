@@ -47,6 +47,18 @@ class HerbicideRecord(BaseModel):
     formulation: Optional[str] = None
     active_substances_raw: Optional[str] = None
     manufacturer: Optional[str] = None
+    registrant: Optional[str] = None
+    producer: Optional[str] = None
+    company: Optional[str] = None
+    applicant: Optional[str] = None
+    registration_holder: Optional[str] = None
+    registrant_name: Optional[str] = None
+    manufacturer_name: Optional[str] = None
+    producer_name: Optional[str] = None
+    organization: Optional[str] = None
+    registrant_organization: Optional[str] = None
+    certificate_holder: Optional[str] = None
+    display_manufacturer: Optional[str] = None
     registration_number: Optional[str] = None
     registration_start_date: Optional[str] = None
     registration_end_date: Optional[str] = None
@@ -79,6 +91,18 @@ class ProductCard(BaseModel):
     formulation: Optional[str] = None
     active_substances_raw: Optional[str] = None
     manufacturer: Optional[str] = None
+    registrant: Optional[str] = None
+    producer: Optional[str] = None
+    company: Optional[str] = None
+    applicant: Optional[str] = None
+    registration_holder: Optional[str] = None
+    registrant_name: Optional[str] = None
+    manufacturer_name: Optional[str] = None
+    producer_name: Optional[str] = None
+    organization: Optional[str] = None
+    registrant_organization: Optional[str] = None
+    certificate_holder: Optional[str] = None
+    display_manufacturer: Optional[str] = None
     registration_number: Optional[str] = None
     registration_start_date: Optional[str] = None
     registration_end_date: Optional[str] = None
@@ -107,6 +131,18 @@ class SearchResult(BaseModel):
     formulation: Optional[str] = None
     active_substances_raw: Optional[str] = None
     manufacturer: Optional[str] = None
+    registrant: Optional[str] = None
+    producer: Optional[str] = None
+    company: Optional[str] = None
+    applicant: Optional[str] = None
+    registration_holder: Optional[str] = None
+    registrant_name: Optional[str] = None
+    manufacturer_name: Optional[str] = None
+    producer_name: Optional[str] = None
+    organization: Optional[str] = None
+    registrant_organization: Optional[str] = None
+    certificate_holder: Optional[str] = None
+    display_manufacturer: Optional[str] = None
     registration_status: Optional[str] = None
     applications_count: int = 0
 
@@ -194,6 +230,73 @@ FUNGICIDE_HARMFUL_OBJECT_FIELDS = HARMFUL_OBJECT_FIELDS
 TARGET_OBJECT_IMPORT_COLUMNS = HARMFUL_OBJECT_FIELDS
 
 
+DISPLAY_MANUFACTURER_FALLBACK = "Производитель не указан"
+MANUFACTURER_FIELD_PRIORITY = (
+    "manufacturer",
+    "registrant",
+    "manufacturer_name",
+    "registrant_name",
+    "producer",
+    "producer_name",
+    "company",
+    "applicant",
+    "registration_holder",
+    "organization",
+    "registrant_organization",
+    "certificate_holder",
+)
+
+
+def _normalize_display_manufacturer_value(value) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "нет данных"}:
+        return None
+    return text
+
+
+def _first_display_manufacturer_value(value) -> Optional[str]:
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            normalized = _normalize_display_manufacturer_value(item)
+            if normalized:
+                return normalized
+        return None
+    return _normalize_display_manufacturer_value(value)
+
+
+def get_display_manufacturer(record: Optional[dict]) -> str:
+    """Return the best manufacturer/registrant value for UI display."""
+    record = record or {}
+    for field in MANUFACTURER_FIELD_PRIORITY:
+        value = _first_display_manufacturer_value(record.get(field))
+        if value:
+            return value
+    return DISPLAY_MANUFACTURER_FALLBACK
+
+
+def get_records_display_manufacturer(records: Sequence[dict]) -> str:
+    """Return the best manufacturer/registrant value across product rows."""
+    records = records or []
+    for field in MANUFACTURER_FIELD_PRIORITY:
+        for record in records:
+            value = _first_display_manufacturer_value(record.get(field))
+            if value:
+                return value
+    return DISPLAY_MANUFACTURER_FALLBACK
+
+
+def manufacturer_response_fields(record: Optional[dict], records: Optional[Sequence[dict]] = None) -> dict:
+    """Return original manufacturer-like fields plus the stable display value."""
+    record = record or {}
+    response = {field: record.get(field) for field in MANUFACTURER_FIELD_PRIORITY}
+    response["display_manufacturer"] = (
+        get_records_display_manufacturer(records) if records is not None else get_display_manufacturer(record)
+    )
+    return response
+
+
 def build_registration_filters(
     culture: str = "",
     crop: str = "",
@@ -244,7 +347,7 @@ def build_search_match(query: str) -> Optional[dict]:
         "target_object",
         "registration_status",
         "active_substances_raw",
-        "manufacturer",
+        *MANUFACTURER_FIELD_PRIORITY,
     ]
 
     return {
@@ -1286,6 +1389,7 @@ async def build_advanced_compare_response(
             "product_name": left_first.get("product_name"),
             "formulation": left_first.get("formulation"),
             "active_substances_raw": left_first.get("active_substances_raw"),
+            **manufacturer_response_fields(left_first, left_records),
             "registration_status": left_first.get("registration_status"),
             "max_rate": left_max_rate,
             "max_rate_unit": left_max_rate_unit,
@@ -1303,6 +1407,7 @@ async def build_advanced_compare_response(
             "product_name": right_first.get("product_name"),
             "formulation": right_first.get("formulation"),
             "active_substances_raw": right_first.get("active_substances_raw"),
+            **manufacturer_response_fields(right_first, right_records),
             "registration_status": right_first.get("registration_status"),
             "max_rate": right_max_rate,
             "max_rate_unit": right_max_rate_unit,
@@ -1428,6 +1533,17 @@ async def import_excel(file: UploadFile = File(...)):
                 "formulation": clean_value(row.get('formulation')),
                 "active_substances_raw": clean_value(row.get('active_substances_raw')),
                 "manufacturer": clean_value(row.get('manufacturer')),
+                "registrant": clean_value(row.get('registrant')),
+                "producer": clean_value(row.get('producer')),
+                "company": clean_value(row.get('company')),
+                "applicant": clean_value(row.get('applicant')),
+                "registration_holder": clean_value(row.get('registration_holder')),
+                "registrant_name": clean_value(row.get('registrant_name')),
+                "manufacturer_name": clean_value(row.get('manufacturer_name')),
+                "producer_name": clean_value(row.get('producer_name')),
+                "organization": clean_value(row.get('organization')),
+                "registrant_organization": clean_value(row.get('registrant_organization')),
+                "certificate_holder": clean_value(row.get('certificate_holder')),
                 "registration_number": registration_number,
                 "registration_start_date": clean_value(row.get('registration_start_date')),
                 "registration_end_date": clean_value(row.get('registration_end_date')),
@@ -1506,6 +1622,18 @@ async def search_herbicides(
                     "formulation": {"$first": "$formulation"},
                     "active_substances_raw": {"$first": "$active_substances_raw"},
                     "manufacturer": {"$first": "$manufacturer"},
+                    "registrant": {"$push": "$registrant"},
+                    "producer": {"$push": "$producer"},
+                    "company": {"$push": "$company"},
+                    "applicant": {"$push": "$applicant"},
+                    "registration_holder": {"$push": "$registration_holder"},
+                    "registrant_name": {"$push": "$registrant_name"},
+                    "manufacturer_name": {"$push": "$manufacturer_name"},
+                    "producer_name": {"$push": "$producer_name"},
+                    "organization": {"$push": "$organization"},
+                    "registrant_organization": {"$push": "$registrant_organization"},
+                    "certificate_holder": {"$push": "$certificate_holder"},
+                    "all_manufacturers": {"$push": "$manufacturer"},
                     "registration_status": {"$first": "$registration_status"},
                     "applications_count": {"$sum": 1}
                 }
@@ -1523,6 +1651,18 @@ async def search_herbicides(
                 formulation=r.get("formulation"),
                 active_substances_raw=r.get("active_substances_raw"),
                 manufacturer=r.get("manufacturer"),
+                registrant=next((v for v in r.get("registrant", []) if v), None),
+                producer=next((v for v in r.get("producer", []) if v), None),
+                company=next((v for v in r.get("company", []) if v), None),
+                applicant=next((v for v in r.get("applicant", []) if v), None),
+                registration_holder=next((v for v in r.get("registration_holder", []) if v), None),
+                registrant_name=next((v for v in r.get("registrant_name", []) if v), None),
+                manufacturer_name=next((v for v in r.get("manufacturer_name", []) if v), None),
+                producer_name=next((v for v in r.get("producer_name", []) if v), None),
+                organization=next((v for v in r.get("organization", []) if v), None),
+                registrant_organization=next((v for v in r.get("registrant_organization", []) if v), None),
+                certificate_holder=next((v for v in r.get("certificate_holder", []) if v), None),
+                display_manufacturer=get_display_manufacturer({**r, "manufacturer": next((v for v in r.get("all_manufacturers", []) if v), r.get("manufacturer"))}),
                 registration_status=r.get("registration_status"),
                 applications_count=r.get("applications_count", 0)
             )
@@ -1567,7 +1707,7 @@ async def get_herbicide(product_key: str):
             product_name=first_record.get("product_name"),
             formulation=first_record.get("formulation"),
             active_substances_raw=first_record.get("active_substances_raw"),
-            manufacturer=first_record.get("manufacturer"),
+            **manufacturer_response_fields(first_record, records),
             registration_number=first_record.get("registration_number"),
             registration_start_date=first_record.get("registration_start_date"),
             registration_end_date=first_record.get("registration_end_date"),
@@ -1611,6 +1751,7 @@ async def compare_herbicides(request: CompareRequest):
                 "formulation": first.get("formulation"),
                 "active_substances_raw": first.get("active_substances_raw"),
                 "manufacturer": first.get("manufacturer"),
+                **manufacturer_response_fields(first, records),
                 "registration_number": first.get("registration_number"),
                 "registration_status": first.get("registration_status"),
                 "registration_start_date": first.get("registration_start_date"),
@@ -1687,6 +1828,17 @@ async def import_insecticides(file: UploadFile = File(...)):
                 "formulation": clean_value(row.get('formulation')),
                 "active_substances_raw": clean_value(row.get('active_substances_raw')),
                 "manufacturer": clean_value(row.get('manufacturer')),
+                "registrant": clean_value(row.get('registrant')),
+                "producer": clean_value(row.get('producer')),
+                "company": clean_value(row.get('company')),
+                "applicant": clean_value(row.get('applicant')),
+                "registration_holder": clean_value(row.get('registration_holder')),
+                "registrant_name": clean_value(row.get('registrant_name')),
+                "manufacturer_name": clean_value(row.get('manufacturer_name')),
+                "producer_name": clean_value(row.get('producer_name')),
+                "organization": clean_value(row.get('organization')),
+                "registrant_organization": clean_value(row.get('registrant_organization')),
+                "certificate_holder": clean_value(row.get('certificate_holder')),
                 "registration_number": registration_number,
                 "registration_start_date": clean_value(row.get('registration_start_date')),
                 "registration_end_date": clean_value(row.get('registration_end_date')),
@@ -1766,6 +1918,18 @@ async def search_insecticides(
                     "formulation": {"$first": "$formulation"},
                     "active_substances_raw": {"$first": "$active_substances_raw"},
                     "manufacturer": {"$first": "$manufacturer"},
+                    "registrant": {"$push": "$registrant"},
+                    "producer": {"$push": "$producer"},
+                    "company": {"$push": "$company"},
+                    "applicant": {"$push": "$applicant"},
+                    "registration_holder": {"$push": "$registration_holder"},
+                    "registrant_name": {"$push": "$registrant_name"},
+                    "manufacturer_name": {"$push": "$manufacturer_name"},
+                    "producer_name": {"$push": "$producer_name"},
+                    "organization": {"$push": "$organization"},
+                    "registrant_organization": {"$push": "$registrant_organization"},
+                    "certificate_holder": {"$push": "$certificate_holder"},
+                    "all_manufacturers": {"$push": "$manufacturer"},
                     "registration_status": {"$first": "$registration_status"},
                     "applications_count": {"$sum": 1}
                 }
@@ -1783,6 +1947,18 @@ async def search_insecticides(
                 formulation=r.get("formulation"),
                 active_substances_raw=r.get("active_substances_raw"),
                 manufacturer=r.get("manufacturer"),
+                registrant=next((v for v in r.get("registrant", []) if v), None),
+                producer=next((v for v in r.get("producer", []) if v), None),
+                company=next((v for v in r.get("company", []) if v), None),
+                applicant=next((v for v in r.get("applicant", []) if v), None),
+                registration_holder=next((v for v in r.get("registration_holder", []) if v), None),
+                registrant_name=next((v for v in r.get("registrant_name", []) if v), None),
+                manufacturer_name=next((v for v in r.get("manufacturer_name", []) if v), None),
+                producer_name=next((v for v in r.get("producer_name", []) if v), None),
+                organization=next((v for v in r.get("organization", []) if v), None),
+                registrant_organization=next((v for v in r.get("registrant_organization", []) if v), None),
+                certificate_holder=next((v for v in r.get("certificate_holder", []) if v), None),
+                display_manufacturer=get_display_manufacturer({**r, "manufacturer": next((v for v in r.get("all_manufacturers", []) if v), r.get("manufacturer"))}),
                 registration_status=r.get("registration_status"),
                 applications_count=r.get("applications_count", 0)
             )
@@ -1827,7 +2003,7 @@ async def get_insecticide(product_key: str):
             product_name=first_record.get("product_name"),
             formulation=first_record.get("formulation"),
             active_substances_raw=first_record.get("active_substances_raw"),
-            manufacturer=first_record.get("manufacturer"),
+            **manufacturer_response_fields(first_record, records),
             registration_number=first_record.get("registration_number"),
             registration_start_date=first_record.get("registration_start_date"),
             registration_end_date=first_record.get("registration_end_date"),
@@ -1885,6 +2061,17 @@ async def import_fungicides(file: UploadFile = File(...)):
                 "formulation": clean_value(row.get('formulation')),
                 "active_substances_raw": clean_value(row.get('active_substances_raw')),
                 "manufacturer": clean_value(row.get('manufacturer')),
+                "registrant": clean_value(row.get('registrant')),
+                "producer": clean_value(row.get('producer')),
+                "company": clean_value(row.get('company')),
+                "applicant": clean_value(row.get('applicant')),
+                "registration_holder": clean_value(row.get('registration_holder')),
+                "registrant_name": clean_value(row.get('registrant_name')),
+                "manufacturer_name": clean_value(row.get('manufacturer_name')),
+                "producer_name": clean_value(row.get('producer_name')),
+                "organization": clean_value(row.get('organization')),
+                "registrant_organization": clean_value(row.get('registrant_organization')),
+                "certificate_holder": clean_value(row.get('certificate_holder')),
                 "registration_number": registration_number,
                 "registration_start_date": clean_value(row.get('registration_start_date')),
                 "registration_end_date": clean_value(row.get('registration_end_date')),
@@ -1966,6 +2153,18 @@ async def search_fungicides(
                     "formulation": {"$first": "$formulation"},
                     "active_substances_raw": {"$first": "$active_substances_raw"},
                     "manufacturer": {"$first": "$manufacturer"},
+                    "registrant": {"$push": "$registrant"},
+                    "producer": {"$push": "$producer"},
+                    "company": {"$push": "$company"},
+                    "applicant": {"$push": "$applicant"},
+                    "registration_holder": {"$push": "$registration_holder"},
+                    "registrant_name": {"$push": "$registrant_name"},
+                    "manufacturer_name": {"$push": "$manufacturer_name"},
+                    "producer_name": {"$push": "$producer_name"},
+                    "organization": {"$push": "$organization"},
+                    "registrant_organization": {"$push": "$registrant_organization"},
+                    "certificate_holder": {"$push": "$certificate_holder"},
+                    "all_manufacturers": {"$push": "$manufacturer"},
                     "registration_status": {"$first": "$registration_status"},
                     "applications_count": {"$sum": 1}
                 }
@@ -1983,6 +2182,18 @@ async def search_fungicides(
                 formulation=r.get("formulation"),
                 active_substances_raw=r.get("active_substances_raw"),
                 manufacturer=r.get("manufacturer"),
+                registrant=next((v for v in r.get("registrant", []) if v), None),
+                producer=next((v for v in r.get("producer", []) if v), None),
+                company=next((v for v in r.get("company", []) if v), None),
+                applicant=next((v for v in r.get("applicant", []) if v), None),
+                registration_holder=next((v for v in r.get("registration_holder", []) if v), None),
+                registrant_name=next((v for v in r.get("registrant_name", []) if v), None),
+                manufacturer_name=next((v for v in r.get("manufacturer_name", []) if v), None),
+                producer_name=next((v for v in r.get("producer_name", []) if v), None),
+                organization=next((v for v in r.get("organization", []) if v), None),
+                registrant_organization=next((v for v in r.get("registrant_organization", []) if v), None),
+                certificate_holder=next((v for v in r.get("certificate_holder", []) if v), None),
+                display_manufacturer=get_display_manufacturer({**r, "manufacturer": next((v for v in r.get("all_manufacturers", []) if v), r.get("manufacturer"))}),
                 registration_status=r.get("registration_status"),
                 applications_count=r.get("applications_count", 0)
             )
@@ -2027,7 +2238,7 @@ async def get_fungicide(product_key: str):
             product_name=first_record.get("product_name"),
             formulation=first_record.get("formulation"),
             active_substances_raw=first_record.get("active_substances_raw"),
-            manufacturer=first_record.get("manufacturer"),
+            **manufacturer_response_fields(first_record, records),
             registration_number=first_record.get("registration_number"),
             registration_start_date=first_record.get("registration_start_date"),
             registration_end_date=first_record.get("registration_end_date"),
@@ -2085,6 +2296,17 @@ async def import_seed_treatments(file: UploadFile = File(...)):
                 "formulation": clean_value(row.get('formulation')),
                 "active_substances_raw": clean_value(row.get('active_substances_raw')),
                 "manufacturer": clean_value(row.get('manufacturer')),
+                "registrant": clean_value(row.get('registrant')),
+                "producer": clean_value(row.get('producer')),
+                "company": clean_value(row.get('company')),
+                "applicant": clean_value(row.get('applicant')),
+                "registration_holder": clean_value(row.get('registration_holder')),
+                "registrant_name": clean_value(row.get('registrant_name')),
+                "manufacturer_name": clean_value(row.get('manufacturer_name')),
+                "producer_name": clean_value(row.get('producer_name')),
+                "organization": clean_value(row.get('organization')),
+                "registrant_organization": clean_value(row.get('registrant_organization')),
+                "certificate_holder": clean_value(row.get('certificate_holder')),
                 "registration_number": registration_number,
                 "registration_start_date": clean_value(row.get('registration_start_date')),
                 "registration_end_date": clean_value(row.get('registration_end_date')),
@@ -2165,6 +2387,18 @@ async def search_seed_treatments(
                     "formulation": {"$first": "$formulation"},
                     "active_substances_raw": {"$first": "$active_substances_raw"},
                     "manufacturer": {"$first": "$manufacturer"},
+                    "registrant": {"$push": "$registrant"},
+                    "producer": {"$push": "$producer"},
+                    "company": {"$push": "$company"},
+                    "applicant": {"$push": "$applicant"},
+                    "registration_holder": {"$push": "$registration_holder"},
+                    "registrant_name": {"$push": "$registrant_name"},
+                    "manufacturer_name": {"$push": "$manufacturer_name"},
+                    "producer_name": {"$push": "$producer_name"},
+                    "organization": {"$push": "$organization"},
+                    "registrant_organization": {"$push": "$registrant_organization"},
+                    "certificate_holder": {"$push": "$certificate_holder"},
+                    "all_manufacturers": {"$push": "$manufacturer"},
                     "registration_status": {"$first": "$registration_status"},
                     "pesticide_type": {"$first": "$pesticide_type"},
                     "applications_count": {"$sum": 1}
@@ -2183,6 +2417,18 @@ async def search_seed_treatments(
                 "formulation": r.get("formulation"),
                 "active_substances_raw": r.get("active_substances_raw"),
                 "manufacturer": r.get("manufacturer"),
+                "registrant": next((v for v in r.get("registrant", []) if v), None),
+                "producer": next((v for v in r.get("producer", []) if v), None),
+                "company": next((v for v in r.get("company", []) if v), None),
+                "applicant": next((v for v in r.get("applicant", []) if v), None),
+                "registration_holder": next((v for v in r.get("registration_holder", []) if v), None),
+                "registrant_name": next((v for v in r.get("registrant_name", []) if v), None),
+                "manufacturer_name": next((v for v in r.get("manufacturer_name", []) if v), None),
+                "producer_name": next((v for v in r.get("producer_name", []) if v), None),
+                "organization": next((v for v in r.get("organization", []) if v), None),
+                "registrant_organization": next((v for v in r.get("registrant_organization", []) if v), None),
+                "certificate_holder": next((v for v in r.get("certificate_holder", []) if v), None),
+                "display_manufacturer": get_display_manufacturer({**r, "manufacturer": next((v for v in r.get("all_manufacturers", []) if v), r.get("manufacturer"))}),
                 "registration_status": r.get("registration_status"),
                 "pesticide_type": r.get("pesticide_type"),
                 "applications_count": r.get("applications_count", 0)
@@ -2229,6 +2475,7 @@ async def get_seed_treatment(product_key: str):
             "formulation": first_record.get("formulation"),
             "active_substances_raw": first_record.get("active_substances_raw"),
             "manufacturer": first_record.get("manufacturer"),
+            **manufacturer_response_fields(first_record, records),
             "registration_number": first_record.get("registration_number"),
             "registration_start_date": first_record.get("registration_start_date"),
             "registration_end_date": first_record.get("registration_end_date"),

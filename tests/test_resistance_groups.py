@@ -8,7 +8,13 @@ from typing import Any, Dict, List, Optional, Sequence
 
 
 SERVER_SOURCE = Path(__file__).resolve().parents[1] / "backend" / "server.py"
-HELPER_SOURCE = SERVER_SOURCE.read_text().split(
+SERVER_TEXT = SERVER_SOURCE.read_text()
+MANUFACTURER_HELPER_SOURCE = "DISPLAY_MANUFACTURER_FALLBACK =" + SERVER_TEXT.split(
+    "DISPLAY_MANUFACTURER_FALLBACK =", 1
+)[1].split(
+    "# ==================== ACTIVE SUBSTANCE PARSER ====================", 1
+)[0]
+HELPER_SOURCE = SERVER_TEXT.split(
     "# ==================== ACTIVE SUBSTANCE PARSER ====================", 1
 )[1].split(
     "# ==================== HELPER FUNCTIONS ====================", 1
@@ -52,7 +58,7 @@ namespace = {
     "AdvancedCompareRequest": AdvancedCompareRequest,
     "logger": LoggerStub(),
 }
-exec(HELPER_SOURCE, namespace)
+exec(MANUFACTURER_HELPER_SOURCE + HELPER_SOURCE, namespace)
 
 parse_active_substances = namespace["parse_active_substances"]
 get_resistance_group = namespace["get_resistance_group"]
@@ -408,6 +414,7 @@ class AdvancedCompareResponseTest(unittest.TestCase):
                     "product_name": "Препарат А",
                     "formulation": "КЭ",
                     "active_substances_raw": "(100 г/л дифеноконазол + 200 г/л азоксистробин)",
+                    "registrant": "Левый регистрант",
                     "registration_status": "Действует",
                     "rate_raw": "0,5-1,0",
                     "crop": "подсолнечн ик",
@@ -428,6 +435,7 @@ class AdvancedCompareResponseTest(unittest.TestCase):
                     "product_name": "Препарат Б",
                     "formulation": "КС",
                     "active_substances_raw": "(250 г/л тебуконазол)",
+                    "producer": "Правый производитель",
                     "registration_status": "Действует",
                     "rate_raw": "1,2-1,5",
                     "crop": "кукуруза",
@@ -448,6 +456,12 @@ class AdvancedCompareResponseTest(unittest.TestCase):
         for key, value in overrides.items():
             setattr(request, key, value)
         return asyncio.run(build_advanced_compare_response(request, self.make_collection(), "fungicide"))
+
+    def test_advanced_comparison_includes_display_manufacturer_for_both_products(self):
+        response = self.compare()
+
+        self.assertEqual(response["left"]["display_manufacturer"], "Левый регистрант")
+        self.assertEqual(response["right"]["display_manufacturer"], "Правый производитель")
 
     def test_manual_left_and_right_rates_override_max_parsed_rate(self):
         response = self.compare(left_rate=0.4, right_rate=0.9)

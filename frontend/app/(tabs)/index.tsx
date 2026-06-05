@@ -27,6 +27,7 @@ interface SearchResult {
   formulation: string | null;
   active_substances_raw: string | null;
   manufacturer: string | null;
+  display_manufacturer: string | null;
   registration_status: string | null;
   applications_count: number;
 }
@@ -127,6 +128,8 @@ export default function HomeScreen() {
 
   const renderItem = ({ item }: { item: SearchResult }) => {
     const active = isActive(item.registration_status);
+    const displayManufacturer = item.display_manufacturer?.trim() || '';
+    const shouldShowManufacturer = Boolean(displayManufacturer && displayManufacturer !== 'Производитель не указан');
     const isSelected = selectedForCompare.includes(item.product_key);
     const canSelect = selectedForCompare.length < 2 || isSelected;
     
@@ -169,10 +172,10 @@ export default function HomeScreen() {
             </Text>
           ) : null}
 
-          {(item.manufacturer?.trim().length ?? 0) > 0 ? (
+          {shouldShowManufacturer ? (
             <View style={styles.manufacturerRow}>
               <Ionicons name="business-outline" size={14} color="#9CA3AF" />
-              <Text style={styles.manufacturer} numberOfLines={1}>{item.manufacturer}</Text>
+              <Text style={styles.manufacturer} numberOfLines={1}>{displayManufacturer}</Text>
             </View>
           ) : null}
         </TouchableOpacity>
