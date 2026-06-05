@@ -180,6 +180,24 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertEqual(group["group"], "4A")
         self.assertIn("acetylcholine receptor", group["name"])
 
+    def test_pyraclostrobin_alias_is_case_insensitive_for_frac_lookup(self):
+        lowercase_group = get_resistance_group("пираклостробин", "fungicide")
+        titlecase_group = get_resistance_group("Пираклостробин", "fungicide")
+        uppercase_group = get_resistance_group("ПИРАКЛОСТРОБИН", "fungicide")
+        mixed_group = get_resistance_group("ПиРаКлОсТрОбИн", "fungicide")
+
+        self.assertEqual(lowercase_group["system"], "FRAC")
+        self.assertEqual(lowercase_group["group"], "11")
+        self.assertEqual(titlecase_group, lowercase_group)
+        self.assertEqual(uppercase_group, lowercase_group)
+        self.assertEqual(mixed_group, lowercase_group)
+
+    def test_resistance_lookup_normalizes_spaces_nbsp_punctuation_and_hyphens(self):
+        expected = get_resistance_group("лямбда-цигалотрин", "insecticide")
+
+        self.assertEqual(get_resistance_group("  ЛЯМБДА\u00a0—  ЦИГАЛОТРИН. ", "insecticide"), expected)
+        self.assertEqual(get_resistance_group("лямбда цигалотрин", "insecticide"), expected)
+
     def test_acetamiprid_russian_manual_alias_resolves_to_irac_4a(self):
         group = get_resistance_group("ацетамиприд", "insecticide")
 
@@ -200,6 +218,22 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertEqual(group["system"], "IRAC")
         self.assertEqual(group["group"], "3A")
         self.assertIn("Sodium channel", group["name"])
+
+    def test_lambda_cyhalothrin_case_variants_resolve_to_same_irac_group(self):
+        lowercase_group = get_resistance_group("лямбда-цигалотрин", "insecticide")
+        titlecase_group = get_resistance_group("Лямбда-цигалотрин", "insecticide")
+
+        self.assertEqual(lowercase_group["system"], "IRAC")
+        self.assertEqual(lowercase_group["group"], "3A")
+        self.assertEqual(titlecase_group, lowercase_group)
+
+    def test_glyphosate_case_variants_resolve_to_same_hrac_group(self):
+        lowercase_group = get_resistance_group("глифосат", "herbicide")
+        titlecase_group = get_resistance_group("Глифосат", "herbicide")
+
+        self.assertEqual(lowercase_group["system"], "HRAC")
+        self.assertEqual(lowercase_group["group"], "9")
+        self.assertEqual(titlecase_group, lowercase_group)
 
     def test_high_confidence_herbicide_alias_from_audit_resolves_to_hrac(self):
         group = get_resistance_group("Изоксафлютол", "herbicide")
@@ -236,6 +270,13 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertIsNone(group["group"])
         self.assertEqual(group["name"], "группа не определена")
 
+    def test_unknown_substance_still_returns_group_not_defined(self):
+        group = get_resistance_group("НЕИЗВЕСТНОЕ вещество", "fungicide")
+
+        self.assertIsNone(group["system"])
+        self.assertIsNone(group["group"])
+        self.assertEqual(group["name"], "группа не определена")
+
     def test_resistance_lookup_diagnostics_reports_unresolved_names_without_failing(self):
         diagnostics = get_resistance_lookup_diagnostics(
             ["ацетамиприд", "диметоат", "неизвестный инсектицид"],
@@ -256,8 +297,8 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
             "клотианидин", "лямбда-цигалотрин", "альфа-циперметрин", "дельтаметрин",
             "хлорантранилипрол", "абамектин", "ацетамиприд", "диметоат",
             "карбендазим", "тебуконазол",
-            "дифеноконазол", "азоксистробин", "пираклостробин", "флудиоксонил",
-            "металаксил-м",
+            "дифеноконазол", "азоксистробин", "пираклостробин",
+            "флудиоксонил", "металаксил-м",
         }
         audit_aliases = {
             "изоксафлютол", "карфентразон-этил", "пендиметалин", "пиноксаден",
@@ -403,6 +444,34 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertEqual(audit_insecticide_group["system"], "IRAC")
         self.assertEqual(audit_insecticide_group["group"], "2B")
         self.assertEqual(unknown_group["name"], "группа не определена")
+
+    def test_seed_treatment_lookup_is_case_insensitive(self):
+        fungicide_lower = get_resistance_group("тебуконазол", "seed-treatment")
+        fungicide_upper = get_resistance_group("ТЕБУКОНАЗОЛ", "seed-treatment")
+        insecticide_lower = get_resistance_group("имидаклоприд", "seed-treatment")
+        insecticide_upper = get_resistance_group("ИМИДАКЛОПРИД", "seed-treatment")
+
+        self.assertEqual(fungicide_lower["system"], "FRAC")
+        self.assertEqual(fungicide_upper, fungicide_lower)
+        self.assertEqual(insecticide_lower["system"], "IRAC")
+        self.assertEqual(insecticide_upper, insecticide_lower)
+
+    def test_identical_substances_with_different_case_receive_same_group(self):
+        left = annotate_substances_with_resistance(
+            parse_active_substances("(100 г/л пираклостробин)"),
+            "fungicide",
+        )
+        right = annotate_substances_with_resistance(
+            parse_active_substances("(100 г/л ПИРАКЛОСТРОБИН)"),
+            "fungicide",
+        )
+
+        analysis = build_resistance_group_analysis(left, right)
+
+        self.assertTrue(analysis["identical_active_substance_sets"])
+        self.assertEqual(left[0]["resistance_system"], "FRAC")
+        self.assertEqual(left[0]["resistance_group"], "11")
+        self.assertEqual(right[0]["resistance_group"], left[0]["resistance_group"])
 
 
 class AdvancedCompareResponseTest(unittest.TestCase):

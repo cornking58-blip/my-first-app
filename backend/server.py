@@ -434,15 +434,18 @@ def parse_active_substances(raw: Optional[str]) -> List[Dict]:
 
 
 def normalize_substance_name(name: str) -> str:
-    """Normalize substance name for comparison"""
-    # Convert to lowercase and remove extra spaces
-    normalized = name.lower().strip()
-    
-    # Remove common suffixes/variations
-    normalized = re.sub(r'\s*\(.*?\)\s*', ' ', normalized)  # Remove parentheses content
-    normalized = re.sub(r'\s+', ' ', normalized)  # Normalize spaces
-    normalized = normalized.strip()
-    
+    """Normalize active substance names for safe comparison and lookups."""
+    normalized = str(name or "").casefold().replace("ё", "е").replace("\u00a0", " ")
+    normalized = re.sub(r"[‐‑‒–—−]", "-", normalized)
+
+    # Remove explanatory parenthetical tails, then trim only punctuation around the name.
+    # Internal punctuation such as ``2,4-д`` stays intact because it is part of the substance name.
+    normalized = re.sub(r"\s*\(.*?\)\s*", " ", normalized)
+    normalized = re.sub(r"^[\s\.,;:!?'\"«»„“”‘’\[\]{}()]+", "", normalized)
+    normalized = re.sub(r"[\s\.,;:!?'\"«»„“”‘’\[\]{}()]+$", "", normalized)
+    normalized = re.sub(r"\s*-\s*", "-", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+
     return normalized
 
 
@@ -653,6 +656,16 @@ def _resistance_record_to_group_info(record: Dict[str, Any]) -> Dict[str, Option
     }
 
 
+def _resistance_lookup_variants(name: str) -> set:
+    """Return normalized lookup keys, including an OCR-space-tolerant compact key."""
+    normalized = normalize_resistance_lookup_name(name)
+    variants = {normalized} if normalized else set()
+    compact = re.sub(r"[\s-]+", "", normalized)
+    if compact and compact != normalized:
+        variants.add(compact)
+    return variants
+
+
 def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
     """Load HRAC/FRAC/IRAC records from backend/data/resistance_groups.json and build lookup indexes."""
     data_path = Path(path) if path else RESISTANCE_GROUPS_PATH
@@ -691,30 +704,37 @@ def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
         for field in ("active_ingredient_ru", "active_ingredient_en", "active_ingredient_key"):
             value = record.get(field)
             if value:
-                normalized = normalize_resistance_lookup_name(str(value))
-                entry["lookup_names"].add(normalized)
-                indexes[pesticide_type].setdefault(normalized, group_info)
+                for normalized in _resistance_lookup_variants(str(value)):
+                    entry["lookup_names"].add(normalized)
+                    indexes[pesticide_type].setdefault(normalized, group_info)
 
         key = record.get("active_ingredient_key")
         if key:
-            underscored = normalize_resistance_lookup_name(str(key).replace("_", "-"))
-            entry["lookup_names"].add(underscored)
-            indexes[pesticide_type].setdefault(underscored, group_info)
+            for underscored in _resistance_lookup_variants(str(key).replace("_", "-")):
+                entry["lookup_names"].add(underscored)
+                indexes[pesticide_type].setdefault(underscored, group_info)
 
         record_entries[pesticide_type].append(entry)
 
+    normalized_alias_scopes = {
+        normalize_resistance_lookup_name(alias): scopes
+        for alias, scopes in MANUAL_RU_ALIAS_PESTICIDE_TYPES.items()
+    }
     for russian_name, active_key in MANUAL_RU_ALIASES.items():
-        normalized_alias = normalize_resistance_lookup_name(russian_name)
-        normalized_key = normalize_resistance_lookup_name(active_key)
-        normalized_hyphen_key = normalize_resistance_lookup_name(active_key.replace("_", "-"))
-        allowed_pesticide_types = MANUAL_RU_ALIAS_PESTICIDE_TYPES.get(russian_name, tuple(indexes))
+        alias_variants = _resistance_lookup_variants(russian_name)
+        key_variants = _resistance_lookup_variants(active_key) | _resistance_lookup_variants(active_key.replace("_", "-"))
+        allowed_pesticide_types = normalized_alias_scopes.get(
+            normalize_resistance_lookup_name(russian_name),
+            tuple(indexes),
+        )
         for pesticide_type in allowed_pesticide_types:
             table = indexes.get(pesticide_type)
             if not table:
                 continue
-            group_info = table.get(normalized_key) or table.get(normalized_hyphen_key)
+            group_info = next((table[key] for key in key_variants if key in table), None)
             if group_info:
-                table[normalized_alias] = group_info
+                for normalized_alias in alias_variants:
+                    table[normalized_alias] = group_info
 
     return {
         "records": records,
@@ -741,22 +761,27 @@ RESISTANCE_GROUPS = RESISTANCE_GROUP_DATA["indexes"]
 def _lookup_resistance_group_in_table(substance_name: str, pesticide_type: str) -> Optional[Dict[str, Optional[str]]]:
     table = RESISTANCE_GROUPS.get(pesticide_type, {})
     normalized = normalize_resistance_lookup_name(substance_name)
+    lookup_variants = _resistance_lookup_variants(substance_name)
 
     # Exact lookup order: Russian name, English name, active ingredient key, and manual Russian aliases
     # are all indexed by load_resistance_groups(). Think of this as a fast dictionary: one normalized
     # name points to one HRAC/FRAC/IRAC record.
-    if normalized in table:
-        return table[normalized]
+    for lookup_name in lookup_variants:
+        if lookup_name in table:
+            return table[lookup_name]
 
     # Safe partial matching: accept a match only if exactly one JSON/alias key is found as a full
     # token/phrase inside parser leftovers such as "глифосат кислоты". If two records match, we
     # return unknown instead of guessing.
     matches = []
     seen = set()
+    compact_normalized = re.sub(r"[\s-]+", "", normalized)
     for known_name, group_info in table.items():
         known_normalized = normalize_resistance_lookup_name(known_name)
         pattern = rf"(?<![а-яa-z0-9]){re.escape(known_normalized)}(?![а-яa-z0-9])"
-        if re.search(pattern, normalized, re.IGNORECASE):
+        compact_known = re.sub(r"[\s-]+", "", known_normalized)
+        compact_match = compact_known and compact_known in compact_normalized
+        if re.search(pattern, normalized, re.IGNORECASE) or compact_match:
             key = (group_info.get("system"), group_info.get("group"), group_info.get("name"))
             if key not in seen:
                 seen.add(key)
