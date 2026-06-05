@@ -181,10 +181,10 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertIn("acetylcholine receptor", group["name"])
 
     def test_pyraclostrobin_alias_is_case_insensitive_for_frac_lookup(self):
-        lowercase_group = get_resistance_group("пироклостробин", "fungicide")
-        titlecase_group = get_resistance_group("Пироклостробин", "fungicide")
-        uppercase_group = get_resistance_group("ПИРОКЛОСТРОБИН", "fungicide")
-        mixed_group = get_resistance_group("ПиРоКлОсТрОбИн", "fungicide")
+        lowercase_group = get_resistance_group("пираклостробин", "fungicide")
+        titlecase_group = get_resistance_group("Пираклостробин", "fungicide")
+        uppercase_group = get_resistance_group("ПИРАКЛОСТРОБИН", "fungicide")
+        mixed_group = get_resistance_group("ПиРаКлОсТрОбИн", "fungicide")
 
         self.assertEqual(lowercase_group["system"], "FRAC")
         self.assertEqual(lowercase_group["group"], "11")
@@ -297,7 +297,7 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
             "клотианидин", "лямбда-цигалотрин", "альфа-циперметрин", "дельтаметрин",
             "хлорантранилипрол", "абамектин", "ацетамиприд", "диметоат",
             "карбендазим", "тебуконазол",
-            "дифеноконазол", "азоксистробин", "пираклостробин", "пироклостробин",
+            "дифеноконазол", "азоксистробин", "пираклостробин",
             "флудиоксонил", "металаксил-м",
         }
         audit_aliases = {
@@ -458,11 +458,11 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
 
     def test_identical_substances_with_different_case_receive_same_group(self):
         left = annotate_substances_with_resistance(
-            parse_active_substances("(100 г/л пироклостробин)"),
+            parse_active_substances("(100 г/л пираклостробин)"),
             "fungicide",
         )
         right = annotate_substances_with_resistance(
-            parse_active_substances("(100 г/л ПИРОКЛОСТРОБИН)"),
+            parse_active_substances("(100 г/л ПИРАКЛОСТРОБИН)"),
             "fungicide",
         )
 

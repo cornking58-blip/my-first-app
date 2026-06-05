@@ -537,7 +537,6 @@ MANUAL_RU_ALIASES = {
     "дифеноконазол": "difenoconazole",
     "азоксистробин": "azoxystrobin",
     "пираклостробин": "pyraclostrobin",
-    "пироклостробин": "pyraclostrobin",
     "флудиоксонил": "fludioxonil",
     "металаксил-м": "metalaxyl_m",
     # High-confidence aliases from backend/data/unresolved_resistance_aliases_report.csv.
@@ -604,7 +603,6 @@ MANUAL_RU_ALIAS_PESTICIDE_TYPES = {
     "дифеноконазол": ("fungicide",),
     "азоксистробин": ("fungicide",),
     "пираклостробин": ("fungicide",),
-    "пироклостробин": ("fungicide",),
     "флудиоксонил": ("fungicide",),
     "металаксил-м": ("fungicide",),
     "изоксафлютол": ("herbicide",),
