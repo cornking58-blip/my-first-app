@@ -1,0 +1,567 @@
+# Unresolved Russian Resistance Alias Audit
+
+This report audits unique parsed Russian active substance names from the available pesticide import files against the current `get_resistance_group` lookup behavior. It is report-only: no aliases, endpoint URLs, frontend code, or comparison logic were changed.
+
+## Scope and method
+
+- Source files inspected: `herbicides_raw_FINAL_checked.xlsx`, `fungicides_raw_FINAL.xlsx`, `insecticides_raw_FINAL_v2.xlsx`, `seed_treatments_FINAL_v2.xlsx`.
+- Parser inspected and reused: `parse_active_substances` from `backend/server.py`.
+- Lookup inspected and reused: `get_resistance_group` from `backend/server.py`.
+- Category mapping: herbicides -> HRAC, fungicides -> FRAC, insecticides -> IRAC, seed-treatments -> FRAC first then IRAC through the existing seed-treatment lookup path.
+- Antidotes/safeners parsed with `is_antidote=true` were excluded from the HRAC/FRAC/IRAC alias audit.
+- Alias candidates are suggestions only and intentionally limited to obvious direct English ISO-style candidates.
+
+## Summary
+
+- Total active substances checked: 533
+- Resolved count: 208
+- Unresolved count: 325
+- High-confidence alias candidates count: 53
+- Medium/low-confidence candidates count: 0
+
+## Category summary
+
+| pesticide_category | checked | resolved | unresolved |
+|---|---:|---:|---:|
+| herbicides | 182 | 62 | 120 |
+| fungicides | 106 | 54 | 52 |
+| insecticides | 142 | 33 | 109 |
+| seed-treatments | 103 | 59 | 44 |
+
+## Full report table
+
+| pesticide_category | active_substance_ru | current_result | resolved_system | resolved_group | resolved_group_name | possible_english_candidate | confidence | recommendation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| herbicides | 2,4-Д (малолетучие эфиры С7-С9) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д (2-этилгексиловый эфир и диметилалкиламинная соль) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д (2-этилгексиловый эфир) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д (сложный 2-этилгексиловый эфир) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д (диметиламинная соль) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д (сложный 2-этилгексиловый эфир | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д (сложный 2-этилгексиловый эфир)) Нуфарм ГмбХ & КО КГ | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д (диметиламинная соль)) Рейбоу Агросайенс Кфт. | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислота (2-этилгексиловый эфир) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислота | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислота (сложный 2-этилгексиловый эфир) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислота(сложный 2-этилгексиловый эфир) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислота (2-этилгексиловый эфир | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислоты (малолетучие эфиры С7-С9) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислоты (диметилалкиламинная соль) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислоты (2-этилгексиловый эфир) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислоты (2-этилгексиловый эфир | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислоты (470 г/л 2,4-Д (2-этилгексиловый эфир)) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | 2,4-Д кислоты) РЕД СУРКОС С.А. | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Азимсульфурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Амидосульфурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Амикарбазон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Аминопиралид | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Ацифлуорфен | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Ацифлуорфен) «БАСФ СЕ» | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Бенсульфурон-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Бентазон | unknown |  |  | группа не определена | bentazone | high | add alias |
+| herbicides | Бентазон) «БАСФ СЕ» | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Бентазон) «Шандонг Вейфанг Рейнбоу Кемикал Ко. Лтд.» | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | биоактиватор | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Биспирибак натрия | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Биспирибак натрия) Кумиаи Кемикал Индастри Ко., Лтд. | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | бромоксинил (смесь эфиров октаноата и гептаноата | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | г/кг никосульфурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | г/кг римсульфурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | г/кг трибенурон-метил | resolved | HRAC | 2 | Inhibition of Acetolactate Synthase (ALS) |  | high | already resolved |
+| herbicides | г/кг флорасулама | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | г/л десмедифама | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | г/л Имазамокс) Синокем Агро Ко., ЛТД (КНР | resolved | HRAC | 2 | Inhibition of Acetolactate Synthase (ALS) |  | high | already resolved |
+| herbicides | г/л Пиноксаден | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | г/л Фенмедифама | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | г/л феноксапроп-П-этил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | г/л хизалофоп-П-этил | resolved | HRAC | 1 | Inhibition of Acetyl CoA Carboxylase (ACCase) |  | high | already resolved |
+| herbicides | Галоксифоп-П-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Галоксифоп-П-метил) «Шандонг Вейфанг Рейбоу Кемикал Ко., Лтд. | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Галоксифоп-П-метил) Рейбоу Агросайенс Кфт. | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | галоксифоп-Р-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Глифосат кислоты (калиевая соль) | resolved | HRAC | 9 | Inhibition of Enolpyruvyl Shikimate Phosphate Synthase (EPSPS) |  | high | already resolved |
+| herbicides | Глифосат кислоты (аммонийная соль) | resolved | HRAC | 9 | Inhibition of Enolpyruvyl Shikimate Phosphate Synthase (EPSPS) |  | high | already resolved |
+| herbicides | Глифосат кислоты (изопропиламинная соль) | resolved | HRAC | 9 | Inhibition of Enolpyruvyl Shikimate Phosphate Synthase (EPSPS) |  | high | already resolved |
+| herbicides | Глифосат кислоты (калиевая соль)) Рейбоу Агросайенс Кфт. | resolved | HRAC | 9 | Inhibition of Enolpyruvyl Shikimate Phosphate Synthase (EPSPS) |  | high | already resolved |
+| herbicides | Глифосат кислоты (изопропиламинная соль)) Рейбоу Агросайенс Кфт. | resolved | HRAC | 9 | Inhibition of Enolpyruvyl Shikimate Phosphate Synthase (EPSPS) |  | high | already resolved |
+| herbicides | Глюфосинат аммоний | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Десмедифам | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | десмедифама | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | дикамба (диметилалкиламинная соль) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба (диметиламинная соль) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба (натриевая соль) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | дикамба (диметиламинные соли) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | дикамба (2-этилгексиловые эфиры) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | дикамба (диметиламинные соли | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба (натриевая соль | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба (диметиламинная соль)) БАСФ Корпорэйшн | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | дикамба (диметиламинные соли)) Нуфарм ГмбХ & КО КГ | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба (диметиламинная соль)) Рейбоу Агросайенс Кфт. | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба (диметиламинная соль)) Тагрос Кемикалс Индия ПВТ Лимитед | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | дикамба кислота (2-этилгексиловые эфиры) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба кислота (натриевая соль) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | дикамба кислота (диметиламинная соль | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | дикамба кислота (диметиламинная соль)) Альбау Юроп Сарл | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба кислота) РЕД СУРКОС С.А. | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Дикамба кислоты (диэтилэтаноламмониева я соль) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Диклосулам | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Диметенамид-Р | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Диметенамид-Р) БАСФ Корпорэйшн | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Дифлюфеникан | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Изоксафлютол | unknown |  |  | группа не определена | isoxaflutole | high | add alias |
+| herbicides | Имазалил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Имазамокс | resolved | HRAC | 2 | Inhibition of Acetolactate Synthase (ALS) |  | high | already resolved |
+| herbicides | Имазамокс) БАСФ Агрокемикал Продактс Б.В. | resolved | HRAC | 2 | Inhibition of Acetolactate Synthase (ALS) |  | high | already resolved |
+| herbicides | Имазамокс) Рейбоу Агросайенс Кфт. | resolved | HRAC | 2 | Inhibition of Acetolactate Synthase (ALS) |  | high | already resolved |
+| herbicides | Имазапир | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Имазетапир | resolved | HRAC | 2 | Inhibition of Acetolactate Synthase (ALS) |  | high | already resolved |
+| herbicides | йодосульфурон-метил-нат рий | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | йодосульфурон-метил-нат рия | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | йодосульфуронметил-нат рия | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | карфентразон-этил | unknown |  |  | группа не определена | carfentrazone-ethyl | high | add alias |
+| herbicides | Квизалофоп-П-тефурил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Квинмерак | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | кислоты галоксифоп-П-метила | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Клетодим | resolved | HRAC | 1 | Inhibition of Acetyl CoA Carboxylase (ACCase) |  | high | already resolved |
+| herbicides | Клодинафоп-пропаргил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | клоквинтосет-мексил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | кломазон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Клопиралид | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | клопиралид (диметилэтаноламинные соли) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | клопиралид (2-этилгексиловые эфиры) | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Клопиралид (2-этилгексиловый эфир | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Клопиралид (сложный 2-этилгексиловый эфир | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Клопиралид(2-этилгексил овый эфир | resolved | HRAC | 4 | Auxin Mimics |  | high | already resolved |
+| herbicides | Клотианидин | unknown |  |  | группа не определена | clothianidin | high | add alias |
+| herbicides | Ленацил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | лямбда-цигалотрин | unknown |  |  | группа не определена | lambda-cyhalothrin | high | add alias |
+| herbicides | мезосульфурон-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Мезотрион | resolved | HRAC | 27 | Inhibition of Hydroxyphenyl Pyruvate Dioxygenase (HPPD) |  | high | already resolved |
+| herbicides | Метазахлор | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Метамитрон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Метамифоп | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Метрибузин | resolved | HRAC | 5 | Inhibition of Photosynthesis at PSII - D1 Serine 264 binders |  | high | already resolved |
+| herbicides | Метсульфурон-метил | resolved | HRAC | 2 | Inhibition of Acetolactate Synthase (ALS) |  | high | already resolved |
+| herbicides | мефенпир-диэтил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Мефентрифлуконазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | МЦПА | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | МЦПА (диметиламинная соль | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | МЦПА кислоты (калиевая, натриевая соль | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | МЦПА кислоты (смесь диметиламинной, калиевой, натриевой солей | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Напропамид | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | никосульфурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Оксифлуорфен | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Пеларгоновая кислота | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Пендиметалин | unknown |  |  | группа не определена | pendimethalin | high | add alias |
+| herbicides | Пеноксулам | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | пиклорам | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | пиклорам (диметилэтаноламинные соли | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Пиноксаден | unknown |  |  | группа не определена | pinoxaden | high | add alias |
+| herbicides | Пиразосульфурон-этил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Пираклостробин | unknown |  |  | группа не определена | pyraclostrobin | high | add alias |
+| herbicides | Пирафлуфен-этил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Пиридат | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Пироксасульфон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Пироксулам | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Прометрин | unknown |  |  | группа не определена | prometryn | high | add alias |
+| herbicides | пропаквизафоп | unknown |  |  | группа не определена | propaquizafop | high | add alias |
+| herbicides | Пропизохлор | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Просульфокарб | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Просульфурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | римсульфурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | С-Метолахлор | unknown |  |  | группа не определена | S-metolachlor | high | add alias |
+| herbicides | сульфометурон-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Сульфометурон-метила кислота (калиевая соль | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Темботрион | unknown |  |  | группа не определена | tembotrione | high | add alias |
+| herbicides | тербутилазин | unknown |  |  | группа не определена | terbuthylazine | high | add alias |
+| herbicides | Тиабендазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | тиенкарбазон-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | тифенсульфурон-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | триасульфурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | трибенурон-метил | resolved | HRAC | 2 | Inhibition of Acetolactate Synthase (ALS) |  | high | already resolved |
+| herbicides | трифлусульфурон-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | фенмедифам | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Фенмедифама | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | феноксапроп-П-этил | unknown |  |  | группа не определена | fenoxaprop-P-ethyl | high | add alias |
+| herbicides | феноксапроп-П-этил) Синтезия Кеми ГмбХ | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | флорасулам | unknown |  |  | группа не определена | florasulam | high | add alias |
+| herbicides | флорасулам) | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | флорасулам) «Шандонг Вейфанг Рейбоу Кемикал Ко., Лтд. | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | флорасулам) Альбау Юроп Сарл | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | флорасулам) Рейнбоу Кропсайенсиз Кфт. | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | флорасулама | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Флуазифоп-П-бутил | unknown |  |  | группа не определена | fluazifop-P-butyl | high | add alias |
+| herbicides | флукарбазон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Флукарбазон натрия | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Флуметсулам | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Флумиоксазин | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | флуроксипир | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | флуроксипир) Синтезия Кеми ГмбХ | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Флурохлоридона | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | флутриафола | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | флуфенацет | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | фомесафен | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Фомесафен (натриевая соль | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Форамсульфурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | хизалофоп-П-этил | resolved | HRAC | 1 | Inhibition of Acetyl CoA Carboxylase (ACCase) |  | high | already resolved |
+| herbicides | хлоридазон | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | хлоримурон-этил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | хлорсульфурон (диэтилэтаноламинные соли) | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | хлорсульфурона | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Цигалофоп-бутил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Циклоксидим | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | Этаметсульфурон-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| herbicides | этофумезат | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Азоксистробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| fungicides | азоксистробина | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Алюминия фосэтил | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Аметоктрадин | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Бензовиндифлупир | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Бензойная кислота (в виде триэтаноламинной соли | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Беномил | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Биксафен | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| fungicides | Боскалид | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| fungicides | г/л Боскалид | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| fungicides | г/л Карбендазим | resolved | FRAC | 1 | MBC-fungicides |  | high | already resolved |
+| fungicides | г/л Пираклостробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| fungicides | г/л Пропиконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | г/л Ципроконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | Диметоморф | resolved | FRAC | 40 | CAA-fungicides |  | high | already resolved |
+| fungicides | Димоксистробин | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Дитианон | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Дифеноконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | Додин | resolved | FRAC | U12 | Guanidines |  | high | already resolved |
+| fungicides | Зоксамид | resolved | FRAC | 22 | Benzamides / thiazole-carboxamides |  | high | already resolved |
+| fungicides | Изопиразам | unknown |  |  | группа не определена | isopyrazam | high | add alias |
+| fungicides | Изопротиолан | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | калий азотнокислый | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | калий фосфорнокислый | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | кальция гидроксид | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Каптан | resolved | FRAC | M04 | Phthalimides |  | high | already resolved |
+| fungicides | карбамид | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Карбендазим | resolved | FRAC | 1 | MBC-fungicides |  | high | already resolved |
+| fungicides | Касугамицин | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Комплекс полиоксинов | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Крезоксим-метил | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| fungicides | Люфенурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | магний сернокислый | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Мандипропамид | resolved | FRAC | 40 | CAA-fungicides |  | high | already resolved |
+| fungicides | Манкоцеб | resolved | FRAC | M03 | Dithiocarbamates and relatives |  | high | already resolved |
+| fungicides | Масло чайного дерева | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Меди гидроксид | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Меди гидроокись | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Меди сульфат | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Меди сульфат трехосновный | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Меди хлорокись | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Медь оксихлорид | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | мепикват-хлорид | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Металаксил | resolved | FRAC | 4 | Phenylamides / PA-fungicides |  | high | already resolved |
+| fungicides | Метирам | resolved | FRAC | M03 | Dithiocarbamates and relatives |  | high | already resolved |
+| fungicides | Метконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | Мефеноксам | resolved | FRAC | 4 | Phenylamides / PA-fungicides |  | high | already resolved |
+| fungicides | мефеноксама | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Оксатиапипролин | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Пенконазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Пентиопирад | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Пидифлуметофен | unknown |  |  | группа не определена | pydiflumetofen | high | add alias |
+| fungicides | Пикоксистробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| fungicides | Пираклостробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| fungicides | пираклостробина | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Пириметанил | resolved | FRAC | 9 | Anilino-pyrimidines / AP |  | high | already resolved |
+| fungicides | Поли-бета-гидроксимасля ная кислота | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Полидиметилдиаллиламм ония хлорид | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | прогексадион кальция | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Проквиназид | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Пропамокарб | resolved | FRAC | 28 | Carbamates |  | high | already resolved |
+| fungicides | Пропамокарб гидрохлорид | resolved | FRAC | 28 | Carbamates |  | high | already resolved |
+| fungicides | пропамокарб-гидрохлори д | resolved | FRAC | 28 | Carbamates |  | high | already resolved |
+| fungicides | Пропиконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | пропиконазола | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Пропинеб | resolved | FRAC | M03 | Dithiocarbamates and relatives |  | high | already resolved |
+| fungicides | Протиоконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | Прохлораз | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | Сера | resolved | FRAC | M02 | Sulfur |  | high | already resolved |
+| fungicides | Спироксамин | resolved | FRAC | 5 | Amines / SBI Class II |  | high | already resolved |
+| fungicides | Тебуконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | тебуконазола | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | тетраконазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Тиофанат - метил | resolved | FRAC | 1 | MBC-fungicides |  | high | already resolved |
+| fungicides | Тирам | resolved | FRAC | M03 | Dithiocarbamates and relatives |  | high | already resolved |
+| fungicides | Триадименол | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Триадимефон | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | тритиконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | Трифлоксистробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| fungicides | Фамоксадон | unknown |  |  | группа не определена | famoxadone | high | add alias |
+| fungicides | Фенамидон | unknown |  |  | группа не определена | fenamidone | high | add alias |
+| fungicides | Фенгексамид | resolved | FRAC | 17 | KRI-fungicides / SBI Class III |  | high | already resolved |
+| fungicides | фенпропидин | unknown |  |  | группа не определена | fenpropidin | high | add alias |
+| fungicides | Фенпропиморф | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Фитобактериомицин | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | флуазинам | resolved | FRAC | 29 | Uncouplers |  | high | already resolved |
+| fungicides | Флудиоксонил | resolved | FRAC | 12 | Phenylpyrroles / PP |  | high | already resolved |
+| fungicides | флуксапироксад | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| fungicides | флуоксастробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| fungicides | Флуопиколид | resolved | FRAC | 43 | Benzamides |  | high | already resolved |
+| fungicides | Флуопирам | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| fungicides | Флутриафол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | флутриафола | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Фосфит натрия | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | фосэтил | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Хлорокись меди | resolved | FRAC | M01 | Copper compounds |  | high | already resolved |
+| fungicides | хлороталонил | resolved | FRAC | M05 | Chloronitriles |  | high | already resolved |
+| fungicides | Циазофамид | resolved | FRAC | 21 | QiI-fungicides |  | high | already resolved |
+| fungicides | цимоксанил | resolved | FRAC | 27 | Cyanoacetamide-oxime |  | high | already resolved |
+| fungicides | цимоксанила | unknown |  |  | группа не определена |  | low | needs manual review |
+| fungicides | Цинеб | resolved | FRAC | M03 | Dithiocarbamates and relatives |  | high | already resolved |
+| fungicides | Ципродинил | resolved | FRAC | 9 | Anilino-pyrimidines / AP |  | high | already resolved |
+| fungicides | Ципроконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| fungicides | цифлуфенамид | unknown |  |  | группа не определена | cyflufenamid | high | add alias |
+| fungicides | Эмамектин бензоат | unknown |  |  | группа не определена | emamectin benzoate | high | add alias |
+| fungicides | эпоксиконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| insecticides | Bacillus firmus( I-1582)) БАСФ Корпорэйшн | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Абамектин | resolved | IRAC | 6 | Glutamate-gated chloride channel (GluCl) allosteric modulators |  | high | already resolved |
+| insecticides | Абамектин) «РОТАМ Лтд» | resolved | IRAC | 6 | Glutamate-gated chloride channel (GluCl) allosteric modulators |  | high | already resolved |
+| insecticides | Аверсектин С | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Азадирахтин | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Азоксистробин | unknown |  |  | группа не определена | azoxystrobin | high | add alias |
+| insecticides | Альфа-ципермeтрин | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Альфа-ципермeтрин) Агрия АД | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Альфа-ципермeтрин) Ариста ЛайфСайенс Бенилюкс СПРЛ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Альфа-ципермeтрин) БАСФ Агро Б.В. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Альфа-ципермeтрин) Батор Агри Кфт. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | альфа-циперметрин | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | Алюминия фосфид | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Алюминия фосфид) Детиа Дегеш ГмбХ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Алюминия фосфид) Рейнбоу Кропсайенсиз Кфт. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Ацетамиприд | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Ацетамиприд) Агрия АД | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Ацетамиприд) Ниппон Сода Ко., Лтд | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Ацетамиприд) НиппонСодаКо., Лтд | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | ацетамиприда | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | бета-циперметрин | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | бета-циперметрин) Агро-Кеми Кфт. (Венгрия | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | бета-циперметрин) ПЕТЕРС & БУРГ Кфт. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | бета-цифлутрин) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Бифентрин | unknown |  |  | группа не определена | bifenthrin | high | add alias |
+| insecticides | Бифентрин) ФМС Кемикал | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | бифентрина | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Бупрофезин) Ничино Юроп Ко. Лтд. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | г/кг Клотианидин | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | г/л лямбда-цигалотрин) ЮПЛ Холдингс Кооператив Ю.А. | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | г/л Хлорантранилипрол | resolved | IRAC | 28 | Ryanodine receptor modulators |  | high | already resolved |
+| insecticides | Гамма-цигалотрин) «КЕМИНОВА А/С» | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Гекситиазокс) Ниппон Сода Ко., Лтд | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Дельтаметрин | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | Дельтаметрин) Байер КропСайенс АГ | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | Дельтаметрин) Байер САС | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | Диазинон | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Диметоат | resolved | IRAC | 1B | Acetylcholinesterase (AChE) inhibitors |  | high | already resolved |
+| insecticides | Диметоат) «КЕМИНОВА А/С» | resolved | IRAC | 1B | Acetylcholinesterase (AChE) inhibitors |  | high | already resolved |
+| insecticides | Диоксид кремния | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Дифеноконазол | unknown |  |  | группа не определена | difenoconazole | high | add alias |
+| insecticides | дифеноноконазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Дифловидазин) «Агро-Кеми Кфт.» | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Дифлубензурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Дифлубензурон) Ариста ЛайфСайенс Регистрейшнс Грейт Британ Лтд. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Зета-циперметрин | unknown |  |  | группа не определена | zeta-cypermethrin | high | add alias |
+| insecticides | Имазалил | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Имидаклоприд | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Имидаклоприд) «Шандонг Вейфанг Рейбоу Кемикал Ко., Лтд. | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Имидаклоприд) Байер КропСайенс АГ | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Имидаклоприд) Гован Кроп Протекшен Лимитед | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Имидаклоприд) Рейбоу Агросайенс Кфт. | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Имидаклоприд) Рейнбоу Агросайенс Кфт. | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Индоксакарб | unknown |  |  | группа не определена | indoxacarb | high | add alias |
+| insecticides | Ипродион | unknown |  |  | группа не определена | iprodione | high | add alias |
+| insecticides | Клотианидин | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Клотианидин) Байер КропСайенс АГ | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Клотианидин) БАСФ Корпорэйшн | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Клофентезин | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Люфенурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | лямбда-цигалотрин | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | лямбда-цигалотрин) Агрия АД | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | лямбда-цигалотрин) Рейбоу Агросайенс Кфт. | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | лямбда-цигалотрин) Рейнбоу Агросайенс Кфт. | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | лямбда-цигалотрин) СУЛФУР МИЛЛЗ ЛИМИТЕД | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| insecticides | Магния фосфид | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Магния фосфид) Детиа Дегеш ГмбХ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Малатион | unknown |  |  | группа не определена | malathion | high | add alias |
+| insecticides | Малатион) «КЕМИНОВА А/С» | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Матрин | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Метомил | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Мефеноксам | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Никотин | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Новалурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | пенфлуфен) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | пенцикурон | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | пенцикурон) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | пенцикурон) Рейбоу Агросайенс Кфт. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | перметрин | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Пиметрозин | unknown |  |  | группа не определена | pymetrozine | high | add alias |
+| insecticides | Пираклостробин) БАСФ Агро Б.В. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Пиретрины натуральные масляный экстракт | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Пиридабен) Ниссан Кемикал Корпорейшн | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Пиримифос-метил | unknown |  |  | группа не определена | pirimiphos-methyl | high | add alias |
+| insecticides | Пиримифос-метил) СОЖАМ САС | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Пирипроксифен | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Пирипроксифен) Сумитомо Кемикал Агро Юроп С.А.С. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Протиоконазол | unknown |  |  | группа не определена | prothioconazole | high | add alias |
+| insecticides | Прохлораз | unknown |  |  | группа не определена | prochloraz | high | add alias |
+| insecticides | седаксан | unknown |  |  | группа не определена | sedaxane | high | add alias |
+| insecticides | седаксана | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Сера | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Спиносад | unknown |  |  | группа не определена | spinosad | high | add alias |
+| insecticides | Спиродиклофен | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Спиромезифен) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Спиротетрамат | unknown |  |  | группа не определена | spirotetramat | high | add alias |
+| insecticides | Спиротетрамат) «Шандонг Вейфанг Рейбоу Кемикал Ко., Лтд. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Спиротетрамат) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Спиротетрамат) Глобакем НВ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Тебуконазол | unknown |  |  | группа не определена | tebuconazole | high | add alias |
+| insecticides | Тебуконазол) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | тебуконазола | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Тебуфенпирад) БАСФ Агро Б.В. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Тефлутрин | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Тиабендазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Тиаклоприд | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Тиаклоприд) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Тиаметоксам | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Тиаметоксам) «Шандонг Вейфанг Рейбоу Кемикал Ко., Лтд. | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| insecticides | Тиофанат - метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | тритиконазол | unknown |  |  | группа не определена | triticonazole | high | add alias |
+| insecticides | Феназахин) Гован Кроп Протекшен Лимитед | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Фенитротион | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Фенитротион) Сумитомо Кемикал Агро Юроп С.А.С. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Феноксикарб | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Фенпироксимат) Ничино Юроп Ко. Лтд. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Фипронил | unknown |  |  | группа не определена | fipronil | high | add alias |
+| insecticides | Фипронил) БАСФ Агро Б.В. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Флоникамид) ИСК Биосаенсис Юроп Н.В. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Флубендиамид) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | флудиоксанил | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Флудиоксонил | unknown |  |  | группа не определена | fludioxonil | high | add alias |
+| insecticides | флудиоксонила | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | флуоксастробин | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | флуоксастробин) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Флуопиколид | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Флутриафол | unknown |  |  | группа не определена | flutriafol | high | add alias |
+| insecticides | Фосмет) Гован Кроп Протекшен Лимитед | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Хлорантранилипрол | resolved | IRAC | 28 | Ryanodine receptor modulators |  | high | already resolved |
+| insecticides | Хлорантранилипрол) ЮПЛ Холдингс Кооператив Ю.А. | resolved | IRAC | 28 | Ryanodine receptor modulators |  | high | already resolved |
+| insecticides | Хлорпирифос | unknown |  |  | группа не определена | chlorpyrifos | high | add alias |
+| insecticides | Хлорпирифос) «КЕМИНОВА А/С» | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Хлорфлуазурон) ИСК Биосаенсис Юроп Н.В. | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Циантранилипрол | unknown |  |  | группа не определена | cyantraniliprole | high | add alias |
+| insecticides | циперметрин | unknown |  |  | группа не определена | cypermethrin | high | add alias |
+| insecticides | циперметрин) Ариста ЛайфСайенс Бенилюкс СПРЛ | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | циперметрин) ФМС Кемикал | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Ципроконазол | unknown |  |  | группа не определена | cyproconazole | high | add alias |
+| insecticides | Экстракт натуральных пиретринов) «РУССКИЙ ПИРЕТРУМ» | unknown |  |  | группа не определена |  | low | needs manual review |
+| insecticides | Эмамектин бензоат | unknown |  |  | группа не определена | emamectin benzoate | high | add alias |
+| insecticides | Эсфенвалерат | unknown |  |  | группа не определена | esfenvalerate | high | add alias |
+| insecticides | Эсфенвалерат) Сумитомо Кемикал Агро Юроп С.А.С. | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Bacillus firmus( I-1582)) БАСФ Корпорэйшн | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Азоксистробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| seed-treatments | Алюминия фосфид | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Алюминия фосфид) Детиа Дегеш ГмбХ | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Алюминия фосфид) Рейнбоу Кропсайенсиз Кфт. | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Ацетамиприд | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Ацетамиприд) Ниппон Сода Ко., Лтд | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Ацибензолар-С-метил | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Беномил | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | бета-цифлутрин) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Бифентрин | unknown |  |  | группа не определена | bifenthrin | high | add alias |
+| seed-treatments | Бифентрин) ФМС Кемикал | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | ВалидамицинStreptomyce shygroscopicussubsp, «limoneus» ВКПМАС-1966 | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | г/л Карбендазим | resolved | FRAC | 1 | MBC-fungicides |  | high | already resolved |
+| seed-treatments | г/л Пираклостробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| seed-treatments | г/л Протиоконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | г/л Тебуконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | г/л флудиоксанил | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | г/л Флудиоксонил | resolved | FRAC | 12 | Phenylpyrroles / PP |  | high | already resolved |
+| seed-treatments | Гимексазол | resolved | FRAC | 32 | Heteroaromatics |  | high | already resolved |
+| seed-treatments | Гимексазол) Мицуи Кемикалс Агро, Инк. | resolved | FRAC | 32 | Heteroaromatics |  | high | already resolved |
+| seed-treatments | Дельтаметрин) Байер САС | resolved | IRAC | 3A | Sodium channel modulators |  | high | already resolved |
+| seed-treatments | Диоксид кремния | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Дифеноконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | дифеноноконазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Имазалил | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Имазалил) ПЕТЕРС & БУРГ Кфт. | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Имидаклоприд | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Имидаклоприд) Гован Кроп Протекшен Лимитед | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Имидаклоприд) Рейбоу Агросайенс Кфт. | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Имидаклоприд) Рейнбоу Агросайенс Кфт. | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Ипконазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Ипконазол) ЮПЛ Холдингс Кооператив Ю.А. | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Ипродион | resolved | FRAC | 2 | Dicarboximides |  | high | already resolved |
+| seed-treatments | Ипродион) ФМС Кемикал | resolved | FRAC | 2 | Dicarboximides |  | high | already resolved |
+| seed-treatments | калий азотнокислый | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | калий фосфорнокислый | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | карбамид | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Карбендазим | resolved | FRAC | 1 | MBC-fungicides |  | high | already resolved |
+| seed-treatments | Карбендазим) «Агро-Кеми Кфт.» | resolved | FRAC | 1 | MBC-fungicides |  | high | already resolved |
+| seed-treatments | Карбоксин | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| seed-treatments | Карбофуран) «Агро-Кеми Кфт.» | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Клотианидин | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Клотианидин) Байер КропСайенс АГ | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Клотианидин) БАСФ Корпорэйшн | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Крезоксим-метил | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| seed-treatments | магний сернокислый | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Магния фосфид | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Магния фосфид) Детиа Дегеш ГмбХ | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Масло чайного дерева | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Металаксил | resolved | FRAC | 4 | Phenylamides / PA-fungicides |  | high | already resolved |
+| seed-treatments | Металаксил ) Байер КропСайенс АГ | resolved | FRAC | 4 | Phenylamides / PA-fungicides |  | high | already resolved |
+| seed-treatments | Мефеноксам | resolved | FRAC | 4 | Phenylamides / PA-fungicides |  | high | already resolved |
+| seed-treatments | мефеноксама | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Оксатиапипролин | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | пенфлуфен | unknown |  |  | группа не определена | penflufen | high | add alias |
+| seed-treatments | пенфлуфен) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | пенцикурон | resolved | FRAC | 20 | Phenylureas |  | high | already resolved |
+| seed-treatments | пенцикурон) Байер КропСайенс АГ | resolved | FRAC | 20 | Phenylureas |  | high | already resolved |
+| seed-treatments | пенцикурон) Рейбоу Агросайенс Кфт. | resolved | FRAC | 20 | Phenylureas |  | high | already resolved |
+| seed-treatments | Пикоксистробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| seed-treatments | Пираклостробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| seed-treatments | Пираклостробин) «БАСФ СЕ» | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| seed-treatments | Пираклостробин) БАСФ Агро Б.В. | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| seed-treatments | Пираклостробин - протиоконазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | пираклостробина | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Пиримифос-метил | unknown |  |  | группа не определена | pirimiphos-methyl | high | add alias |
+| seed-treatments | Пиримифос-метил) СОЖАМ САС | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Поли-бета-гидроксимасля ная кислота | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | протиоконазала) Байер КропСайенс АГ | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Протиоконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | Прохлораз | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | Прохлораз) БАСФ Агро Б.В. | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | седаксан | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| seed-treatments | седаксана | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Тебуконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | Тебуконазол) Байер КропСайенс АГ | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | тебуконазола | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Тефлутрин | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Тиабендазол | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Тиаметоксам | resolved | IRAC | 4A | Nicotinic acetylcholine receptor (nAChR) competitive modulators |  | high | already resolved |
+| seed-treatments | Тиофанат - метил | resolved | FRAC | 1 | MBC-fungicides |  | high | already resolved |
+| seed-treatments | Тирам | resolved | FRAC | M03 | Dithiocarbamates and relatives |  | high | already resolved |
+| seed-treatments | Тирам) ЮПЛ Холдингс Кооператив Ю.А. | resolved | FRAC | M03 | Dithiocarbamates and relatives |  | high | already resolved |
+| seed-treatments | Триадименол | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | тритиконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | тритиконазол) БАСФ Агро Б.В. | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | Фипронил | unknown |  |  | группа не определена | fipronil | high | add alias |
+| seed-treatments | флудиоксанил | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | Флудиоксонил | resolved | FRAC | 12 | Phenylpyrroles / PP |  | high | already resolved |
+| seed-treatments | Флудиоксонил) Байер КропСайенс АГ | resolved | FRAC | 12 | Phenylpyrroles / PP |  | high | already resolved |
+| seed-treatments | Флудиоксонил) БАСФ Агро Б.В. | resolved | FRAC | 12 | Phenylpyrroles / PP |  | high | already resolved |
+| seed-treatments | флудиоксонила | unknown |  |  | группа не определена |  | low | needs manual review |
+| seed-treatments | флуксапироксад | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| seed-treatments | флуксапироксад) «БАСФ СЕ» | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| seed-treatments | флуоксастробин | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| seed-treatments | флуоксастробин) Байер КропСайенс АГ | resolved | FRAC | 11 | QoI-fungicides / strobilurins |  | high | already resolved |
+| seed-treatments | Флуопиколид | resolved | FRAC | 43 | Benzamides |  | high | already resolved |
+| seed-treatments | Флуопирам) Байер КропСайенс АГ | resolved | FRAC | 7 | SDHI-fungicides |  | high | already resolved |
+| seed-treatments | Флутриафол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | Флутриафол) «КЕМИНОВА А/С» | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
+| seed-treatments | Циантранилипрол | unknown |  |  | группа не определена | cyantraniliprole | high | add alias |
+| seed-treatments | Ципроконазол | resolved | FRAC | 3 | DMI-fungicides / SBI Class I |  | high | already resolved |
