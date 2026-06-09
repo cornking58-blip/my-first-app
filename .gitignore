@@ -104,3 +104,6 @@ android-sdk/-e
 *.env
 *.env.*
 frontend/.metro-cache/
+
+# Generated corrected pesticide workbooks
+corrected_workbooks/
