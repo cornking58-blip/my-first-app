@@ -332,7 +332,7 @@ export default function SeedTreatmentCompareScreen() {
         <Text style={styles.uniqueSubstanceInfo}>Норма: {formatRate(product?.rate_used, product?.rate_unit)}</Text>
         <Text style={styles.uniqueSubstanceInfo}>ДВ на 1 га: {formatNumber(calculatedPerHa)} г/га</Text>
         {showCost && (
-          <Text style={styles.uniqueSubstanceInfo}>Стоимость 1 г ДВ: {formatNumber(cost?.estimated_cost_per_gram)} ₽/г</Text>
+          <Text style={styles.uniqueSubstanceInfo}>Затраты на 1 г ДВ: {formatNumber(cost?.estimated_cost_per_gram)} ₽/г</Text>
         )}
         <Text style={styles.uniqueSubstanceInfo}>Группа: {renderGroupLabel(substance)}</Text>
         {renderEffectSummary(substance.effect_summary)}
@@ -352,7 +352,7 @@ export default function SeedTreatmentCompareScreen() {
         <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatNumber(sub.concentration)} {sub.unit}</Text>
         <Text style={styles.uniqueSubstanceInfo}>ДВ на 1 га: {formatNumber(calculatedPerHa)} г/га</Text>
         {showCost && (
-          <Text style={styles.uniqueSubstanceInfo}>Стоимость 1 г ДВ: {formatNumber(cost?.estimated_cost_per_gram)} ₽/г</Text>
+          <Text style={styles.uniqueSubstanceInfo}>Затраты на 1 г ДВ: {formatNumber(cost?.estimated_cost_per_gram)} ₽/г</Text>
         )}
         <Text style={styles.uniqueSubstanceInfo}>Группа: {renderGroupLabel(sub)}</Text>
         {renderEffectSummary(sub.effect_summary)}
@@ -702,6 +702,7 @@ export default function SeedTreatmentCompareScreen() {
                 <Ionicons name="checkmark-circle" size={20} color="#10B981" />
                 <Text style={styles.sectionTitle}>Одинаковые действующие вещества</Text>
               </View>
+              <Text style={styles.costMetricNote}>Полная стоимость обработки делится на количество этого ДВ на гектар. Дополнительные компоненты входят в стоимость препарата.</Text>
               {analysis.identical_substances.map((sub, idx) => {
                 const leftDetails = getSubstanceDetails(left, sub.name);
                 const rightDetails = getSubstanceDetails(right, sub.name);
@@ -725,7 +726,7 @@ export default function SeedTreatmentCompareScreen() {
                         <Text style={styles.substancePerHa}>{formatNumber(sub.left_per_ha)} г/га</Text>
                         {showLeftCost && (
                           <>
-                            <Text style={styles.valueLabel}>Стоимость 1 г ДВ</Text>
+                            <Text style={styles.valueLabel}>Затраты на 1 г ДВ</Text>
                             <Text style={styles.substancePerHa}>{formatNumber(leftCost?.estimated_cost_per_gram)} ₽/г</Text>
                           </>
                         )}
@@ -741,7 +742,7 @@ export default function SeedTreatmentCompareScreen() {
                         <Text style={styles.substancePerHa}>{formatNumber(sub.right_per_ha)} г/га</Text>
                         {showRightCost && (
                           <>
-                            <Text style={styles.valueLabel}>Стоимость 1 г ДВ</Text>
+                            <Text style={styles.valueLabel}>Затраты на 1 г ДВ</Text>
                             <Text style={styles.substancePerHa}>{formatNumber(rightCost?.estimated_cost_per_gram)} ₽/г</Text>
                           </>
                         )}
@@ -1224,6 +1225,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
+  },
+  costMetricNote: {
+    marginBottom: 12,
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#6B7280',
   },
   substanceCard: {
     marginBottom: 12,
