@@ -90,6 +90,107 @@ class FakeCollection:
         return FakeCursor(self.records_by_key.get(query["product_key"], []))
 
 
+PROTECT_COMBI_SOURCE_COMPOSITION = (
+    "(48 г/л Пираклостробин - протиоконазол + 55 г/л Флудиоксонил + "
+    "37,5 г/л Тебуконазол + 48 г/л Пираклостробин - протиоконазол + "
+    "55 г/л Флудиоксонил + 37,5 г/л Тебуконазол + "
+    "48 г/л Пираклостробин - протиоконазол + 55 г/л Флудиоксонил + "
+    "37,5 г/л Тебуконазол + 48 г/л Пираклостробин - протиоконазол + "
+    "55 г/л Флудиоксонил + 37,5 г/л Тебуконазол)"
+)
+
+
+class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
+    def assert_substance_names(self, raw, expected_names):
+        substances = parse_active_substances(raw)
+
+        self.assertEqual([substance["name"] for substance in substances], expected_names)
+        return substances
+
+    def test_protect_combi_source_composition_deduplicates_repeated_components(self):
+        substances = self.assert_substance_names(
+            PROTECT_COMBI_SOURCE_COMPOSITION,
+            ["Пираклостробин", "протиоконазол", "Флудиоксонил", "Тебуконазол"],
+        )
+
+        self.assertEqual(len(substances), 4)
+        self.assertEqual([substance["concentration"] for substance in substances], [48, None, 55, 37.5])
+        self.assertEqual([substance["unit"] for substance in substances], ["г/л", None, "г/л", "г/л"])
+        self.assertTrue(substances[1]["concentration_unresolved"])
+
+    def test_protect_combi_does_not_parse_unrelated_record_fragments(self):
+        unrelated_fragments = [
+            "СЭ",
+            "ООО «Агро Эксперт Груп» ОГРН 1027708006996",
+            "Пшеница озимая",
+            "Пыльная головня, фузариозная снежная плесень",
+            "Предпосевная обработка семян с увлажнением перед посевом",
+            "Расход рабочей жидкости - 10 л/т",
+            "178-02-4527-1",
+            "24.04.2024",
+        ]
+
+        substances = parse_active_substances(PROTECT_COMBI_SOURCE_COMPOSITION)
+        parsed_names = " | ".join(substance["name"] for substance in substances)
+
+        for fragment in unrelated_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertNotIn(fragment, parsed_names)
+
+    def test_duplicate_registration_rows_do_not_duplicate_active_substances(self):
+        substances = self.assert_substance_names(
+            [PROTECT_COMBI_SOURCE_COMPOSITION, PROTECT_COMBI_SOURCE_COMPOSITION],
+            ["Пираклостробин", "протиоконазол", "Флудиоксонил", "Тебуконазол"],
+        )
+
+        self.assertEqual(len(substances), 4)
+
+    def test_joined_real_substances_are_split_without_fake_concentration(self):
+        substances = self.assert_substance_names(
+            "(48 г/л Пираклостробин - протиоконазол)",
+            ["Пираклостробин", "протиоконазол"],
+        )
+
+        self.assertEqual(substances[0]["concentration"], 48)
+        self.assertEqual(substances[0]["unit"], "г/л")
+        self.assertIsNone(substances[1]["concentration"])
+        self.assertIsNone(substances[1]["unit"])
+        self.assertTrue(substances[1]["concentration_unresolved"])
+
+    def test_hyphenated_single_substance_is_not_split(self):
+        substances = self.assert_substance_names(
+            "(225 г/л Тиофанат - метил + 25 г/л Пираклостробин)",
+            ["Тиофанат - метил", "Пираклостробин"],
+        )
+
+        self.assertEqual([substance["concentration"] for substance in substances], [225, 25])
+
+    def test_normal_multi_component_seed_treatment_still_parses(self):
+        substances = self.assert_substance_names(
+            "(25 г/л флудиоксонил + 10 г/л имидаклоприд + 15 г/л тебуконазол)",
+            ["флудиоксонил", "имидаклоприд", "тебуконазол"],
+        )
+
+        self.assertEqual([substance["concentration"] for substance in substances], [25, 10, 15])
+
+    def test_percent_concentration_still_parses(self):
+        substances = self.assert_substance_names("(10 % имидаклоприд)", ["имидаклоприд"])
+
+        self.assertEqual(substances[0]["concentration"], 10)
+        self.assertEqual(substances[0]["unit"], "%")
+
+    def test_herbicide_fungicide_and_insecticide_parsing_is_unchanged(self):
+        cases = [
+            ("(750 г/кг трибенурон-метил)", ["трибенурон-метил"]),
+            ("(250 г/л тебуконазол)", ["тебуконазол"]),
+            ("(200 г/л имидаклоприд)", ["имидаклоприд"]),
+        ]
+
+        for raw, expected_names in cases:
+            with self.subTest(raw=raw):
+                self.assert_substance_names(raw, expected_names)
+
+
 class ResistanceGroupDataFileTest(unittest.TestCase):
     def test_correct_resistance_groups_file_exists_and_wrong_path_is_removed(self):
         repo_root = SERVER_SOURCE.parents[1]
