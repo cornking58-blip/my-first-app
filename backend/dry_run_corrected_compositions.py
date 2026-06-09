@@ -55,6 +55,13 @@ CATEGORY_CONFIG = {
     },
 }
 CATEGORY_ALIASES = {"seed_treatments": "seed-treatments", "seed-treatments": "seed-treatments"}
+TARGET_OBJECT_IMPORT_COLUMNS = (
+    "target_object",
+    "harmful_object",
+    "harmful_objects",
+    "disease",
+    "diseases",
+)
 REPORT_COLUMNS = [
     "pesticide_category",
     "corrected_source_file",
@@ -65,6 +72,12 @@ REPORT_COLUMNS = [
     "mongo_collection",
     "mongo_record_id_masked",
     "match_status",
+    "match_strategy",
+    "matched_by_fields",
+    "candidate_count_before_narrowing",
+    "candidate_count_after_narrowing",
+    "row_identity_signature",
+    "ambiguity_reason",
     "current_mongo_composition",
     "corrected_excel_composition",
     "fields_that_would_change",
@@ -132,8 +145,47 @@ def clean_value(value: Any) -> Optional[str]:
     return text
 
 
+def first_clean_value(row: Dict[str, Any], columns: Sequence[str]) -> Optional[str]:
+    for column in columns:
+        value = clean_value(row.get(column))
+        if value:
+            return value
+    return None
+
+
 def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").casefold().replace("ё", "е")).strip()
+
+
+def normalize_identity_text(value: Any) -> str:
+    """Normalize stable row identity fields for strict Excel/Mongo matching."""
+    text = str(value or "").casefold().replace("ё", "е")
+    text = text.replace("–", "-").replace("—", "-").replace("−", "-")
+    text = re.sub(r"[^0-9a-zа-яе]+", " ", text, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_rate_identity(value: Any) -> str:
+    """Normalize rate text while preserving numbers/units that separate application rows."""
+    text = str(value or "").casefold().replace("ё", "е")
+    text = text.replace("–", "-").replace("—", "-").replace("−", "-").replace(",", ".")
+    text = re.sub(r"[^0-9a-zа-яе./-]+", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*/\s*", "/", text)
+    text = re.sub(r"\s*[-]\s*", "-", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_record_id(value: Any) -> str:
+    cleaned = clean_value(value)
+    if cleaned is None:
+        return ""
+    try:
+        number = float(cleaned)
+        if number.is_integer():
+            return str(int(number))
+    except (TypeError, ValueError):
+        pass
+    return normalize_identity_text(cleaned)
 
 
 def create_mongo_product_key(product_name: str, registration_number: Optional[str]) -> str:
@@ -345,6 +397,11 @@ class CorrectedRow:
     product_key: str
     slug_product_key: str
     registration_number: Optional[str]
+    record_id: Optional[str]
+    crop: Optional[str]
+    target_object: Optional[str]
+    rate_raw: Optional[str]
+    application_method: Optional[str]
     manufacturer: Optional[str]
     formulation: Optional[str]
     original_composition: str
@@ -424,6 +481,11 @@ def build_corrected_rows(
                 product_key=create_mongo_product_key(excel_product, registration_number),
                 slug_product_key=create_slug_product_key(excel_product, registration_number),
                 registration_number=registration_number,
+                record_id=clean_value(excel_row.get("record_id")),
+                crop=clean_value(excel_row.get("crop")),
+                target_object=first_clean_value(excel_row, TARGET_OBJECT_IMPORT_COLUMNS),
+                rate_raw=clean_value(excel_row.get("rate_raw")),
+                application_method=clean_value(excel_row.get("application_method")),
                 manufacturer=clean_value(excel_row.get("manufacturer")),
                 formulation=clean_value(excel_row.get("formulation")),
                 original_composition=original_composition,
@@ -440,25 +502,225 @@ def _cursor_to_list(cursor: Any) -> List[Dict[str, Any]]:
     return list(cursor)
 
 
-def find_mongo_matches(collection: Any, corrected: CorrectedRow) -> Tuple[List[Dict[str, Any]], str]:
-    product_key_matches = _cursor_to_list(collection.find({"product_key": corrected.product_key}))
-    if product_key_matches:
-        original_matches = [
-            row for row in product_key_matches
-            if normalize_text(row.get("active_substances_raw")) == normalize_text(corrected.original_composition)
+ROW_IDENTITY_FIELDS = ("crop", "target_object", "rate_raw", "application_method")
+DUPLICATE_IDENTITY_FIELDS = (
+    "product_key",
+    "product_name",
+    "registration_number",
+    "crop",
+    "target_object",
+    "rate_raw",
+    "application_method",
+    "manufacturer",
+    "formulation",
+    "active_substances_raw",
+)
+
+
+@dataclass
+class MatchResult:
+    matches: List[Dict[str, Any]]
+    strategy: str
+    matched_by_fields: List[str]
+    candidate_count_before_narrowing: int
+    candidate_count_after_narrowing: int
+    row_identity_signature: str
+    ambiguity_reason: str = ""
+
+
+def corrected_identity_value(corrected: CorrectedRow, field: str) -> Optional[str]:
+    return getattr(corrected, field)
+
+
+def normalized_field_value(record: Dict[str, Any], field: str) -> str:
+    if field == "rate_raw":
+        return normalize_rate_identity(record.get(field))
+    if field == "record_id":
+        return normalize_record_id(record.get(field))
+    return normalize_identity_text(record.get(field))
+
+
+def normalized_corrected_field_value(corrected: CorrectedRow, field: str) -> str:
+    value = corrected_identity_value(corrected, field)
+    if field == "rate_raw":
+        return normalize_rate_identity(value)
+    if field == "record_id":
+        return normalize_record_id(value)
+    return normalize_identity_text(value)
+
+
+def row_identity_signature_from_values(values: Dict[str, Any]) -> str:
+    parts = []
+    for field in ("product_key", "product_name", "registration_number", *ROW_IDENTITY_FIELDS):
+        normalizer = normalize_rate_identity if field == "rate_raw" else normalize_identity_text
+        parts.append(f"{field}={normalizer(values.get(field))}")
+    return "|".join(parts)
+
+
+def corrected_row_identity_signature(corrected: CorrectedRow) -> str:
+    return row_identity_signature_from_values({
+        "product_key": corrected.product_key,
+        "product_name": corrected.product_name,
+        "registration_number": corrected.registration_number,
+        "crop": corrected.crop,
+        "target_object": corrected.target_object,
+        "rate_raw": corrected.rate_raw,
+        "application_method": corrected.application_method,
+    })
+
+
+def records_matching_fields(records: Sequence[Dict[str, Any]], corrected: CorrectedRow, fields: Sequence[str]) -> List[Dict[str, Any]]:
+    return [
+        record for record in records
+        if all(normalized_field_value(record, field) == normalized_corrected_field_value(corrected, field) for field in fields)
+    ]
+
+
+def all_corrected_fields_present(corrected: CorrectedRow, fields: Sequence[str]) -> bool:
+    return all(normalized_corrected_field_value(corrected, field) for field in fields)
+
+
+def exact_text_narrow(records: Sequence[Dict[str, Any]], field: str, value: Optional[str]) -> List[Dict[str, Any]]:
+    if not value:
+        return list(records)
+    narrowed = [record for record in records if normalize_text(record.get(field)) == normalize_text(value)]
+    return narrowed or list(records)
+
+
+def narrow_ambiguous_matches(records: Sequence[Dict[str, Any]], corrected: CorrectedRow) -> Tuple[List[Dict[str, Any]], str]:
+    """Use extra stable fields only to break ties; never invent a broader match."""
+    narrowed = list(records)
+    reasons = []
+    for field, value in [
+        ("active_substances_raw", corrected.original_composition),
+        ("formulation", corrected.formulation),
+        ("manufacturer", corrected.manufacturer),
+        ("application_method", corrected.application_method),
+        ("rate_raw", corrected.rate_raw),
+    ]:
+        before = len(narrowed)
+        if field == "rate_raw" and value:
+            trial = [record for record in narrowed if normalize_rate_identity(record.get(field)) == normalize_rate_identity(value)]
+            if trial:
+                narrowed = trial
+        else:
+            narrowed = exact_text_narrow(narrowed, field, value)
+        if len(narrowed) != before:
+            reasons.append(f"narrowed by {field}: {before}->{len(narrowed)}")
+        if len(narrowed) <= 1:
+            break
+    return narrowed, "; ".join(reasons)
+
+
+def duplicate_identity_signature(record: Dict[str, Any]) -> str:
+    parts = []
+    for field in DUPLICATE_IDENTITY_FIELDS:
+        normalizer = normalize_rate_identity if field == "rate_raw" else normalize_identity_text
+        parts.append(f"{field}={normalizer(record.get(field))}")
+    return "|".join(parts)
+
+
+def are_true_duplicate_records(records: Sequence[Dict[str, Any]]) -> bool:
+    if len(records) <= 1:
+        return False
+    signatures = {duplicate_identity_signature(record) for record in records}
+    return len(signatures) == 1
+
+
+def find_mongo_matches(collection: Any, corrected: CorrectedRow) -> MatchResult:
+    row_signature = corrected_row_identity_signature(corrected)
+
+    if corrected.record_id:
+        record_id_candidates: List[Dict[str, Any]] = []
+        record_id_query_values: List[Any] = [corrected.record_id]
+        try:
+            number = float(corrected.record_id)
+            if number.is_integer():
+                record_id_query_values.append(int(number))
+        except (TypeError, ValueError):
+            pass
+        seen_ids = set()
+        for query_value in record_id_query_values:
+            for row in _cursor_to_list(collection.find({"record_id": query_value})):
+                marker = str(row.get("_id") or row.get("id") or id(row))
+                if marker not in seen_ids:
+                    seen_ids.add(marker)
+                    record_id_candidates.append(row)
+        record_id_matches = [
+            row for row in record_id_candidates
+            if normalize_record_id(row.get("record_id")) == normalize_record_id(corrected.record_id)
         ]
-        if original_matches:
-            return original_matches, "product_key + exact original composition"
-        return product_key_matches, "product_key"
+        if record_id_matches:
+            return MatchResult(
+                matches=record_id_matches,
+                strategy="level_1_record_id",
+                matched_by_fields=["record_id"],
+                candidate_count_before_narrowing=len(record_id_matches),
+                candidate_count_after_narrowing=len(record_id_matches),
+                row_identity_signature=row_signature,
+            )
 
-    identity_query: Dict[str, Any] = {"product_name": corrected.product_name}
+    product_candidates = _cursor_to_list(collection.find({"product_key": corrected.product_key}))
+    if product_candidates and all_corrected_fields_present(corrected, ROW_IDENTITY_FIELDS):
+        level_2_matches = records_matching_fields(product_candidates, corrected, ROW_IDENTITY_FIELDS)
+        if level_2_matches:
+            narrowed, reason = narrow_ambiguous_matches(level_2_matches, corrected)
+            return MatchResult(
+                matches=narrowed,
+                strategy="level_2_product_key_application_identity",
+                matched_by_fields=["product_key", *ROW_IDENTITY_FIELDS],
+                candidate_count_before_narrowing=len(product_candidates),
+                candidate_count_after_narrowing=len(narrowed),
+                row_identity_signature=row_signature,
+                ambiguity_reason=reason,
+            )
+
+    identity_candidates: List[Dict[str, Any]] = []
     if corrected.registration_number:
-        identity_query["registration_number"] = corrected.registration_number
-    identity_matches = _cursor_to_list(collection.find(identity_query))
-    if identity_matches:
-        return identity_matches, "product_name + registration_number fallback"
-    return [], "product_key, then product_name + registration_number fallback"
+        identity_candidates = _cursor_to_list(collection.find({
+            "product_name": corrected.product_name,
+            "registration_number": corrected.registration_number,
+        }))
 
+    if identity_candidates and all_corrected_fields_present(corrected, ("crop", "target_object", "rate_raw")):
+        level_3_matches = records_matching_fields(identity_candidates, corrected, ("crop", "target_object", "rate_raw"))
+        if level_3_matches:
+            narrowed, reason = narrow_ambiguous_matches(level_3_matches, corrected)
+            return MatchResult(
+                matches=narrowed,
+                strategy="level_3_product_registration_crop_target_rate",
+                matched_by_fields=["product_name", "registration_number", "crop", "target_object", "rate_raw"],
+                candidate_count_before_narrowing=len(identity_candidates),
+                candidate_count_after_narrowing=len(narrowed),
+                row_identity_signature=row_signature,
+                ambiguity_reason=reason,
+            )
+
+    if identity_candidates and all_corrected_fields_present(corrected, ("crop", "target_object")):
+        level_4_matches = records_matching_fields(identity_candidates, corrected, ("crop", "target_object"))
+        if level_4_matches:
+            narrowed, reason = narrow_ambiguous_matches(level_4_matches, corrected)
+            return MatchResult(
+                matches=narrowed,
+                strategy="level_4_product_registration_crop_target",
+                matched_by_fields=["product_name", "registration_number", "crop", "target_object"],
+                candidate_count_before_narrowing=len(identity_candidates),
+                candidate_count_after_narrowing=len(narrowed),
+                row_identity_signature=row_signature,
+                ambiguity_reason=reason,
+            )
+
+    before = len(product_candidates) or len(identity_candidates)
+    reason = "no strict row-level identity matched; product-name-only fallback is disabled"
+    return MatchResult(
+        matches=[],
+        strategy="no_strict_row_level_match",
+        matched_by_fields=[],
+        candidate_count_before_narrowing=before,
+        candidate_count_after_narrowing=0,
+        row_identity_signature=row_signature,
+        ambiguity_reason=reason,
+    )
 
 def classify_corrected_row(collection: Any, corrected: CorrectedRow) -> Dict[str, str]:
     config = CATEGORY_CONFIG[corrected.category]
@@ -473,6 +735,12 @@ def classify_corrected_row(collection: Any, corrected: CorrectedRow) -> Dict[str
         "mongo_collection": config["collection"],
         "mongo_record_id_masked": "",
         "match_status": "",
+        "match_strategy": "",
+        "matched_by_fields": "",
+        "candidate_count_before_narrowing": "0",
+        "candidate_count_after_narrowing": "0",
+        "row_identity_signature": corrected_row_identity_signature(corrected),
+        "ambiguity_reason": "",
         "current_mongo_composition": "",
         "corrected_excel_composition": corrected.corrected_composition,
         "fields_that_would_change": "",
@@ -490,24 +758,33 @@ def classify_corrected_row(collection: Any, corrected: CorrectedRow) -> Dict[str
         base["skip_reason"] = "corrected row still has unresolved concentration warning"
         return base
 
-    matches, strategy = find_mongo_matches(collection, corrected)
-    base["notes"] = (base["notes"] + f"; mongo match strategy: {strategy}").strip("; ")
+    match_result = find_mongo_matches(collection, corrected)
+    matches = match_result.matches
+    base["match_strategy"] = match_result.strategy
+    base["matched_by_fields"] = ";".join(match_result.matched_by_fields)
+    base["candidate_count_before_narrowing"] = str(match_result.candidate_count_before_narrowing)
+    base["candidate_count_after_narrowing"] = str(match_result.candidate_count_after_narrowing)
+    base["row_identity_signature"] = match_result.row_identity_signature
+    base["ambiguity_reason"] = match_result.ambiguity_reason
+    base["notes"] = (base["notes"] + f"; mongo match strategy: {match_result.strategy}").strip("; ")
     if not matches:
         base["match_status"] = "mongo_record_not_found"
-        base["skip_reason"] = "no MongoDB document matched stable identity fields"
+        base["skip_reason"] = "no MongoDB document matched strict row-level identity fields"
+        base["ambiguity_reason"] = match_result.ambiguity_reason or base["skip_reason"]
         return base
 
     ids = [mask_document_id(row.get("_id") or row.get("id")) for row in matches]
     base["mongo_record_id_masked"] = ";".join(ids)
     if len(matches) > 1:
-        compositions = {normalize_text(row.get("active_substances_raw")) for row in matches}
         base["current_mongo_composition"] = " || ".join(str(row.get("active_substances_raw") or "") for row in matches[:3])
-        if len(compositions) == 1:
-            base["match_status"] = "duplicate_mongo_records"
-            base["skip_reason"] = "more than one MongoDB row matched; current import stores product/application rows and updater must not guess"
+        if are_true_duplicate_records(matches):
+            base["match_status"] = "true_duplicate_mongo_records"
+            base["skip_reason"] = "multiple MongoDB documents are identical in product/application identity fields"
+            base["ambiguity_reason"] = base["ambiguity_reason"] or "identical row-level MongoDB documents"
         else:
             base["match_status"] = "ambiguous_mongo_match"
-            base["skip_reason"] = "multiple MongoDB rows matched with different compositions"
+            base["skip_reason"] = "multiple MongoDB rows still match after strict row-level narrowing"
+            base["ambiguity_reason"] = base["ambiguity_reason"] or "matched rows differ in one or more identity/application fields"
         return base
 
     mongo_row = matches[0]
@@ -554,6 +831,16 @@ def write_reports(rows: Sequence[Dict[str, str]], output_dir: Path) -> Tuple[Pat
 
     counts = Counter(row["match_status"] for row in rows)
     by_category = Counter(row["pesticide_category"] for row in rows)
+    old_broad_duplicate_count = sum(
+        1
+        for row in rows
+        if int(row.get("candidate_count_before_narrowing") or 0) > 1
+    )
+    row_level_matched_count = sum(
+        1
+        for row in rows
+        if row["match_status"] in {"exact_match_no_change", "safe_update_candidate"}
+    )
     protect_rows = [row for row in rows if "протект комби" in normalize_text(row["product_name"])]
     lines = [
         "# MongoDB composition dry-run summary",
@@ -564,14 +851,17 @@ def write_reports(rows: Sequence[Dict[str, str]], output_dir: Path) -> Tuple[Pat
         "",
         "## Totals",
         f"- Total corrected rows checked: {len(rows)}",
-        f"- Exact no-change count: {counts.get('exact_match_no_change', 0)}",
+        f"- Old broad duplicate-like candidate count: {old_broad_duplicate_count}",
+        f"- True duplicate Mongo record count: {counts.get('true_duplicate_mongo_records', 0)}",
+        f"- Row-level matched count: {row_level_matched_count}",
+        f"- Ambiguous match count: {counts.get('ambiguous_mongo_match', 0)}",
         f"- Safe update candidate count: {counts.get('safe_update_candidate', 0)}",
+        f"- Exact no-change count: {counts.get('exact_match_no_change', 0)}",
         f"- Manual-review skip count: {counts.get('manual_review_skip', 0)}",
         f"- Unresolved concentration skip count: {counts.get('unresolved_concentration_skip', 0)}",
         f"- Record not found count: {counts.get('mongo_record_not_found', 0)}",
-        f"- Ambiguous match count: {counts.get('ambiguous_mongo_match', 0)}",
-        f"- Duplicate Mongo record count: {counts.get('duplicate_mongo_records', 0)}",
         f"- Source row not changed count: {counts.get('source_row_not_changed', 0)}",
+        "- Zero-write confirmation: MongoDB writes performed: 0",
         "",
         "## Counts by category",
     ]

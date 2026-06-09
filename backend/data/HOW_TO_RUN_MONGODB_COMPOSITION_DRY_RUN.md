@@ -42,9 +42,11 @@ python backend/dry_run_corrected_compositions.py --mongo-uri-env MONGO_URL
 - `manual_review_skip` — строка требует ручной проверки, автоматически её трогать нельзя.
 - `unresolved_concentration_skip` — у вещества нет надёжной концентрации, автоматически её нельзя придумывать.
 - `mongo_record_not_found` — подходящая запись в MongoDB не найдена.
-- `ambiguous_mongo_match` — найдено несколько разных вариантов, скрипт не может безопасно выбрать один.
-- `duplicate_mongo_records` — найдено больше одной MongoDB-записи с одинаковой идентичностью; скрипт не угадывает, какую менять.
+- `ambiguous_mongo_match` — найдено несколько разных вариантов после строгого сопоставления строки применения, скрипт не может безопасно выбрать один.
+- `true_duplicate_mongo_records` — найдено больше одной MongoDB-записи, и они одинаковые по важным полям препарата и применения; скрипт не угадывает, какую менять.
 - `source_row_not_changed` — исходная строка не была исправлена в Excel, поэтому обновление не предлагается.
+
+CSV-отчёт также показывает диагностические поля `match_strategy`, `matched_by_fields`, `candidate_count_before_narrowing`, `candidate_count_after_narrowing`, `row_identity_signature` и `ambiguity_reason`. Они нужны, чтобы видеть, почему строка была сопоставлена, стала неоднозначной или не была найдена.
 
 ## Важная безопасность
 
