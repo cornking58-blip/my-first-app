@@ -1,7 +1,9 @@
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from backend import apply_corrected_compositions as applymod
@@ -425,6 +427,64 @@ class ApplyCorrectedCompositionsTests(unittest.TestCase):
         self.assertTrue(result["preflight"])
         self.assertEqual(result["selected_mode"], "sequential_with_backup")
         self.assertEqual(db["herbicide_records"].update_one_calls, [])
+
+    def test_preflight_runs_full_plan_and_detects_transaction_support(self):
+        db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
+        client = FakeClient({"ok": 1, "setName": "rs0"})
+        with patch.object(applymod, "build_current_plan", return_value=([target_for()], rows(), {"safe_update_candidate": 1})) as plan:
+            result = applymod.run_guarded_apply(
+                db,
+                expected_safe_count=1,
+                preflight=True,
+                client=client,
+                validate_files=False,
+            )
+        plan.assert_called_once()
+        self.assertTrue(result["transaction_support"])
+        self.assertEqual(result["selected_mode"], "transaction")
+        self.assertEqual(client.sessions_started, 0)
+
+    def test_preflight_prints_selected_mode_and_safe_update_count(self):
+        result = {
+            "preflight": True,
+            "message": "Preflight completed; MongoDB writes performed: 0.",
+            "safe_update_count": 184,
+            "blocking_rows_count": 0,
+            "status_counts": {"safe_update_candidate": 184},
+            "transaction_support": False,
+            "selected_mode": "sequential_with_backup",
+        }
+        with patch.object(applymod, "connect_database", return_value=(FakeClient({"ok": 1}), FakeDB(), "herbicides_db")):
+            with patch.object(applymod, "run_guarded_apply", return_value=result) as runner:
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    exit_code = applymod.main(["--preflight"])
+        self.assertEqual(exit_code, 0)
+        runner.assert_called_once()
+        self.assertTrue(runner.call_args.kwargs["preflight"])
+        output = stdout.getvalue()
+        self.assertIn("Safe update count: 184", output)
+        self.assertIn("Blocking rows count: 0", output)
+        self.assertIn("Transaction support: no", output)
+        self.assertIn("Selected mode: sequential_with_backup", output)
+        self.assertIn("MongoDB writes performed: 0", output)
+        self.assertNotIn("Apply mode is disabled; validation only", output)
+
+    def test_preflight_does_not_create_backup(self):
+        db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
+        temp_dir = Path(tempfile.mkdtemp())
+        with patch.object(applymod, "create_backup", wraps=applymod.create_backup) as create_backup:
+            result = self.run_with_plan(db, [target_for()], preflight=True, backup_dir=temp_dir)
+        self.assertTrue(result["preflight"])
+        create_backup.assert_not_called()
+        self.assertEqual(list(temp_dir.glob("composition_backup_*.json")), [])
+
+    def test_preflight_reports_manual_unresolved_and_protect_combi_protections(self):
+        db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
+        result = self.run_with_plan(db, [target_for()], current_rows=rows(), preflight=True)
+        self.assertTrue(result["manual_rows_excluded"])
+        self.assertTrue(result["unresolved_rows_excluded"])
+        self.assertTrue(result["protect_combi_unchanged"])
 
 
 if __name__ == "__main__":
