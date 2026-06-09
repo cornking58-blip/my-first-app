@@ -61,6 +61,8 @@ namespace = {
 exec(MANUFACTURER_HELPER_SOURCE + HELPER_SOURCE, namespace)
 
 parse_active_substances = namespace["parse_active_substances"]
+validate_active_substance_composition = namespace["validate_active_substance_composition"]
+composition_warning_codes = namespace["composition_warning_codes"]
 get_resistance_group = namespace["get_resistance_group"]
 annotate_substances_with_resistance = namespace["annotate_substances_with_resistance"]
 build_resistance_group_analysis = namespace["build_resistance_group_analysis"]
@@ -160,7 +162,7 @@ class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
     def test_hyphenated_single_substance_is_not_split(self):
         substances = self.assert_substance_names(
             "(225 г/л Тиофанат - метил + 25 г/л Пираклостробин)",
-            ["Тиофанат - метил", "Пираклостробин"],
+            ["Тиофанат-метил", "Пираклостробин"],
         )
 
         self.assertEqual([substance["concentration"] for substance in substances], [225, 25])
@@ -178,6 +180,68 @@ class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
 
         self.assertEqual(substances[0]["concentration"], 10)
         self.assertEqual(substances[0]["unit"], "%")
+
+    def test_exact_duplicate_substances_with_identical_concentration_are_deduplicated(self):
+        substances = self.assert_substance_names(
+            "(250 г/л тебуконазол + 250 г/л тебуконазол)",
+            ["тебуконазол"],
+        )
+
+        self.assertEqual(len(substances), 1)
+
+    def test_unknown_spaced_hyphen_text_is_not_split_automatically(self):
+        substances = self.assert_substance_names(
+            "(100 г/л неизвестное - странное)",
+            ["неизвестное - странное"],
+        )
+
+        self.assertEqual(substances[0]["concentration"], 100)
+        self.assertNotIn("concentration_unresolved", substances[0])
+
+    def test_composition_validation_flags_non_substance_text(self):
+        parsed = parse_active_substances("(10 г/л Норма расхода 1 л/га)")
+        warnings = validate_active_substance_composition("(10 г/л Норма расхода 1 л/га)", parsed, "herbicide")
+
+        self.assertIn("suspicious_non_substance_text", composition_warning_codes(warnings))
+
+    def test_composition_validation_flags_excessive_component_count(self):
+        raw = "(1 г/л a + 2 г/л b + 3 г/л c + 4 г/л d + 5 г/л e + 6 г/л f)"
+        parsed = parse_active_substances(raw)
+        warnings = validate_active_substance_composition(raw, parsed, "fungicide")
+
+        self.assertIn("excessive_component_count", composition_warning_codes(warnings))
+
+    def test_composition_validation_flags_conflicting_concentrations(self):
+        raw = "(100 г/л тебуконазол + 200 г/л тебуконазол)"
+        parsed = parse_active_substances(raw)
+        warnings = validate_active_substance_composition(raw, parsed, "fungicide")
+
+        self.assertIn("conflicting_concentrations", composition_warning_codes(warnings))
+
+    def test_composition_validation_flags_protect_combi_warnings(self):
+        parsed = parse_active_substances(PROTECT_COMBI_SOURCE_COMPOSITION)
+        warnings = validate_active_substance_composition(PROTECT_COMBI_SOURCE_COMPOSITION, parsed, "seed-treatment")
+        codes = composition_warning_codes(warnings)
+
+        self.assertEqual(len(parsed), 4)
+        self.assertIn("repeated_fragment", codes)
+        self.assertIn("joined_known_substances", codes)
+        self.assertIn("unresolved_concentration", codes)
+
+    def test_normal_herbicide_composition_still_parses(self):
+        substances = self.assert_substance_names("(750 г/кг трибенурон-метил)", ["трибенурон-метил"])
+
+        self.assertEqual(substances[0]["unit"], "г/кг")
+
+    def test_normal_fungicide_composition_still_parses(self):
+        substances = self.assert_substance_names("(250 г/л тебуконазол)", ["тебуконазол"])
+
+        self.assertEqual(substances[0]["concentration"], 250)
+
+    def test_normal_insecticide_composition_still_parses(self):
+        substances = self.assert_substance_names("(200 г/л имидаклоприд)", ["имидаклоприд"])
+
+        self.assertEqual(substances[0]["unit"], "г/л")
 
     def test_herbicide_fungicide_and_insecticide_parsing_is_unchanged(self):
         cases = [
@@ -805,6 +869,48 @@ class AdvancedCompareResponseTest(unittest.TestCase):
         self.assertFalse(
             any(item["side"] == "right" for item in response["price_analysis"]["substances_cost"])
         )
+
+    def test_price_analysis_does_not_return_fake_cost_for_unresolved_concentration(self):
+        collection = FakeCollection({
+            "left": [
+                {
+                    "product_key": "left",
+                    "product_name": "Протект Комби",
+                    "formulation": "КС",
+                    "active_substances_raw": PROTECT_COMBI_SOURCE_COMPOSITION,
+                    "registration_status": "Действует",
+                    "rate_raw": "1,0 л/т",
+                    "crop": "пшеница",
+                }
+            ],
+            "right": [
+                {
+                    "product_key": "right",
+                    "product_name": "Обычный фунгицид",
+                    "formulation": "КС",
+                    "active_substances_raw": "(250 г/л тебуконазол)",
+                    "registration_status": "Действует",
+                    "rate_raw": "1,0 л/т",
+                    "crop": "пшеница",
+                }
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="left",
+            right_key="right",
+            left_price=1000,
+            right_price=1000,
+            left_rate=None,
+            right_rate=None,
+            crop=None,
+        )
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "seed-treatment"))
+        left_costs = response["price_analysis"]["left_substances_cost"]
+
+        self.assertFalse(any(item["substance_name"] == "протиоконазол" for item in left_costs))
+        self.assertTrue(response["left"]["has_composition_warning"])
+        self.assertIn("unresolved_concentration", composition_warning_codes(response["left"]["composition_warnings"]))
 
     def test_crop_provided_and_product_has_row_returns_true(self):
         response = self.compare(crop="подсолнечник")

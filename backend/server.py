@@ -8,11 +8,12 @@ import json
 import re
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Dict, Sequence
+from typing import List, Optional, Any, Dict, Sequence, Tuple
 import uuid
 from datetime import datetime
 import pandas as pd
 import io
+from collections import Counter, defaultdict
 
 
 ROOT_DIR = Path(__file__).parent
@@ -108,6 +109,8 @@ class ProductCard(BaseModel):
     registration_end_date: Optional[str] = None
     registration_status: Optional[str] = None
     applications: List[dict] = []
+    composition_warnings: List[dict] = []
+    has_composition_warning: bool = False
 
 
 class CompareRequest(BaseModel):
@@ -365,7 +368,277 @@ def build_search_match(query: str) -> Optional[dict]:
 
 # ==================== ACTIVE SUBSTANCE PARSER ====================
 
+from collections import Counter, defaultdict
+from typing import Tuple
+
 SUPPORTED_CONCENTRATION_UNITS_REGEX = r"г/л|г/кг|%"
+COMPOSITION_SEPARATOR_REGEX = r"\s*(?:\+|/|,|;|\band\b)\s*"
+DASH_CHARS_REGEX = r"[‐‑‒–—−]"
+
+NON_SUBSTANCE_TEXT_PATTERNS = (
+    "норма", "расход", "культура", "вредный", "объект", "болезн", "сорняк",
+    "производител", "изготовител", "регистрант", "заявител", "регистрац",
+    "свидетельств", "препаратив", "форма", "концентрат", "эмульси", "суспензи",
+    "раствор", "опрыскиван", "обработка", "протравлив", "семян", "почв",
+    "урожай", "срок", "ожидания", "примечан", "том числе", "нет данных",
+)
+
+
+def normalize_composition_text(raw: str) -> str:
+    """Normalize OCR punctuation/spacing while preserving the original source elsewhere."""
+    text = str(raw or "")
+    text = text.replace("\u00a0", " ").replace("\ufeff", " ")
+    text = re.sub(DASH_CHARS_REGEX, "-", text)
+    text = re.sub(r"[×*]", "+", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s*([()+;])\s*", r" \1 ", text)
+    text = re.sub(r"\s*,\s*", ", ", text)
+    text = re.sub(r"(\d)\s*,\s*(\d)", r"\1,\2", text)
+    text = re.sub(r"г\s*/\s*л", "г/л", text, flags=re.IGNORECASE)
+    text = re.sub(r"г\s*/\s*кг", "г/кг", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*/\s*", " / ", text)
+    text = re.sub(r"г\s*/\s*л", "г/л", text, flags=re.IGNORECASE)
+    text = re.sub(r"г\s*/\s*кг", "г/кг", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*-\s*", " - ", text)
+    text = re.sub(r"(?:\+\s*){2,}", "+", text)
+    text = re.sub(r"(?:[,;]\s*){2,}", "; ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _composition_compare_key(text: str) -> str:
+    normalized = normalize_composition_text(text).casefold().replace("ё", "е")
+    normalized = re.sub(r"\s+", " ", normalized).strip(" ()+;,/")
+    return normalized
+
+
+def _warning(code: str, message: str, severity: str = "warning", **details) -> Dict[str, Any]:
+    warning = {"code": code, "message": message, "severity": severity}
+    warning.update({key: value for key, value in details.items() if value is not None})
+    return warning
+
+
+def _dedupe_warnings(warnings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = set()
+    result = []
+    for warning in warnings:
+        key = (warning.get("code"), warning.get("message"), json.dumps(warning.get("details", warning), ensure_ascii=False, sort_keys=True, default=str))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(warning)
+    return result
+
+
+def _is_known_active_substance_name_for_type(name: str, pesticide_type: Optional[str] = None) -> bool:
+    """Exact known-substance check; no fuzzy matching or guessing."""
+    normalized = normalize_resistance_lookup_name(name)
+    pesticide_type = (pesticide_type or "").strip().lower()
+    lookup_types = [pesticide_type] if pesticide_type else list(RESISTANCE_GROUPS.keys())
+    if pesticide_type in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"}:
+        lookup_types = ["fungicide", "insecticide"]
+    for lookup_type in lookup_types:
+        table = RESISTANCE_GROUPS.get(lookup_type, {})
+        if normalized in table:
+            return True
+    return False
+
+
+def _split_known_joined_name_candidates(name: str, pesticide_type: Optional[str] = None) -> List[str]:
+    """Split joined names only when every resulting token is already known."""
+    clean_name = normalize_composition_text(name).strip()
+    delimiter_patterns = [
+        r"\s+[-]\s+",
+        r"\s*/\s*",
+        r"\s*[,;]\s*",
+    ]
+    for pattern in delimiter_patterns:
+        parts = [part.strip(" .()") for part in re.split(pattern, clean_name) if part.strip(" .()")]
+        if len(parts) > 1 and all(_is_known_active_substance_name_for_type(part, pesticide_type) for part in parts):
+            return parts
+
+    # Lost delimiter: two known multi-letter names glued together. This is deliberately exact:
+    # both sides must be known lookup keys, and each side must be at least 4 chars.
+    compact = re.sub(r"[\s-]+", "", normalize_resistance_lookup_name(clean_name))
+    if len(compact) >= 8:
+        for index in range(4, len(compact) - 3):
+            left = compact[:index]
+            right = compact[index:]
+            if (
+                _is_known_active_substance_name_for_type(left, pesticide_type)
+                and _is_known_active_substance_name_for_type(right, pesticide_type)
+            ):
+                return [left, right]
+
+    return [name.strip()]
+
+
+def deduplicate_repeated_composition_fragments(raw: str) -> Tuple[str, bool]:
+    """Remove exact repeated composition fragments such as A+B+A+B without changing source data."""
+    text = normalize_composition_text(raw)
+    if not text:
+        return text, False
+
+    had_outer_parentheses = text.startswith("(") and text.endswith(")")
+    inner = text[1:-1].strip() if had_outer_parentheses else text
+    parts = [part.strip() for part in re.split(r"\s*\+\s*", inner) if part.strip()]
+    if len(parts) < 2:
+        return text, False
+
+    keys = [_composition_compare_key(part) for part in parts]
+    for fragment_len in range(1, min(4, len(parts) // 2) + 1):
+        if len(parts) % fragment_len != 0:
+            continue
+        first = keys[:fragment_len]
+        if all(keys[i:i + fragment_len] == first for i in range(0, len(keys), fragment_len)):
+            deduped = " + ".join(parts[:fragment_len])
+            return (f"({deduped})" if had_outer_parentheses else deduped), True
+
+    deduped_parts = []
+    seen = set()
+    changed = False
+    for part, key in zip(parts, keys):
+        if key in seen:
+            changed = True
+            continue
+        seen.add(key)
+        deduped_parts.append(part)
+    if changed:
+        deduped = " + ".join(deduped_parts)
+        return (f"({deduped})" if had_outer_parentheses else deduped), True
+    return text, False
+
+
+def validate_active_substance_composition(
+    raw_composition: Optional[str],
+    parsed_substances: Optional[List[Dict]],
+    pesticide_type: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Return structured composition warnings without inventing substances or concentrations."""
+    warnings: List[Dict[str, Any]] = []
+    raw_text = str(raw_composition or "")
+    normalized_raw = normalize_composition_text(raw_text)
+    parsed_substances = parsed_substances or []
+
+    if raw_text and raw_text != normalized_raw:
+        if "\u00a0" in raw_text or re.search(DASH_CHARS_REGEX, raw_text) or re.search(r"([+;,])\s*\1", raw_text):
+            warnings.append(_warning(
+                "malformed_delimiters",
+                "Composition contains OCR/formatting punctuation that was normalized for parsing.",
+                "warning",
+            ))
+
+    _, repeated = deduplicate_repeated_composition_fragments(raw_text)
+    if repeated:
+        warnings.append(_warning(
+            "repeated_fragment",
+            "Composition contains exactly repeated component fragments; parser deduplicated them.",
+            "error",
+        ))
+
+    component_markers = len(re.findall(rf"\d+(?:[.,]\d+)?\s*(?:{SUPPORTED_CONCENTRATION_UNITS_REGEX})", normalized_raw, flags=re.IGNORECASE))
+    parsed_count = len(parsed_substances)
+    if parsed_count > 5 or (component_markers and parsed_count > component_markers + 2):
+        warnings.append(_warning(
+            "excessive_component_count",
+            "Parsed component count is suspicious for the number of concentration markers.",
+            "warning",
+            parsed_component_count=parsed_count,
+            concentration_marker_count=component_markers,
+        ))
+
+    normalized_name_counts: Counter = Counter()
+    concentrations_by_name: Dict[str, set] = defaultdict(set)
+    for substance in parsed_substances:
+        name = substance.get("name") or ""
+        normalized_name = normalize_substance_name(name)
+        if not normalized_name:
+            continue
+        normalized_name_counts[normalized_name] += 1
+        concentrations_by_name[normalized_name].add((substance.get("concentration"), substance.get("unit")))
+
+        if substance.get("concentration_unresolved") or substance.get("concentration") is None or not substance.get("unit"):
+            warnings.append(_warning(
+                "unresolved_concentration",
+                "Known parsed active substance has no reliable separate concentration in the source composition.",
+                "error",
+                substance=name,
+            ))
+
+        lowered_name = normalized_name.casefold()
+        if any(pattern in lowered_name for pattern in NON_SUBSTANCE_TEXT_PATTERNS) or re.search(r"\b\d+\s*(?:л|кг|га|т)\b", lowered_name):
+            warnings.append(_warning(
+                "suspicious_non_substance_text",
+                "Parsed name looks like formulation, rate, crop, manufacturer, registration, or note text rather than an active substance.",
+                "error",
+                substance=name,
+            ))
+
+        split_parts = _split_known_joined_name_candidates(name, pesticide_type)
+        if len(split_parts) > 1:
+            warnings.append(_warning(
+                "joined_known_substances",
+                "Parsed name contains multiple known active substances joined by a delimiter.",
+                "error",
+                substance=name,
+                split_parts=split_parts,
+            ))
+
+    for normalized_name, count in normalized_name_counts.items():
+        if count > 1:
+            warnings.append(_warning(
+                "duplicate_substance",
+                "Same normalized active substance appears more than once in one composition.",
+                "warning",
+                substance=normalized_name,
+            ))
+        known_concentrations = {item for item in concentrations_by_name[normalized_name] if item[0] is not None and item[1] is not None}
+        if len(known_concentrations) > 1:
+            warnings.append(_warning(
+                "conflicting_concentrations",
+                "Same normalized active substance has different concentrations in one composition.",
+                "error",
+                substance=normalized_name,
+                concentrations=sorted(known_concentrations),
+            ))
+
+    # Raw-level safe joined-substance detection even if the current parser missed it.
+    concentration_name_fragments = re.findall(
+        rf"\d+(?:[.,]\d+)?\s*(?:{SUPPORTED_CONCENTRATION_UNITS_REGEX})\s*([^+()]+)",
+        normalized_raw,
+        flags=re.IGNORECASE,
+    )
+    for fragment in concentration_name_fragments:
+        split_parts = _split_known_joined_name_candidates(fragment.strip(), pesticide_type)
+        if len(split_parts) > 1:
+            warnings.append(_warning(
+                "joined_known_substances",
+                "Raw composition contains multiple known active substances joined in one component fragment.",
+                "error",
+                substance=fragment.strip(),
+                split_parts=split_parts,
+            ))
+
+    if re.search(r"[а-яА-ЯёЁ]\s{2,}[а-яА-ЯёЁ]", raw_text) or re.search(r"[()]", raw_text) and raw_text.count("(") != raw_text.count(")"):
+        warnings.append(_warning(
+            "malformed_delimiters",
+            "Composition contains suspicious OCR spacing or broken parentheses.",
+            "warning",
+        ))
+
+    return _dedupe_warnings(warnings)
+
+
+def composition_warning_codes(warnings: Sequence[Dict[str, Any]]) -> List[str]:
+    return sorted({warning.get("code") for warning in warnings if warning.get("code")})
+
+
+def build_composition_metadata(raw_composition: Optional[str], pesticide_type: Optional[str] = None) -> Dict[str, Any]:
+    parsed = parse_active_substances(raw_composition)
+    warnings = validate_active_substance_composition(raw_composition, parsed, pesticide_type)
+    return {
+        "composition_warnings": warnings,
+        "has_composition_warning": bool(warnings),
+    }
 
 
 def _iter_canonical_composition_values(raw) -> List[str]:
@@ -405,24 +678,23 @@ def _active_substance_dedupe_key(substance: Dict) -> tuple:
 def _is_known_active_substance_name(name: str) -> bool:
     """Return True when a name is an exact known HRAC/FRAC/IRAC lookup key."""
     try:
-        normalized = normalize_resistance_lookup_name(name)
-        return any(normalized in table for table in RESISTANCE_GROUPS.values())
+        return _is_known_active_substance_name_for_type(name)
     except NameError:
         return False
 
 
+def _clean_parsed_substance_name(name: str) -> str:
+    """Normalize parser output names without guessing unknown substances."""
+    cleaned = normalize_composition_text(name).strip(" .()")
+    compact_hyphen = re.sub(r"\s*-\s*", "-", cleaned)
+    if _is_known_active_substance_name(compact_hyphen):
+        return compact_hyphen
+    return cleaned
+
+
 def _split_joined_active_substance_names(name: str) -> List[str]:
-    """Split OCR/parser joins like "пираклостробин - протиоконазол" only when safe."""
-    parts = [part.strip() for part in re.split(r"\s+[-–—]\s+", name) if part.strip()]
-    if len(parts) <= 1:
-        return [name.strip()]
-
-    # Hyphens are also normal inside chemical names, e.g. "тиофанат - метил".
-    # Split only when every side is independently known as an active substance.
-    if all(_is_known_active_substance_name(part) for part in parts):
-        return parts
-
-    return [name.strip()]
+    """Split joined active names only when every resulting side is known."""
+    return _split_known_joined_name_candidates(name)
 
 
 def _build_parsed_substance(name: str, concentration: Optional[float], unit: Optional[str], is_antidote: bool, source_fragment: Optional[str] = None) -> Dict:
@@ -443,8 +715,11 @@ def _build_parsed_substance(name: str, concentration: Optional[float], unit: Opt
 def _parse_active_substances_text(raw: str) -> List[Dict]:
     substances = []
 
+    # Normalize formatting and deduplicate exact repeated composition fragments for parsing only.
+    text, _ = deduplicate_repeated_composition_fragments(raw)
+
     # Remove outer parentheses
-    text = raw.strip()
+    text = text.strip()
     if text.startswith('('):
         text = text[1:]
     if text.endswith(')'):
@@ -475,6 +750,7 @@ def _parse_active_substances_text(raw: str) -> List[Dict]:
 
             # Clean up the name - remove "антидот -" prefix
             name = re.sub(r'^антидот\s*[-–]?\s*', '', name, flags=re.IGNORECASE)
+            name = _clean_parsed_substance_name(name)
 
             # Remove trailing parentheses content that's part of the name
             # Keep it as part of the substance name
@@ -1546,6 +1822,7 @@ async def build_advanced_compare_response(
             "product_name": left_first.get("product_name"),
             "formulation": left_first.get("formulation"),
             "active_substances_raw": left_first.get("active_substances_raw"),
+            **build_composition_metadata(left_first.get("active_substances_raw"), pesticide_type),
             **manufacturer_response_fields(left_first, left_records),
             "registration_status": left_first.get("registration_status"),
             "max_rate": left_max_rate,
@@ -1564,6 +1841,7 @@ async def build_advanced_compare_response(
             "product_name": right_first.get("product_name"),
             "formulation": right_first.get("formulation"),
             "active_substances_raw": right_first.get("active_substances_raw"),
+            **build_composition_metadata(right_first.get("active_substances_raw"), pesticide_type),
             **manufacturer_response_fields(right_first, right_records),
             "registration_status": right_first.get("registration_status"),
             "max_rate": right_max_rate,
@@ -1864,6 +2142,7 @@ async def get_herbicide(product_key: str):
             product_name=first_record.get("product_name"),
             formulation=first_record.get("formulation"),
             active_substances_raw=first_record.get("active_substances_raw"),
+            **build_composition_metadata(first_record.get("active_substances_raw"), "herbicide"),
             **manufacturer_response_fields(first_record, records),
             registration_number=first_record.get("registration_number"),
             registration_start_date=first_record.get("registration_start_date"),
@@ -1907,6 +2186,7 @@ async def compare_herbicides(request: CompareRequest):
                 "product_name": first.get("product_name"),
                 "formulation": first.get("formulation"),
                 "active_substances_raw": first.get("active_substances_raw"),
+                **build_composition_metadata(first.get("active_substances_raw"), "herbicide"),
                 "manufacturer": first.get("manufacturer"),
                 **manufacturer_response_fields(first, records),
                 "registration_number": first.get("registration_number"),
@@ -2160,6 +2440,7 @@ async def get_insecticide(product_key: str):
             product_name=first_record.get("product_name"),
             formulation=first_record.get("formulation"),
             active_substances_raw=first_record.get("active_substances_raw"),
+            **build_composition_metadata(first_record.get("active_substances_raw"), "insecticide"),
             **manufacturer_response_fields(first_record, records),
             registration_number=first_record.get("registration_number"),
             registration_start_date=first_record.get("registration_start_date"),
@@ -2395,6 +2676,7 @@ async def get_fungicide(product_key: str):
             product_name=first_record.get("product_name"),
             formulation=first_record.get("formulation"),
             active_substances_raw=first_record.get("active_substances_raw"),
+            **build_composition_metadata(first_record.get("active_substances_raw"), "fungicide"),
             **manufacturer_response_fields(first_record, records),
             registration_number=first_record.get("registration_number"),
             registration_start_date=first_record.get("registration_start_date"),
@@ -2631,6 +2913,7 @@ async def get_seed_treatment(product_key: str):
             "product_name": first_record.get("product_name"),
             "formulation": first_record.get("formulation"),
             "active_substances_raw": first_record.get("active_substances_raw"),
+            **build_composition_metadata(first_record.get("active_substances_raw"), "seed-treatment"),
             "manufacturer": first_record.get("manufacturer"),
             **manufacturer_response_fields(first_record, records),
             "registration_number": first_record.get("registration_number"),
