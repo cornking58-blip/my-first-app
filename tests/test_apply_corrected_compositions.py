@@ -25,6 +25,7 @@ class FakeCollection:
         self.insert_many_calls = []
         self.replace_one_calls = []
         self.drop_calls = []
+        self.bulk_write_calls = []
         self.on_update = None
 
     def count_documents(self, _query):
@@ -75,6 +76,10 @@ class FakeCollection:
         self.replace_one_calls.append((args, kwargs))
         raise AssertionError("replace_one must never be called")
 
+    def bulk_write(self, *args, **kwargs):
+        self.bulk_write_calls.append((args, kwargs))
+        raise AssertionError("bulk_write must never be called")
+
     def drop(self, *args, **kwargs):
         self.drop_calls.append((args, kwargs))
         raise AssertionError("drop must never be called")
@@ -93,6 +98,56 @@ class FakeDB:
 
     def list_collection_names(self):
         return list(self.collections)
+
+
+class FakeAdmin:
+    def __init__(self, hello_response):
+        self.hello_response = hello_response
+        self.commands = []
+
+    def command(self, name):
+        self.commands.append(name)
+        if name in ("hello", "isMaster"):
+            return dict(self.hello_response)
+        return {"ok": 1}
+
+
+class FakeTransactionContext:
+    def __init__(self, fail=False):
+        self.fail = fail
+
+    def __enter__(self):
+        if self.fail:
+            raise RuntimeError("Transaction numbers are only allowed on a replica set member or mongos")
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class FakeSession:
+    def __init__(self, fail_transaction=False):
+        self.fail_transaction = fail_transaction
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def start_transaction(self):
+        return FakeTransactionContext(self.fail_transaction)
+
+
+class FakeClient:
+    def __init__(self, hello_response, fail_transaction=False):
+        self.admin = FakeAdmin(hello_response)
+        self.fail_transaction = fail_transaction
+        self.sessions_started = 0
+
+    def start_session(self):
+        self.sessions_started += 1
+        return FakeSession(self.fail_transaction)
 
 
 def base_doc():
@@ -124,7 +179,7 @@ def target_for(doc=None, collection="herbicide_records"):
         row={"product_name": document["product_name"], "match_status": "safe_update_candidate"},
         original_document=document,
         update_fields=update_fields,
-        identity_signature="sig-1",
+        identity_signature=applymod.document_identity_signature(document),
         dry_run_composition=document["active_substances_raw"],
     )
 
@@ -142,7 +197,7 @@ def rows(extra=None):
 
 
 class ApplyCorrectedCompositionsTests(unittest.TestCase):
-    def run_with_plan(self, db, targets, current_rows=None, expected=1, apply=False, confirm=None, backup_dir=None):
+    def run_with_plan(self, db, targets, current_rows=None, expected=1, apply=False, confirm=None, backup_dir=None, client=None, preflight=False):
         current_rows = current_rows if current_rows is not None else rows()
         counts = {"safe_update_candidate": len(targets)}
         with patch.object(applymod, "build_current_plan", return_value=(targets, current_rows, counts)):
@@ -155,6 +210,8 @@ class ApplyCorrectedCompositionsTests(unittest.TestCase):
                 expected_safe_count=expected,
                 apply=apply,
                 confirm=confirm,
+                preflight=preflight,
+                client=client,
                 validate_files=False,
             )
 
@@ -261,6 +318,7 @@ class ApplyCorrectedCompositionsTests(unittest.TestCase):
         self.assertEqual(collection.insert_one_calls, [])
         self.assertEqual(collection.insert_many_calls, [])
         self.assertEqual(collection.replace_one_calls, [])
+        self.assertEqual(collection.bulk_write_calls, [])
 
     def test_rollback_restores_original_composition_fields(self):
         temp_dir = Path(tempfile.mkdtemp())
@@ -280,6 +338,93 @@ class ApplyCorrectedCompositionsTests(unittest.TestCase):
         self.run_with_plan(db, [target_for()], apply=True, confirm=applymod.APPLY_CONFIRMATION)
         after = applymod.collection_counts(db)
         self.assertEqual(before, after)
+
+    def test_standalone_mongodb_selects_sequential_with_backup(self):
+        db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
+        client = FakeClient({"ok": 1})
+        result = self.run_with_plan(db, [target_for()], apply=True, confirm=applymod.APPLY_CONFIRMATION, client=client)
+        self.assertEqual(result["selected_mode"], "sequential_with_backup")
+        self.assertEqual(client.sessions_started, 0)
+
+    def test_replica_set_mongodb_selects_transaction_mode(self):
+        db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
+        client = FakeClient({"ok": 1, "setName": "rs0"})
+        result = self.run_with_plan(db, [target_for()], apply=True, confirm=applymod.APPLY_CONFIRMATION, client=client)
+        self.assertEqual(result["selected_mode"], "transaction")
+        self.assertEqual(client.sessions_started, 1)
+
+    def test_unsupported_transaction_error_falls_back_before_any_update(self):
+        collection = FakeCollection([base_doc()])
+        db = FakeDB({"herbicide_records": collection})
+        client = FakeClient({"ok": 1, "setName": "rs0"}, fail_transaction=True)
+        result = self.run_with_plan(db, [target_for()], apply=True, confirm=applymod.APPLY_CONFIRMATION, client=client)
+        self.assertEqual(result["selected_mode"], "sequential_with_backup")
+        self.assertEqual(len(collection.update_one_calls), 1)
+        self.assertIsNone(collection.update_one_calls[0][2])
+
+    def test_backup_contains_all_safe_candidates_before_first_write(self):
+        doc2 = base_doc()
+        doc2["_id"] = "doc-2"
+        doc2["product_name"] = "Safe Product 2"
+        doc2["product_key"] = "Safe Product 2|123"
+        collection = FakeCollection([base_doc(), doc2])
+        temp_dir = Path(tempfile.mkdtemp())
+        target1 = target_for(base_doc())
+        target2 = target_for(doc2)
+
+        def assert_complete_backup_exists():
+            backup = next(temp_dir.glob("composition_backup_*.json"))
+            payload = json.loads(backup.read_text(encoding="utf-8"))
+            self.assertEqual(len(payload["records"]), 2)
+
+        collection.on_update = assert_complete_backup_exists
+        db = FakeDB({"herbicide_records": collection})
+        self.run_with_plan(db, [target1, target2], expected=2, apply=True, confirm=applymod.APPLY_CONFIRMATION, backup_dir=temp_dir)
+
+    def test_missing_or_incomplete_backup_aborts(self):
+        temp_dir = Path(tempfile.mkdtemp())
+        db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
+        with patch.object(applymod, "create_backup", return_value=temp_dir / "missing.json"):
+            with self.assertRaises(applymod.ApplySafetyError):
+                self.run_with_plan(db, [target_for()], apply=True, confirm=applymod.APPLY_CONFIRMATION, backup_dir=temp_dir)
+        self.assertEqual(db["herbicide_records"].update_one_calls, [])
+
+    def test_sequential_mode_updates_only_safe_candidates(self):
+        db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
+        result = self.run_with_plan(db, [target_for()], current_rows=rows(), expected=1, apply=True, confirm=applymod.APPLY_CONFIRMATION)
+        self.assertEqual(result["modified"], 1)
+        self.assertEqual(len(db["herbicide_records"].update_one_calls), 1)
+
+    def test_failure_after_partial_updates_produces_rollback_command(self):
+        doc1 = base_doc()
+        doc2 = base_doc()
+        doc2["_id"] = "doc-2"
+        doc2["product_name"] = "Safe Product 2"
+        doc2["product_key"] = "Safe Product 2|123"
+        collection = FakeCollection([doc1, doc2])
+        original_update_one = collection.update_one
+
+        def failing_second_update(query, update, session=None):
+            if query.get("_id") == "doc-2":
+                raise RuntimeError("network dropped")
+            return original_update_one(query, update, session=session)
+
+        collection.update_one = failing_second_update
+        db = FakeDB({"herbicide_records": collection})
+        temp_dir = Path(tempfile.mkdtemp())
+        with self.assertRaises(applymod.ApplyPartialFailure) as ctx:
+            self.run_with_plan(db, [target_for(doc1), target_for(doc2)], expected=2, apply=True, confirm=applymod.APPLY_CONFIRMATION, backup_dir=temp_dir)
+        self.assertIn("already modified: 1", str(ctx.exception))
+        summary = (applymod.DEFAULT_OUTPUT_DIR / "mongodb_composition_apply_summary.md").read_text(encoding="utf-8")
+        self.assertIn("Rollback command: python backend/rollback_corrected_compositions.py --backup-file", summary)
+
+    def test_preflight_performs_zero_writes(self):
+        db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
+        client = FakeClient({"ok": 1})
+        result = self.run_with_plan(db, [target_for()], preflight=True, client=client)
+        self.assertTrue(result["preflight"])
+        self.assertEqual(result["selected_mode"], "sequential_with_backup")
+        self.assertEqual(db["herbicide_records"].update_one_calls, [])
 
 
 if __name__ == "__main__":

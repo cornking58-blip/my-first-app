@@ -35,6 +35,7 @@ from dry_run_corrected_compositions import (
     find_mongo_matches,
     normalize_text,
     parsed_metadata,
+    row_identity_signature_from_values,
 )
 
 DEFAULT_DRY_RUN_REPORT = DEFAULT_OUTPUT_DIR / "mongodb_composition_dry_run_report.csv"
@@ -66,6 +67,7 @@ ALLOWED_UPDATE_FIELDS = {
     "has_composition_warning",
 }
 FORBIDDEN_WRITE_METHODS = {
+    "bulk_write",
     "delete_one",
     "delete_many",
     "insert_one",
@@ -88,6 +90,14 @@ REPORT_COLUMNS = [
 
 class ApplySafetyError(RuntimeError):
     """Raised when the guarded updater refuses to continue."""
+
+
+class ApplyPartialFailure(ApplySafetyError):
+    """Raised after sequential mode stops with already-applied updates."""
+
+    def __init__(self, message: str, report_rows: Sequence[Dict[str, str]]):
+        super().__init__(message)
+        self.report_rows = list(report_rows)
 
 
 @dataclass
@@ -272,7 +282,37 @@ def build_current_plan(db: Any, input_dir: Path, expected_safe_count: int, dry_r
     return targets, current_rows, dict(counts)
 
 
-def create_backup(targets: Sequence[ApplyTarget], backup_dir: Path) -> Path:
+def rollback_command(backup_file: Path | str) -> str:
+    return (
+        "python backend/rollback_corrected_compositions.py "
+        f"--backup-file {backup_file} --apply --confirm ROLLBACK_COMPOSITION_UPDATES"
+    )
+
+
+def verify_backup_file(backup_path: Path, expected_count: int) -> int:
+    try:
+        payload = json.loads(backup_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ApplySafetyError(f"Backup file could not be reopened and parsed: {backup_path}: {exc}") from exc
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise ApplySafetyError(f"Backup file is invalid: missing records array: {backup_path}")
+    if len(records) != expected_count:
+        raise ApplySafetyError(f"Backup document count mismatch: backup={len(records)}, expected={expected_count}")
+    seen = set()
+    for record in records:
+        key = (record.get("collection"), json.dumps(record.get("_id"), ensure_ascii=False, sort_keys=True))
+        if key in seen:
+            raise ApplySafetyError(f"Backup contains a duplicate target: {key}")
+        seen.add(key)
+        if "original_document" not in record:
+            raise ApplySafetyError(f"Backup record is incomplete for target: {key}")
+    return len(records)
+
+
+def create_backup(targets: Sequence[ApplyTarget], backup_dir: Path, expected_count: int) -> Path:
+    if len(targets) != expected_count:
+        raise ApplySafetyError(f"Refusing to create backup: targets={len(targets)}, expected={expected_count}")
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_path = backup_dir / f"composition_backup_{stamp}.json"
@@ -294,25 +334,78 @@ def create_backup(targets: Sequence[ApplyTarget], backup_dir: Path) -> Path:
             for target in targets
         ],
     }
-    backup_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    encoded = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    with backup_path.open("w", encoding="utf-8") as fh:
+        fh.write(encoded)
+        fh.flush()
+        os.fsync(fh.fileno())
+    verify_backup_file(backup_path, expected_count)
     return backup_path
 
 
-def supports_transactions(client: Any) -> bool:
-    if client is None or not hasattr(client, "start_session"):
-        return False
+def _admin_command(client: Any, command_name: str) -> Dict[str, Any]:
+    if client is None or not hasattr(client, "admin"):
+        return {}
+    response = client.admin.command(command_name)
+    return dict(response or {})
+
+
+def transaction_support_details(client: Any) -> Tuple[bool, Dict[str, Any]]:
+    if client is None:
+        return False, {"reason": "no MongoDB client was provided"}
     try:
-        with client.start_session() as session:
-            with session.start_transaction():
-                return True
+        hello = _admin_command(client, "hello")
     except Exception:
-        return False
+        hello = _admin_command(client, "isMaster")
+    is_mongos = hello.get("msg") == "isdbgrid"
+    has_replica_set = bool(hello.get("setName"))
+    supported = is_mongos or has_replica_set
+    details = {
+        "hello": hello,
+        "has_replica_set": has_replica_set,
+        "is_mongos": is_mongos,
+        "reason": "setName or mongos present" if supported else "standalone MongoDB: no setName and not mongos",
+    }
+    return supported, details
+
+
+def selected_apply_mode(client: Any) -> Tuple[str, Dict[str, Any]]:
+    supported, details = transaction_support_details(client)
+    return ("transaction" if supported else "sequential_with_backup"), details
+
+
+def is_unsupported_transaction_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "transaction numbers are only allowed on a replica set member or mongos" in message
+        or "transactions are not supported" in message
+        or "transaction" in message and "replica set" in message
+    )
+
+
+def document_identity_signature(document: Dict[str, Any]) -> str:
+    return row_identity_signature_from_values({
+        "product_key": document.get("product_key"),
+        "product_name": document.get("product_name"),
+        "registration_number": document.get("registration_number"),
+        "crop": document.get("crop"),
+        "target_object": document.get("target_object"),
+        "rate_raw": document.get("rate_raw"),
+        "application_method": document.get("application_method"),
+    })
 
 
 def verify_target_unchanged(collection: Any, target: ApplyTarget) -> Dict[str, Any]:
     current = collection.find_one({"_id": target.document_id})
     if not current:
         raise ApplySafetyError(f"Target document disappeared before update: {target.collection_name}/{target.document_id}")
+    if current.get("_id") != target.document_id:
+        raise ApplySafetyError(f"Target _id changed before update: {target.collection_name}/{target.document_id}")
+    current_signature = document_identity_signature(current)
+    if current_signature != target.identity_signature:
+        raise ApplySafetyError(
+            f"Changed-since-dry-run identity signature for {target.collection_name}/{target.document_id}; aborting."
+        )
     if current.get("active_substances_raw", "") != target.dry_run_composition:
         raise ApplySafetyError(
             f"Changed-since-dry-run composition detected for {target.collection_name}/{target.document_id}; aborting."
@@ -323,38 +416,47 @@ def verify_target_unchanged(collection: Any, target: ApplyTarget) -> Dict[str, A
     return current
 
 
-def apply_targets(db: Any, targets: Sequence[ApplyTarget], session: Any = None) -> List[Dict[str, str]]:
+def apply_targets(db: Any, targets: Sequence[ApplyTarget], session: Any = None, stop_on_partial: bool = False) -> List[Dict[str, str]]:
     report_rows: List[Dict[str, str]] = []
     for target in targets:
-        collection = db[target.collection_name]
-        before = verify_target_unchanged(collection, target)
-        unrelated_before = {k: json_safe(v) for k, v in before.items() if k not in ALLOWED_UPDATE_FIELDS}
-        result = collection.update_one(
-            {"_id": target.document_id, "active_substances_raw": target.dry_run_composition},
-            {"$set": target.update_fields},
-            session=session,
-        )
-        if result.matched_count != 1 or result.modified_count not in (0, 1):
-            raise ApplySafetyError(
-                f"Unexpected update result for {target.collection_name}/{target.document_id}: "
-                f"matched={result.matched_count}, modified={result.modified_count}"
+        try:
+            collection = db[target.collection_name]
+            before = verify_target_unchanged(collection, target)
+            unrelated_before = {k: json_safe(v) for k, v in before.items() if k not in ALLOWED_UPDATE_FIELDS}
+            result = collection.update_one(
+                {"_id": target.document_id, "active_substances_raw": target.dry_run_composition},
+                {"$set": target.update_fields},
+                session=session,
             )
-        after = collection.find_one({"_id": target.document_id})
-        if not after:
-            raise ApplySafetyError(f"Target document disappeared after update: {target.collection_name}/{target.document_id}")
-        unrelated_after = {k: json_safe(v) for k, v in after.items() if k not in ALLOWED_UPDATE_FIELDS}
-        if unrelated_before != unrelated_after:
-            raise ApplySafetyError(f"Unrelated field changed for {target.collection_name}/{target.document_id}; aborting.")
-        report_rows.append({
-            "collection": target.collection_name,
-            "product_name": target.row["product_name"],
-            "row_identity_signature": target.identity_signature,
-            "match_status": target.row["match_status"],
-            "action": "updated" if result.modified_count == 1 else "unchanged",
-            "matched_count": str(result.matched_count),
-            "modified_count": str(result.modified_count),
-            "message": "composition fields applied",
-        })
+            if result.matched_count != 1 or result.modified_count not in (0, 1):
+                raise ApplySafetyError(
+                    f"Unexpected update result for {target.collection_name}/{target.document_id}: "
+                    f"matched={result.matched_count}, modified={result.modified_count}"
+                )
+            after = collection.find_one({"_id": target.document_id})
+            if not after:
+                raise ApplySafetyError(f"Target document disappeared after update: {target.collection_name}/{target.document_id}")
+            unrelated_after = {k: json_safe(v) for k, v in after.items() if k not in ALLOWED_UPDATE_FIELDS}
+            if unrelated_before != unrelated_after:
+                raise ApplySafetyError(f"Unrelated field changed for {target.collection_name}/{target.document_id}; aborting.")
+            report_rows.append({
+                "collection": target.collection_name,
+                "product_name": target.row["product_name"],
+                "row_identity_signature": target.identity_signature,
+                "match_status": target.row["match_status"],
+                "action": "updated" if result.modified_count == 1 else "unchanged",
+                "matched_count": str(result.matched_count),
+                "modified_count": str(result.modified_count),
+                "message": "composition fields applied",
+            })
+        except Exception as exc:
+            if stop_on_partial and report_rows:
+                modified = sum(int(row["modified_count"]) for row in report_rows)
+                raise ApplyPartialFailure(
+                    f"Sequential update stopped after partial failure; already modified: {modified}; error: {exc}",
+                    report_rows,
+                ) from exc
+            raise
     return report_rows
 
 
@@ -405,10 +507,57 @@ def write_apply_outputs(report_rows: Sequence[Dict[str, str]], summary: Dict[str
         "Document counts before and after:",
         f"- Before: {summary['before_counts']}",
         f"- After: {summary['after_counts']}",
-        f"Rollback command: python backend/rollback_corrected_compositions.py --backup-file {summary['backup_file']} --apply --confirm ROLLBACK_COMPOSITION_UPDATES",
+        f"Rollback command: {summary['rollback_command']}",
     ]
     summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return report_path, summary_path
+
+
+def _manual_exclusion_confirmed(current_rows: Sequence[Dict[str, str]]) -> bool:
+    return all(row.get("safe_to_update") != "yes" for row in current_rows if row.get("match_status") == "manual_review_skip")
+
+
+def _unresolved_exclusion_confirmed(current_rows: Sequence[Dict[str, str]]) -> bool:
+    return all(row.get("safe_to_update") != "yes" for row in current_rows if row.get("match_status") == "unresolved_concentration_skip")
+
+
+def _base_summary(
+    *,
+    expected_safe_count: int,
+    targets: Sequence[ApplyTarget],
+    current_rows: Sequence[Dict[str, str]],
+    status_counts: Dict[str, int],
+    backup_file: Path | str,
+    transaction_mode: str,
+    before_counts: Dict[str, int],
+    after_counts: Dict[str, int],
+    report_rows: Sequence[Dict[str, str]],
+    failed: int,
+) -> Dict[str, Any]:
+    modified = sum(int(row["modified_count"]) for row in report_rows)
+    matched = sum(int(row["matched_count"]) for row in report_rows)
+    return {
+        "apply_enabled": True,
+        "expected_safe_count": expected_safe_count,
+        "attempted": len(report_rows) if failed else len(targets),
+        "matched": matched,
+        "modified": modified,
+        "unchanged": max(0, len(targets) - modified),
+        "skipped": len(current_rows) - len(targets),
+        "failed": failed,
+        "collections_affected": sorted({target.collection_name for target in targets}),
+        "backup_file": str(backup_file),
+        "backup_document_count": verify_backup_file(Path(backup_file), len(targets)) if backup_file != "none" else 0,
+        "transaction_mode": transaction_mode,
+        "selected_mode": transaction_mode,
+        "status_counts": status_counts,
+        "before_counts": before_counts,
+        "after_counts": after_counts,
+        "protect_combi_unchanged": any(PROTECTED_PRODUCT_FRAGMENT in normalize_text(row.get("product_name")) for row in current_rows),
+        "manual_rows_excluded": _manual_exclusion_confirmed(current_rows),
+        "unresolved_rows_excluded": _unresolved_exclusion_confirmed(current_rows),
+        "rollback_command": rollback_command(backup_file),
+    }
 
 
 def run_guarded_apply(
@@ -422,6 +571,7 @@ def run_guarded_apply(
     expected_safe_count: int = DEFAULT_EXPECTED_SAFE_COUNT,
     apply: bool = False,
     confirm: Optional[str] = None,
+    preflight: bool = False,
     validate_files: bool = True,
 ) -> Dict[str, Any]:
     if validate_files:
@@ -429,51 +579,108 @@ def run_guarded_apply(
     validate_database(db, EXPECTED_DATABASE_NAME)
     before_counts = collection_counts(db)
     targets, current_rows, status_counts = build_current_plan(db, input_dir, expected_safe_count, dry_run_report)
+    transaction_mode, transaction_details = selected_apply_mode(client)
+
+    if preflight:
+        return {
+            "apply_enabled": False,
+            "preflight": True,
+            "message": "Preflight completed; MongoDB writes performed: 0.",
+            "expected_safe_count": expected_safe_count,
+            "safe_update_count": len(targets),
+            "attempted": 0,
+            "status_counts": status_counts,
+            "transaction_support": transaction_mode == "transaction",
+            "transaction_details": transaction_details,
+            "selected_mode": transaction_mode,
+            "transaction_mode": transaction_mode,
+            "manual_rows_excluded": _manual_exclusion_confirmed(current_rows),
+            "unresolved_rows_excluded": _unresolved_exclusion_confirmed(current_rows),
+        }
 
     if not apply:
         return {
             "apply_enabled": False,
             "message": "Apply mode is disabled; validation only; MongoDB writes performed: 0.",
             "expected_safe_count": expected_safe_count,
+            "safe_update_count": len(targets),
             "attempted": 0,
             "status_counts": status_counts,
+            "transaction_support": transaction_mode == "transaction",
+            "selected_mode": transaction_mode,
+            "transaction_mode": transaction_mode,
         }
     if confirm != APPLY_CONFIRMATION:
         return {
             "apply_enabled": False,
             "message": "Wrong or missing confirmation; MongoDB writes performed: 0.",
             "expected_safe_count": expected_safe_count,
+            "safe_update_count": len(targets),
             "attempted": 0,
             "status_counts": status_counts,
+            "transaction_support": transaction_mode == "transaction",
+            "selected_mode": transaction_mode,
+            "transaction_mode": transaction_mode,
         }
 
-    backup_file = create_backup(targets, backup_dir)
-    transaction_mode = "transaction" if supports_transactions(client) else "sequential_with_rollback_file"
-    if transaction_mode == "transaction" and client is not None:
-        with client.start_session() as session:
-            with session.start_transaction():
-                report_rows = apply_targets(db, targets, session=session)
-    else:
-        report_rows = apply_targets(db, targets)
+    backup_file = create_backup(targets, backup_dir, expected_safe_count)
+    backup_document_count = verify_backup_file(backup_file, expected_safe_count)
+    print(f"Safe update count: {len(targets)}")
+    print(f"Selected mode: {transaction_mode}")
+    print(f"Backup path: {backup_file}")
+    print(f"Backup document count: {backup_document_count}")
+    print(f"Протект Комби excluded: {any(PROTECTED_PRODUCT_FRAGMENT in normalize_text(row.get('product_name')) for row in current_rows)}")
+    print(f"Manual/unresolved rows excluded: {_manual_exclusion_confirmed(current_rows) and _unresolved_exclusion_confirmed(current_rows)}")
+
+    try:
+        if transaction_mode == "transaction" and client is not None:
+            try:
+                with client.start_session() as session:
+                    with session.start_transaction():
+                        report_rows = apply_targets(db, targets, session=session)
+            except Exception as exc:
+                if not is_unsupported_transaction_error(exc):
+                    raise
+                print("Transaction support probe was optimistic, but MongoDB rejected transactions before any committed update.")
+                print("Falling back to selected mode: sequential_with_backup")
+                transaction_mode = "sequential_with_backup"
+                report_rows = apply_targets(db, targets, stop_on_partial=True)
+        else:
+            report_rows = apply_targets(db, targets, stop_on_partial=True)
+    except ApplyPartialFailure as exc:
+        after_counts = collection_counts(db)
+        summary = _base_summary(
+            expected_safe_count=expected_safe_count,
+            targets=targets,
+            current_rows=current_rows,
+            status_counts=status_counts,
+            backup_file=backup_file,
+            transaction_mode=transaction_mode,
+            before_counts=before_counts,
+            after_counts=after_counts,
+            report_rows=exc.report_rows,
+            failed=1,
+        )
+        write_apply_outputs(exc.report_rows, summary, DEFAULT_OUTPUT_DIR)
+        print(f"Sequential update failed after partial writes; already modified: {summary['modified']}")
+        print(f"Rollback command: {summary['rollback_command']}")
+        raise
+
     validate_no_forbidden_collection_methods_called(db)
     verification = verify_after_apply(db, targets, before_counts, current_rows)
-    modified = sum(int(row["modified_count"]) for row in report_rows)
-    matched = sum(int(row["matched_count"]) for row in report_rows)
-    summary = {
-        "apply_enabled": True,
-        "expected_safe_count": expected_safe_count,
-        "attempted": len(targets),
-        "matched": matched,
-        "modified": modified,
-        "unchanged": len(targets) - modified,
-        "skipped": len(current_rows) - len(targets),
-        "failed": 0,
-        "collections_affected": sorted({target.collection_name for target in targets}),
-        "backup_file": str(backup_file),
-        "transaction_mode": transaction_mode,
-        "status_counts": status_counts,
-        **verification,
-    }
+    summary = _base_summary(
+        expected_safe_count=expected_safe_count,
+        targets=targets,
+        current_rows=current_rows,
+        status_counts=status_counts,
+        backup_file=backup_file,
+        transaction_mode=transaction_mode,
+        before_counts=before_counts,
+        after_counts=verification["after_counts"],
+        report_rows=report_rows,
+        failed=0,
+    )
+    summary.update(verification)
     write_apply_outputs(report_rows, summary, DEFAULT_OUTPUT_DIR)
     return summary
 
@@ -481,6 +688,7 @@ def run_guarded_apply(
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Guardedly apply approved MongoDB composition corrections.")
     parser.add_argument("--apply", action="store_true", help="Enable live writes. Without this flag the script validates only.")
+    parser.add_argument("--preflight", action="store_true", help="Validate MongoDB state and selected mode without backup creation or writes.")
     parser.add_argument("--confirm", help=f"Required confirmation text for live writes: {APPLY_CONFIRMATION}")
     parser.add_argument("--expected-safe-count", type=int, default=DEFAULT_EXPECTED_SAFE_COUNT, help="Expected number of safe-update rows.")
     parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR, help="Directory with corrected workbooks.")
@@ -495,6 +703,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_arg_parser().parse_args(argv)
     print("MongoDB composition guarded updater starting.")
     print(f"Apply mode enabled: {args.apply}")
+    print(f"Preflight mode enabled: {args.preflight}")
     print(f"Mongo URI env var: {args.mongo_uri_env} (value hidden)")
     if not args.apply:
         print("Apply mode is disabled; validation only; MongoDB writes performed: 0.")
@@ -510,15 +719,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             expected_safe_count=args.expected_safe_count,
             apply=args.apply,
             confirm=args.confirm,
+            preflight=args.preflight,
         )
     except Exception as exc:
         print(f"Guarded updater refused to continue: {exc}", file=sys.stderr)
         return 2
     print(result["message"] if "message" in result else "Apply completed and verified.")
+    if result.get("preflight"):
+        print(f"Safe update count: {result['safe_update_count']}")
+        print(f"Blocking counts are zero: {not any(result['status_counts'].get(status, 0) for status in BLOCKING_STATUSES)}")
+        print(f"Transaction support: {'yes' if result['transaction_support'] else 'no'}")
+        print(f"Selected mode: {result['selected_mode']}")
+        print("MongoDB writes performed: 0")
     if result.get("apply_enabled"):
         print(f"Backup file: {result['backup_file']}")
-        print(f"Transaction mode: {result['transaction_mode']}")
+        print(f"Selected mode: {result['transaction_mode']}")
+        print(f"Backup document count: {result['backup_document_count']}")
         print(f"Modified documents: {result['modified']}")
+        print(f"Rollback command: {result['rollback_command']}")
     return 0
 
 
