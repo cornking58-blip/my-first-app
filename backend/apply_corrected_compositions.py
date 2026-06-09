@@ -190,7 +190,7 @@ def validate_no_forbidden_collection_methods_called(db: Any) -> None:
         collection = db[name]
         for method in FORBIDDEN_WRITE_METHODS:
             calls = getattr(collection, f"{method}_calls", None)
-            if calls:
+            if calls is not None and isinstance(calls, (list, tuple, set)) and len(calls) > 0:
                 raise ApplySafetyError(f"Forbidden MongoDB method was called: {name}.{method}")
 
 
@@ -500,6 +500,7 @@ def write_apply_outputs(report_rows: Sequence[Dict[str, str]], summary: Dict[str
         f"Unchanged: {summary['unchanged']}",
         f"Skipped: {summary['skipped']}",
         f"Failed: {summary['failed']}",
+        f"MongoDB writes performed before failure: {summary['mongodb_writes_performed_before_failure']}",
         f"Collections affected: {', '.join(summary['collections_affected']) or 'none'}",
         f"Backup file path: {summary['backup_file']}",
         f"Transaction mode: {summary['transaction_mode']}",
@@ -561,6 +562,7 @@ def _base_summary(
         "manual_rows_excluded": _manual_exclusion_confirmed(current_rows),
         "unresolved_rows_excluded": _unresolved_exclusion_confirmed(current_rows),
         "rollback_command": rollback_command(backup_file),
+        "mongodb_writes_performed_before_failure": modified if failed else 0,
     }
 
 
@@ -590,6 +592,7 @@ def run_guarded_apply(
             "apply_enabled": False,
             "preflight": True,
             "message": "Preflight completed; MongoDB writes performed: 0.",
+            "mongodb_writes_performed_before_failure": 0,
             "expected_safe_count": expected_safe_count,
             "safe_update_count": len(targets),
             "attempted": 0,
@@ -609,6 +612,7 @@ def run_guarded_apply(
         return {
             "apply_enabled": False,
             "message": "Apply mode is disabled; validation only; MongoDB writes performed: 0.",
+            "mongodb_writes_performed_before_failure": 0,
             "expected_safe_count": expected_safe_count,
             "safe_update_count": len(targets),
             "attempted": 0,
@@ -622,6 +626,7 @@ def run_guarded_apply(
         return {
             "apply_enabled": False,
             "message": "Wrong or missing confirmation; MongoDB writes performed: 0.",
+            "mongodb_writes_performed_before_failure": 0,
             "expected_safe_count": expected_safe_count,
             "safe_update_count": len(targets),
             "attempted": 0,
@@ -714,6 +719,7 @@ def print_preflight_summary(result: Dict[str, Any]) -> None:
     print(f"Transaction support: {'yes' if result['transaction_support'] else 'no'}")
     print(f"Selected mode: {result['selected_mode']}")
     print("MongoDB writes performed: 0")
+    print(f"MongoDB writes performed before failure: {result.get('mongodb_writes_performed_before_failure', 0)}")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -749,6 +755,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"Selected mode: {result['transaction_mode']}")
         print(f"Backup document count: {result['backup_document_count']}")
         print(f"Modified documents: {result['modified']}")
+        print(f"MongoDB writes performed before failure: {result['mongodb_writes_performed_before_failure']}")
         print(f"Rollback command: {result['rollback_command']}")
     return 0
 
