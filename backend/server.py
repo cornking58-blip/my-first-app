@@ -365,71 +365,169 @@ def build_search_match(query: str) -> Optional[dict]:
 
 # ==================== ACTIVE SUBSTANCE PARSER ====================
 
-def parse_active_substances(raw: Optional[str]) -> List[Dict]:
-    """
-    Parse active substances from raw string.
-    Examples:
-    - "(360 г/л Глифосат кислоты (изопропиламинная соль))"
-    - "(140 г/л феноксапроп-П-этил + 47 г/л антидот - клоквинтосет-мексил)"
-    - "(750 г/кг трибенурон-метил)"
-    
-    Returns list of dicts with:
-    - name: substance name
-    - concentration: numeric value
-    - unit: г/л or г/кг
-    - is_antidote: whether it's an antidote
-    """
-    if not raw:
+SUPPORTED_CONCENTRATION_UNITS_REGEX = r"г/л|г/кг|%"
+
+
+def _iter_canonical_composition_values(raw) -> List[str]:
+    """Return unique canonical composition strings without mixing in other fields."""
+    if raw is None:
         return []
-    
+
+    values = raw if isinstance(raw, (list, tuple, set)) else [raw]
+    canonical_values = []
+    seen = set()
+
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text or text.lower() in {"nan", "none"}:
+            continue
+        dedupe_key = re.sub(r"\s+", " ", text.casefold().replace("ё", "е")).strip()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        canonical_values.append(text)
+
+    return canonical_values
+
+
+def _active_substance_dedupe_key(substance: Dict) -> tuple:
+    return (
+        normalize_substance_name(substance.get("name", "")),
+        substance.get("concentration"),
+        substance.get("unit"),
+        bool(substance.get("is_antidote")),
+        bool(substance.get("concentration_unresolved")),
+    )
+
+
+def _is_known_active_substance_name(name: str) -> bool:
+    """Return True when a name is an exact known HRAC/FRAC/IRAC lookup key."""
+    try:
+        normalized = normalize_resistance_lookup_name(name)
+        return any(normalized in table for table in RESISTANCE_GROUPS.values())
+    except NameError:
+        return False
+
+
+def _split_joined_active_substance_names(name: str) -> List[str]:
+    """Split OCR/parser joins like "пираклостробин - протиоконазол" only when safe."""
+    parts = [part.strip() for part in re.split(r"\s+[-–—]\s+", name) if part.strip()]
+    if len(parts) <= 1:
+        return [name.strip()]
+
+    # Hyphens are also normal inside chemical names, e.g. "тиофанат - метил".
+    # Split only when every side is independently known as an active substance.
+    if all(_is_known_active_substance_name(part) for part in parts):
+        return parts
+
+    return [name.strip()]
+
+
+def _build_parsed_substance(name: str, concentration: Optional[float], unit: Optional[str], is_antidote: bool, source_fragment: Optional[str] = None) -> Dict:
+    substance = {
+        "name": name.strip(),
+        "concentration": concentration,
+        "unit": unit,
+        "is_antidote": is_antidote
+    }
+    if concentration is None:
+        substance["concentration_unresolved"] = True
+        substance["concentration_note"] = "Концентрация не указана в исходном поле состава"
+    if source_fragment:
+        substance["source_fragment"] = source_fragment
+    return substance
+
+
+def _parse_active_substances_text(raw: str) -> List[Dict]:
     substances = []
-    
+
     # Remove outer parentheses
     text = raw.strip()
     if text.startswith('('):
         text = text[1:]
     if text.endswith(')'):
         text = text[:-1]
-    
+
     # Split by + to get individual components
     parts = re.split(r'\s*\+\s*', text)
-    
+
     for part in parts:
         part = part.strip()
         if not part:
             continue
-        
+
         # Check if it's an antidote
         is_antidote = 'антидот' in part.lower()
-        
+
         # Pattern: number unit name
         # e.g., "360 г/л Глифосат кислоты"
+        # e.g., "750 г/кг трибенурон-метил"
+        # e.g., "10 % имидаклоприд"
         # e.g., "47 г/л антидот - клоквинтосет-мексил"
-        match = re.match(r'(\d+(?:[.,]\d+)?)\s*(г/л|г/кг)\s*(.+)', part)
-        
+        match = re.match(rf'(\d+(?:[.,]\d+)?)\s*({SUPPORTED_CONCENTRATION_UNITS_REGEX})\s*(.+)', part)
+
         if match:
             concentration_str = match.group(1).replace(',', '.')
             unit = match.group(2)
             name = match.group(3).strip()
-            
+
             # Clean up the name - remove "антидот -" prefix
             name = re.sub(r'^антидот\s*[-–]?\s*', '', name, flags=re.IGNORECASE)
-            
+
             # Remove trailing parentheses content that's part of the name
             # Keep it as part of the substance name
-            
+
             try:
                 concentration = float(concentration_str)
             except:
                 concentration = 0
-            
-            substances.append({
-                "name": name.strip(),
-                "concentration": concentration,
-                "unit": unit,
-                "is_antidote": is_antidote
-            })
-    
+
+            split_names = _split_joined_active_substance_names(name)
+            if len(split_names) == 1:
+                substances.append(_build_parsed_substance(split_names[0], concentration, unit, is_antidote))
+            else:
+                for index, split_name in enumerate(split_names):
+                    # The source concentration is reliable only for the name that immediately follows it.
+                    # Later names in the same joined fragment are real substances, but their separate
+                    # concentrations are not present in the canonical composition field.
+                    substances.append(_build_parsed_substance(
+                        split_name,
+                        concentration if index == 0 else None,
+                        unit if index == 0 else None,
+                        is_antidote,
+                        source_fragment=name,
+                    ))
+
+    return substances
+
+
+def parse_active_substances(raw: Optional[str]) -> List[Dict]:
+    """
+    Parse active substances from canonical composition text only.
+    Examples:
+    - "(360 г/л Глифосат кислоты (изопропиламинная соль))"
+    - "(140 г/л феноксапроп-П-этил + 47 г/л антидот - клоквинтосет-мексил)"
+    - "(750 г/кг трибенурон-метил)"
+
+    Returns list of dicts with:
+    - name: substance name
+    - concentration: numeric value
+    - unit: г/л, г/кг, or %
+    - is_antidote: whether it's an antidote
+    """
+    substances = []
+    seen_substances = set()
+
+    for composition in _iter_canonical_composition_values(raw):
+        for substance in _parse_active_substances_text(composition):
+            dedupe_key = _active_substance_dedupe_key(substance)
+            if dedupe_key in seen_substances:
+                continue
+            seen_substances.add(dedupe_key)
+            substances.append(substance)
+
     return substances
 
 
@@ -1178,6 +1276,22 @@ def build_substance_cost_breakdown(
     return breakdown
 
 
+def sum_known_concentrations(substances: List[Dict]) -> float:
+    return sum(
+        substance.get("concentration") or 0
+        for substance in substances
+        if substance.get("concentration") is not None
+    )
+
+
+def concentration_difference(left_substance: Dict, right_substance: Dict) -> Optional[float]:
+    left_concentration = left_substance.get("concentration")
+    right_concentration = right_substance.get("concentration")
+    if left_concentration is None or right_concentration is None:
+        return None
+    return abs(left_concentration - right_concentration)
+
+
 def build_price_analysis(
     left_price: Optional[float],
     right_price: Optional[float],
@@ -1191,8 +1305,8 @@ def build_price_analysis(
     if not left_price and not right_price:
         return None
 
-    left_total_concentration = sum(s["concentration"] for s in left_active)
-    right_total_concentration = sum(s["concentration"] for s in right_active)
+    left_total_concentration = sum_known_concentrations(left_active)
+    right_total_concentration = sum_known_concentrations(right_active)
     left_substances_cost = build_substance_cost_breakdown("left", left_active, left_price, left_rate_used, left_rate_unit)
     right_substances_cost = build_substance_cost_breakdown("right", right_active, right_price, right_rate_used, right_rate_unit)
 
@@ -1342,8 +1456,14 @@ async def build_advanced_compare_response(
                     "right_unit": right_substance["unit"],
                     "left_per_ha": round(left_per_ha, 2) if left_per_ha else None,
                     "right_per_ha": round(right_per_ha, 2) if right_per_ha else None,
-                    "concentration_diff": round(abs(left_substance["concentration"] - right_substance["concentration"]), 2),
-                    "same_concentration": abs(left_substance["concentration"] - right_substance["concentration"]) < 0.01,
+                    "concentration_diff": (
+                        round(concentration_difference(left_substance, right_substance), 2)
+                        if concentration_difference(left_substance, right_substance) is not None else None
+                    ),
+                    "same_concentration": (
+                        concentration_difference(left_substance, right_substance) < 0.01
+                        if concentration_difference(left_substance, right_substance) is not None else False
+                    ),
                     "resistance_system": left_substance.get("resistance_system") or right_substance.get("resistance_system"),
                     "resistance_group": left_substance.get("resistance_group") or right_substance.get("resistance_group"),
                     "resistance_group_name": left_substance.get("resistance_group_name") or right_substance.get("resistance_group_name"),
@@ -1396,8 +1516,8 @@ async def build_advanced_compare_response(
                 "per_ha": round(per_ha, 2) if per_ha else None,
             })
 
-    left_total_concentration = sum(s["concentration"] for s in left_active)
-    right_total_concentration = sum(s["concentration"] for s in right_active)
+    left_total_concentration = sum_known_concentrations(left_active)
+    right_total_concentration = sum_known_concentrations(right_active)
     left_total_per_ha = calculate_total_active_amount(left_active, left_rate_used, left_rate_unit)
     right_total_per_ha = calculate_total_active_amount(right_active, right_rate_used, right_rate_unit)
 
