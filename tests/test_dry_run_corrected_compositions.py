@@ -34,6 +34,11 @@ class DryRunCorrectedCompositionTests(unittest.TestCase):
             product_key="Тест|123",
             slug_product_key="тест-123",
             registration_number="123",
+            record_id=None,
+            crop="Пшеница",
+            target_object="Сорные растения",
+            rate_raw="1,0 л/га",
+            application_method="Опрыскивание",
             manufacturer="Завод",
             formulation="КЭ",
             original_composition="(100 г/л вещество)",
@@ -50,6 +55,11 @@ class DryRunCorrectedCompositionTests(unittest.TestCase):
             product_name="Тест",
             product_key="Тест|123",
             registration_number="123",
+            record_id=None,
+            crop="Пшеница",
+            target_object="Сорные растения",
+            rate_raw="1,0 л/га",
+            application_method="Опрыскивание",
             manufacturer="Завод",
             formulation="КЭ",
             active_substances_raw="(100 г/л вещество)",
@@ -76,10 +86,99 @@ class DryRunCorrectedCompositionTests(unittest.TestCase):
         self.assertEqual(result["match_status"], "ambiguous_mongo_match")
         self.assertEqual(result["safe_to_update"], "no")
 
-    def test_duplicate_mongo_records_same_composition(self):
+    def test_true_duplicate_mongo_records_same_identity(self):
         records = [self.record(_id="aaaaaaaaaaaa"), self.record(_id="bbbbbbbbbbbb")]
         result = classify_corrected_row(SafeMongoCollection(FakeCollection(records)), self.corrected(corrected_composition="(150 г/л вещество)"))
-        self.assertEqual(result["match_status"], "duplicate_mongo_records")
+        self.assertEqual(result["match_status"], "true_duplicate_mongo_records")
+        self.assertEqual(result["safe_to_update"], "no")
+
+
+    def test_same_product_different_crop_matches_correct_crop_row(self):
+        records = [
+            self.record(_id="aaaaaaaaaaaa", crop="Ячмень"),
+            self.record(_id="bbbbbbbbbbbb", crop="Пшеница"),
+        ]
+        result = classify_corrected_row(SafeMongoCollection(FakeCollection(records)), self.corrected(corrected_composition="(150 г/л вещество)"))
+        self.assertEqual(result["match_status"], "safe_update_candidate")
+        self.assertEqual(result["mongo_record_id_masked"], "bbbb…bbbb")
+        self.assertEqual(result["match_strategy"], "level_2_product_key_application_identity")
+
+    def test_same_product_same_crop_different_target_matches_correct_target_row(self):
+        records = [
+            self.record(_id="aaaaaaaaaaaa", target_object="Болезни"),
+            self.record(_id="bbbbbbbbbbbb", target_object="Сорные растения"),
+        ]
+        result = classify_corrected_row(SafeMongoCollection(FakeCollection(records)), self.corrected(corrected_composition="(150 г/л вещество)"))
+        self.assertEqual(result["match_status"], "safe_update_candidate")
+        self.assertEqual(result["mongo_record_id_masked"], "bbbb…bbbb")
+
+    def test_same_product_same_crop_target_different_rate_matches_correct_rate_row(self):
+        records = [
+            self.record(_id="aaaaaaaaaaaa", rate_raw="2,0 л/га"),
+            self.record(_id="bbbbbbbbbbbb", rate_raw="1,0 л/га"),
+        ]
+        result = classify_corrected_row(SafeMongoCollection(FakeCollection(records)), self.corrected(corrected_composition="(150 г/л вещество)"))
+        self.assertEqual(result["match_status"], "safe_update_candidate")
+        self.assertEqual(result["mongo_record_id_masked"], "bbbb…bbbb")
+
+    def test_same_product_same_crop_target_rate_different_method_matches_correct_method_row(self):
+        records = [
+            self.record(_id="aaaaaaaaaaaa", application_method="Протравливание"),
+            self.record(_id="bbbbbbbbbbbb", application_method="Опрыскивание"),
+        ]
+        result = classify_corrected_row(SafeMongoCollection(FakeCollection(records)), self.corrected(corrected_composition="(150 г/л вещество)"))
+        self.assertEqual(result["match_status"], "safe_update_candidate")
+        self.assertEqual(result["mongo_record_id_masked"], "bbbb…bbbb")
+
+    def test_record_id_match_has_highest_priority(self):
+        records = [
+            self.record(_id="aaaaaaaaaaaa", record_id="1", crop="Ячмень"),
+            self.record(_id="bbbbbbbbbbbb", record_id="2", crop="Пшеница"),
+        ]
+        result = classify_corrected_row(
+            SafeMongoCollection(FakeCollection(records)),
+            self.corrected(record_id="1", corrected_composition="(150 г/л вещество)"),
+        )
+        self.assertEqual(result["match_status"], "safe_update_candidate")
+        self.assertEqual(result["mongo_record_id_masked"], "aaaa…aaaa")
+        self.assertEqual(result["match_strategy"], "level_1_record_id")
+
+    def test_numeric_record_id_matches_excel_text_record_id(self):
+        records = [
+            self.record(_id="aaaaaaaaaaaa", record_id=1, crop="Ячмень"),
+            self.record(_id="bbbbbbbbbbbb", record_id=2, crop="Пшеница"),
+        ]
+        result = classify_corrected_row(
+            SafeMongoCollection(FakeCollection(records)),
+            self.corrected(record_id="1.0", corrected_composition="(150 г/л вещество)"),
+        )
+        self.assertEqual(result["match_status"], "safe_update_candidate")
+        self.assertEqual(result["mongo_record_id_masked"], "aaaa…aaaa")
+        self.assertEqual(result["match_strategy"], "level_1_record_id")
+
+    def test_product_name_only_matching_is_disabled(self):
+        corrected = self.corrected(
+            product_key="Тест|",
+            registration_number=None,
+            crop=None,
+            target_object=None,
+            rate_raw=None,
+            application_method=None,
+        )
+        result = classify_corrected_row(SafeMongoCollection(FakeCollection([self.record(product_key="Тест|")])), corrected)
+        self.assertEqual(result["match_status"], "mongo_record_not_found")
+        self.assertIn("product-name-only", result["ambiguity_reason"])
+
+    def test_ambiguous_rows_remain_ambiguous_after_narrowing(self):
+        records = [
+            self.record(_id="aaaaaaaaaaaa", manufacturer="Завод А"),
+            self.record(_id="bbbbbbbbbbbb", manufacturer="Завод Б"),
+        ]
+        result = classify_corrected_row(
+            SafeMongoCollection(FakeCollection(records)),
+            self.corrected(manufacturer=None, corrected_composition="(150 г/л вещество)"),
+        )
+        self.assertEqual(result["match_status"], "ambiguous_mongo_match")
         self.assertEqual(result["safe_to_update"], "no")
 
     def test_missing_mongo_record(self):
