@@ -1513,31 +1513,25 @@ def build_substance_cost_breakdown(
     rate_used: Optional[float],
     rate_unit: Optional[str],
 ) -> List[Dict[str, Any]]:
-    """Estimate cost metrics for each active substance separately."""
+    """Estimate full-treatment cost per gram for each active substance separately."""
     if not price or not rate_used:
         return []
 
     breakdown = []
     total_cost_per_ha = price * rate_used
-    total_amount = calculate_total_active_amount(substances, rate_used, rate_unit)
 
     for substance in substances:
-        concentration = substance.get("concentration") or 0
-        if concentration <= 0:
+        concentration = substance.get("concentration")
+        if concentration is None or concentration <= 0:
             continue
 
         grams_per_ha = calculate_active_amount(concentration, substance.get("unit"), rate_used, rate_unit)
         if grams_per_ha is None or grams_per_ha <= 0:
             continue
 
-        estimated_cost_share_per_ha = (
-            total_cost_per_ha * grams_per_ha / total_amount
-            if total_amount and total_amount > 0 else None
-        )
-        estimated_cost_per_gram = (
-            estimated_cost_share_per_ha / grams_per_ha
-            if estimated_cost_share_per_ha is not None and grams_per_ha > 0 else None
-        )
+        # Do not split treatment cost between components. This metric means:
+        # full treatment cost per hectare / grams of this substance delivered per hectare.
+        estimated_cost_per_gram = total_cost_per_ha / grams_per_ha
 
         breakdown.append({
             "side": side,
@@ -1548,8 +1542,10 @@ def build_substance_cost_breakdown(
             "rate_used": rate_used,
             "rate_unit": rate_unit,
             "grams_per_ha": round(grams_per_ha, 4),
-            "estimated_cost_share_per_ha": round(estimated_cost_share_per_ha, 4) if estimated_cost_share_per_ha is not None else None,
-            "estimated_cost_per_gram": round(estimated_cost_per_gram, 6) if estimated_cost_per_gram is not None else None,
+            # Preserved for API compatibility only. The new calculation no longer allocates
+            # a misleading proportional per-substance cost share.
+            "estimated_cost_share_per_ha": None,
+            "estimated_cost_per_gram": round(estimated_cost_per_gram, 6),
         })
 
     return breakdown

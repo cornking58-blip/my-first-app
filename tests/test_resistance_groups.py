@@ -881,9 +881,236 @@ class AdvancedCompareResponseTest(unittest.TestCase):
         )
 
         self.assertEqual(unmatched_cost["grams_per_ha"], 200.0)
-        self.assertGreater(unmatched_cost["estimated_cost_share_per_ha"], 0)
-        self.assertGreater(unmatched_cost["estimated_cost_per_gram"], 0)
+        self.assertIsNone(unmatched_cost["estimated_cost_share_per_ha"])
+        self.assertEqual(unmatched_cost["estimated_cost_per_gram"], 6.0)
         self.assertEqual(unmatched_cost["rate_unit"], None)
+
+    def test_single_component_product_uses_full_treatment_cost_per_substance_gram(self):
+        collection = FakeCollection({
+            "left": [
+                {
+                    "product_key": "left",
+                    "product_name": "Один компонент",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л вещество а)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,5 л/га",
+                    "crop": "пшеница",
+                }
+            ],
+            "right": [
+                {
+                    "product_key": "right",
+                    "product_name": "Контроль",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л вещество б)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,5 л/га",
+                    "crop": "пшеница",
+                }
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="left",
+            right_key="right",
+            left_price=1000,
+            right_price=None,
+            left_rate=None,
+            right_rate=None,
+            crop=None,
+        )
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "fungicide"))
+        cost = response["price_analysis"]["left_substances_cost"][0]
+
+        self.assertEqual(response["price_analysis"]["left_cost_per_ha"], 500)
+        self.assertEqual(cost["grams_per_ha"], 50)
+        self.assertIsNone(cost["estimated_cost_share_per_ha"])
+        self.assertEqual(cost["estimated_cost_per_gram"], 10)
+
+    def test_two_component_product_does_not_use_old_proportional_cost_formula(self):
+        response = self.compare(left_price=1000)
+        left_costs = response["price_analysis"]["left_substances_cost"]
+        substance_a = next(item for item in left_costs if item["substance_name"] == "дифеноконазол")
+        substance_b = next(item for item in left_costs if item["substance_name"] == "азоксистробин")
+
+        self.assertEqual(response["price_analysis"]["left_cost_per_ha"], 1000)
+        self.assertEqual(substance_a["grams_per_ha"], 100)
+        self.assertEqual(substance_b["grams_per_ha"], 200)
+        self.assertEqual(substance_a["estimated_cost_per_gram"], 10)
+        self.assertEqual(substance_b["estimated_cost_per_gram"], 5)
+        self.assertNotEqual(substance_a["estimated_cost_per_gram"], substance_b["estimated_cost_per_gram"])
+        self.assertIsNone(substance_a["estimated_cost_share_per_ha"])
+        self.assertIsNone(substance_b["estimated_cost_share_per_ha"])
+
+    def test_missing_rate_returns_no_per_gram_metric(self):
+        collection = FakeCollection({
+            "left": [
+                {
+                    "product_key": "left",
+                    "product_name": "Без нормы",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л вещество а)",
+                    "registration_status": "Действует",
+                    "rate_raw": "",
+                    "crop": "пшеница",
+                }
+            ],
+            "right": [
+                {
+                    "product_key": "right",
+                    "product_name": "Контроль",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л вещество б)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,5 л/га",
+                    "crop": "пшеница",
+                }
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="left",
+            right_key="right",
+            left_price=1000,
+            right_price=None,
+            left_rate=None,
+            right_rate=None,
+            crop=None,
+        )
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "fungicide"))
+
+        self.assertEqual(response["price_analysis"]["left_substances_cost"], [])
+
+    def test_incompatible_units_return_no_per_gram_metric(self):
+        collection = FakeCollection({
+            "left": [
+                {
+                    "product_key": "left",
+                    "product_name": "Несовместимые единицы",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л вещество а)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,5 кг/га",
+                    "crop": "пшеница",
+                }
+            ],
+            "right": [
+                {
+                    "product_key": "right",
+                    "product_name": "Контроль",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л вещество б)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,5 л/га",
+                    "crop": "пшеница",
+                }
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="left",
+            right_key="right",
+            left_price=1000,
+            right_price=None,
+            left_rate=None,
+            right_rate=None,
+            crop=None,
+        )
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "fungicide"))
+
+        self.assertEqual(response["price_analysis"]["left_substances_cost"], [])
+
+    def test_dry_and_liquid_products_calculate_unit_aware_costs(self):
+        collection = FakeCollection({
+            "left": [
+                {
+                    "product_key": "left",
+                    "product_name": "Сухой",
+                    "formulation": "ВДГ",
+                    "active_substances_raw": "(750 г/кг вещество сухое)",
+                    "registration_status": "Действует",
+                    "rate_raw": "50 г/га",
+                    "crop": "пшеница",
+                }
+            ],
+            "right": [
+                {
+                    "product_key": "right",
+                    "product_name": "Жидкий",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л вещество жидкое)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,5 л/га",
+                    "crop": "пшеница",
+                }
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="left",
+            right_key="right",
+            left_price=1000,
+            right_price=1000,
+            left_rate=None,
+            right_rate=None,
+            crop=None,
+        )
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "herbicide"))
+        left_cost = response["price_analysis"]["left_substances_cost"][0]
+        right_cost = response["price_analysis"]["right_substances_cost"][0]
+
+        self.assertEqual(left_cost["grams_per_ha"], 37.5)
+        self.assertAlmostEqual(left_cost["estimated_cost_per_gram"], 1.333333)
+        self.assertEqual(right_cost["grams_per_ha"], 50)
+        self.assertEqual(right_cost["estimated_cost_per_gram"], 10)
+
+    def test_identical_substances_still_match_and_receive_costs_on_both_sides(self):
+        collection = FakeCollection({
+            "left": [
+                {
+                    "product_key": "left",
+                    "product_name": "Препарат А",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л пираклостробин)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,5 л/га",
+                    "crop": "пшеница",
+                }
+            ],
+            "right": [
+                {
+                    "product_key": "right",
+                    "product_name": "Препарат Б",
+                    "formulation": "КЭ",
+                    "active_substances_raw": "(100 г/л ПИРАКЛОСТРОБИН)",
+                    "registration_status": "Действует",
+                    "rate_raw": "0,3 л/га",
+                    "crop": "пшеница",
+                }
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="left",
+            right_key="right",
+            left_price=1000,
+            right_price=900,
+            left_rate=None,
+            right_rate=None,
+            crop=None,
+        )
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "fungicide"))
+
+        self.assertEqual([item["name"].lower() for item in response["analysis"]["identical_substances"]], ["пираклостробин"])
+        self.assertEqual(response["price_analysis"]["left_substances_cost"][0]["estimated_cost_per_gram"], 10)
+        self.assertEqual(response["price_analysis"]["right_substances_cost"][0]["estimated_cost_per_gram"], 9)
+
+    def test_existing_advanced_endpoint_urls_remain_unchanged(self):
+        self.assertIn('@api_router.post("/herbicides/compare-advanced")', SERVER_TEXT)
+        self.assertIn('@api_router.post("/insecticides/compare-advanced")', SERVER_TEXT)
+        self.assertIn('@api_router.post("/fungicides/compare-advanced")', SERVER_TEXT)
+        self.assertIn('@api_router.post("/seed-treatments/compare-advanced")', SERVER_TEXT)
 
     def test_price_analysis_does_not_return_fake_substance_cost_without_price(self):
         response = self.compare(left_price=1200, right_price=None)
