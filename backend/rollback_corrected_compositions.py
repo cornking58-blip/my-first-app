@@ -73,9 +73,19 @@ def run_rollback(db: Any, backup_file: Path, *, apply: bool = False, confirm: Op
     payload = load_backup(backup_file)
     before_counts = collection_counts(db)
     if not apply:
-        return {"apply_enabled": False, "message": "Rollback apply mode is disabled; MongoDB writes performed: 0.", "records": len(payload["records"])}
+        return {
+            "apply_enabled": False,
+            "message": "Rollback apply mode is disabled; MongoDB writes performed: 0.",
+            "mongodb_writes_performed_before_failure": 0,
+            "records": len(payload["records"]),
+        }
     if confirm != ROLLBACK_CONFIRMATION:
-        return {"apply_enabled": False, "message": "Wrong or missing rollback confirmation; MongoDB writes performed: 0.", "records": len(payload["records"])}
+        return {
+            "apply_enabled": False,
+            "message": "Wrong or missing rollback confirmation; MongoDB writes performed: 0.",
+            "mongodb_writes_performed_before_failure": 0,
+            "records": len(payload["records"]),
+        }
 
     matched = 0
     modified = 0
@@ -86,7 +96,8 @@ def run_rollback(db: Any, backup_file: Path, *, apply: bool = False, confirm: Op
         if doc_id is None:
             raise ApplySafetyError(f"Backup record for {collection_name} has no _id.")
         fields = restore_fields(original_document, record.get("planned_update_fields"))
-        result = db[collection_name].update_one({"_id": doc_id}, {"$set": fields})
+        collection = db[collection_name]
+        result = collection.update_one({"_id": doc_id}, {"$set": fields})
         if result.matched_count != 1 or result.modified_count not in (0, 1):
             raise ApplySafetyError(
                 f"Unexpected rollback result for {collection_name}/{doc_id}: "
@@ -97,7 +108,15 @@ def run_rollback(db: Any, backup_file: Path, *, apply: bool = False, confirm: Op
     after_counts = collection_counts(db)
     if before_counts != after_counts:
         raise ApplySafetyError(f"MongoDB document counts changed during rollback: before={before_counts}, after={after_counts}")
-    return {"apply_enabled": True, "records": len(payload["records"]), "matched": matched, "modified": modified, "before_counts": before_counts, "after_counts": after_counts}
+    return {
+        "apply_enabled": True,
+        "records": len(payload["records"]),
+        "matched": matched,
+        "modified": modified,
+        "mongodb_writes_performed_before_failure": 0,
+        "before_counts": before_counts,
+        "after_counts": after_counts,
+    }
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

@@ -17,6 +17,14 @@ class FakeResult:
 
 
 class FakeCollection:
+    def __bool__(self):
+        raise NotImplementedError("Collection objects do not implement truth value testing or bool()")
+
+    def __getattr__(self, name):
+        if name.endswith("_calls"):
+            return BoolRaisingMongoAttribute(name)
+        raise AttributeError(name)
+
     def __init__(self, docs):
         self.docs = {doc["_id"]: dict(doc) for doc in docs}
         self.update_one_calls = []
@@ -38,7 +46,7 @@ class FakeCollection:
         return dict(doc) if doc else None
 
     def update_one(self, query, update, session=None):
-        if self.on_update:
+        if self.on_update is not None:
             self.on_update()
         self.update_one_calls.append((query, update, session))
         doc = self.docs.get(query.get("_id"))
@@ -85,6 +93,23 @@ class FakeCollection:
     def drop(self, *args, **kwargs):
         self.drop_calls.append((args, kwargs))
         raise AssertionError("drop must never be called")
+
+
+class BoolRaisingMongoAttribute:
+    def __init__(self, name):
+        self.name = name
+
+    def __bool__(self):
+        raise NotImplementedError("Collection objects do not implement truth value testing or bool()")
+
+
+class PyMongoLikeCollection(FakeCollection):
+    def __init__(self, docs):
+        super().__init__(docs)
+        for method in applymod.FORBIDDEN_WRITE_METHODS:
+            attr = f"{method}_calls"
+            if attr in self.__dict__:
+                delattr(self, attr)
 
 
 class FakeDB:
@@ -216,6 +241,33 @@ class ApplyCorrectedCompositionsTests(unittest.TestCase):
                 client=client,
                 validate_files=False,
             )
+
+
+    def test_apply_flow_never_bool_tests_mongodb_collection(self):
+        db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
+        result = self.run_with_plan(db, [target_for()], apply=True, confirm=applymod.APPLY_CONFIRMATION)
+        self.assertEqual(result["modified"], 1)
+        self.assertEqual(result["mongodb_writes_performed_before_failure"], 0)
+
+    def test_apply_keeps_expected_184_and_exclusion_guards(self):
+        safe_rows = [
+            {"product_name": f"Safe Product {index}", "match_status": "safe_update_candidate", "safe_to_update": "yes"}
+            for index in range(184)
+        ]
+        current_rows = safe_rows + rows()[1:]
+        db = FakeDB({"herbicide_records": FakeCollection([])})
+        targets = [target_for() for _index in range(184)]
+        result = self.run_with_plan(db, targets, current_rows=current_rows, expected=184, preflight=True)
+        self.assertEqual(applymod.DEFAULT_EXPECTED_SAFE_COUNT, 184)
+        self.assertEqual(result["safe_update_count"], 184)
+        self.assertEqual(result["status_counts"]["safe_update_candidate"], 184)
+        self.assertTrue(result["manual_rows_excluded"])
+        self.assertTrue(result["unresolved_rows_excluded"])
+        self.assertTrue(result["protect_combi_unchanged"])
+
+    def test_validate_no_forbidden_methods_ignores_pymongo_like_dynamic_attributes(self):
+        db = FakeDB({"herbicide_records": PyMongoLikeCollection([base_doc()])})
+        applymod.validate_no_forbidden_collection_methods_called(db)
 
     def test_default_mode_performs_zero_writes(self):
         db = FakeDB({"herbicide_records": FakeCollection([base_doc()])})
@@ -485,6 +537,64 @@ class ApplyCorrectedCompositionsTests(unittest.TestCase):
         self.assertTrue(result["manual_rows_excluded"])
         self.assertTrue(result["unresolved_rows_excluded"])
         self.assertTrue(result["protect_combi_unchanged"])
+
+
+class RollbackCorrectedCompositionsTests(unittest.TestCase):
+    def make_backup_file(self, doc=None):
+        document = dict(doc or base_doc())
+        backup = {
+            "records": [
+                {
+                    "collection": "herbicide_records",
+                    "_id": document["_id"],
+                    "planned_update_fields": ["active_substances_raw", "active_substances", "composition", "composition_warnings", "has_composition_warning"],
+                    "original_document": document,
+                }
+            ]
+        }
+        path = Path(tempfile.mkdtemp()) / "backup.json"
+        path.write_text(json.dumps(backup, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    def test_rollback_flow_never_bool_tests_mongodb_collection(self):
+        doc = base_doc()
+        changed = dict(doc)
+        changed["active_substances_raw"] = "new substance, 20 г/л"
+        changed["composition"] = "new substance, 20 г/л"
+        collection = FakeCollection([changed])
+        db = FakeDB({"herbicide_records": collection})
+        result = rollbackmod.run_rollback(
+            db,
+            self.make_backup_file(doc),
+            apply=True,
+            confirm=rollbackmod.ROLLBACK_CONFIRMATION,
+        )
+        self.assertTrue(result["apply_enabled"])
+        self.assertEqual(len(collection.update_one_calls), 1)
+        self.assertEqual(result["mongodb_writes_performed_before_failure"], 0)
+
+    def test_rollback_preflight_performs_zero_writes(self):
+        collection = FakeCollection([base_doc()])
+        db = FakeDB({"herbicide_records": collection})
+        result = rollbackmod.run_rollback(db, self.make_backup_file(), apply=False)
+        self.assertFalse(result["apply_enabled"])
+        self.assertEqual(result["mongodb_writes_performed_before_failure"], 0)
+        self.assertEqual(collection.update_one_calls, [])
+
+    def test_rollback_uses_only_update_one(self):
+        doc = base_doc()
+        collection = FakeCollection([doc])
+        db = FakeDB({"herbicide_records": collection})
+        rollbackmod.run_rollback(db, self.make_backup_file(doc), apply=True, confirm=rollbackmod.ROLLBACK_CONFIRMATION)
+        self.assertEqual(len(collection.update_one_calls), 1)
+        self.assertEqual(collection.update_many_calls, [])
+        self.assertEqual(collection.delete_one_calls, [])
+        self.assertEqual(collection.delete_many_calls, [])
+        self.assertEqual(collection.insert_one_calls, [])
+        self.assertEqual(collection.insert_many_calls, [])
+        self.assertEqual(collection.replace_one_calls, [])
+        self.assertEqual(collection.bulk_write_calls, [])
+        self.assertEqual(collection.drop_calls, [])
 
 
 if __name__ == "__main__":
