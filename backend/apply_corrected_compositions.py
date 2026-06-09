@@ -513,6 +513,10 @@ def write_apply_outputs(report_rows: Sequence[Dict[str, str]], summary: Dict[str
     return report_path, summary_path
 
 
+def _blocking_rows_count(status_counts: Dict[str, int]) -> int:
+    return sum(status_counts.get(status, 0) for status in BLOCKING_STATUSES)
+
+
 def _manual_exclusion_confirmed(current_rows: Sequence[Dict[str, str]]) -> bool:
     return all(row.get("safe_to_update") != "yes" for row in current_rows if row.get("match_status") == "manual_review_skip")
 
@@ -590,12 +594,15 @@ def run_guarded_apply(
             "safe_update_count": len(targets),
             "attempted": 0,
             "status_counts": status_counts,
+            "blocking_rows_count": _blocking_rows_count(status_counts),
             "transaction_support": transaction_mode == "transaction",
             "transaction_details": transaction_details,
             "selected_mode": transaction_mode,
             "transaction_mode": transaction_mode,
+            "before_counts": before_counts,
             "manual_rows_excluded": _manual_exclusion_confirmed(current_rows),
             "unresolved_rows_excluded": _unresolved_exclusion_confirmed(current_rows),
+            "protect_combi_unchanged": any(PROTECTED_PRODUCT_FRAGMENT in normalize_text(row.get("product_name")) for row in current_rows),
         }
 
     if not apply:
@@ -606,6 +613,7 @@ def run_guarded_apply(
             "safe_update_count": len(targets),
             "attempted": 0,
             "status_counts": status_counts,
+            "blocking_rows_count": _blocking_rows_count(status_counts),
             "transaction_support": transaction_mode == "transaction",
             "selected_mode": transaction_mode,
             "transaction_mode": transaction_mode,
@@ -618,6 +626,7 @@ def run_guarded_apply(
             "safe_update_count": len(targets),
             "attempted": 0,
             "status_counts": status_counts,
+            "blocking_rows_count": _blocking_rows_count(status_counts),
             "transaction_support": transaction_mode == "transaction",
             "selected_mode": transaction_mode,
             "transaction_mode": transaction_mode,
@@ -699,13 +708,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def print_preflight_summary(result: Dict[str, Any]) -> None:
+    print(f"Safe update count: {result['safe_update_count']}")
+    print(f"Blocking rows count: {result.get('blocking_rows_count', _blocking_rows_count(result['status_counts']))}")
+    print(f"Transaction support: {'yes' if result['transaction_support'] else 'no'}")
+    print(f"Selected mode: {result['selected_mode']}")
+    print("MongoDB writes performed: 0")
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_arg_parser().parse_args(argv)
     print("MongoDB composition guarded updater starting.")
     print(f"Apply mode enabled: {args.apply}")
     print(f"Preflight mode enabled: {args.preflight}")
     print(f"Mongo URI env var: {args.mongo_uri_env} (value hidden)")
-    if not args.apply:
+    if not args.apply and not args.preflight:
         print("Apply mode is disabled; validation only; MongoDB writes performed: 0.")
     try:
         client, db, _db_name = connect_database(args.mongo_uri_env, EXPECTED_DATABASE_NAME)
@@ -726,11 +743,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
     print(result["message"] if "message" in result else "Apply completed and verified.")
     if result.get("preflight"):
-        print(f"Safe update count: {result['safe_update_count']}")
-        print(f"Blocking counts are zero: {not any(result['status_counts'].get(status, 0) for status in BLOCKING_STATUSES)}")
-        print(f"Transaction support: {'yes' if result['transaction_support'] else 'no'}")
-        print(f"Selected mode: {result['selected_mode']}")
-        print("MongoDB writes performed: 0")
+        print_preflight_summary(result)
     if result.get("apply_enabled"):
         print(f"Backup file: {result['backup_file']}")
         print(f"Selected mode: {result['transaction_mode']}")
