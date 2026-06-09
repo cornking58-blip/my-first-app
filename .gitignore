@@ -107,3 +107,8 @@ frontend/.metro-cache/
 
 # Generated corrected pesticide workbooks
 corrected_workbooks/
+
+# Generated MongoDB composition apply artifacts
+mongodb_backups/
+backend/data/mongodb_composition_apply_report.csv
+backend/data/mongodb_composition_apply_summary.md
