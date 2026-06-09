@@ -16,7 +16,25 @@ export MONGO_URL='mongodb+srv://USER:PASSWORD@HOST/herbicides_db?retryWrites=tru
 
 Если база называется не `herbicides_db`, скрипт откажется работать. Это нужно, чтобы случайно не изменить не ту базу.
 
-## 3. Запустите проверку без записи
+## 3. Сначала запустите preflight-проверку
+
+Preflight — это «тренировочный осмотр перед стартом». Он подключается к MongoDB, проверяет количество безопасных строк, проверяет, что нет блокирующих ошибок, определяет режим применения, но **не создаёт backup и ничего не записывает**.
+
+```bash
+python backend/apply_corrected_compositions.py --preflight
+```
+
+Для Railway MongoDB нормальный ожидаемый результат может быть таким:
+
+```text
+Transaction support: no
+Selected mode: sequential_with_backup
+MongoDB writes performed: 0
+```
+
+Почему так: транзакции MongoDB работают только на replica set или mongos. Railway MongoDB может быть standalone-сервером, поэтому MongoDB отвечает ошибкой вроде `Transaction numbers are only allowed on a replica set member or mongos`. Это не значит, что применять исправления нельзя. Это значит, что скрипт должен использовать безопасный последовательный режим с обязательным backup.
+
+## 4. Обычная проверка без записи тоже безопасна
 
 Без флага `--apply` скрипт ничего не записывает:
 
@@ -26,7 +44,7 @@ python backend/apply_corrected_compositions.py
 
 Ожидаемое поведение: скрипт напишет, что apply mode отключён, выполнит проверки и сделает **0 записей** в MongoDB.
 
-## 4. Запустите реальное применение только после проверки
+## 5. Запустите реальное применение только после preflight
 
 Живая запись требует сразу два предохранителя: `--apply` и точный текст подтверждения.
 
@@ -34,11 +52,36 @@ python backend/apply_corrected_compositions.py
 python backend/apply_corrected_compositions.py --apply --confirm APPLY_184_APPROVED_COMPOSITION_UPDATES
 ```
 
+Перед первой записью скрипт печатает:
+
+- количество безопасных обновлений;
+- выбранный режим (`transaction` или `sequential_with_backup`);
+- путь к backup;
+- количество документов в backup;
+- подтверждение, что Протект Комби исключён;
+- подтверждение, что manual/unresolved строки исключены.
+
 Скрипт применяет только строки со статусом `safe_update_candidate`. Строки manual review, unresolved concentration и Протект Комби не обновляются.
 
-## 5. Где появится backup
+## 6. Что значит `sequential_with_backup`
 
-Перед первой записью скрипт создаёт JSON backup в папке:
+`sequential_with_backup` — это безопасный режим для MongoDB без транзакций.
+
+Очень простая аналогия: транзакция — это «поменять всё одной большой пачкой». Если база так не умеет, скрипт меняет документы по одному, но сначала делает полную страховочную копию всех 184 исходных документов.
+
+Перед первым `update_one` скрипт обязан:
+
+1. создать JSON backup;
+2. записать туда все 184 безопасных MongoDB-документа целиком;
+3. закрыть и сбросить файл на диск;
+4. снова открыть backup и проверить, что в нём ровно 184 документа;
+5. только после этого начать обновления.
+
+Если backup отсутствует, не читается или содержит меньше документов, скрипт останавливается до первой записи.
+
+## 7. Где появится backup
+
+Backup создаётся в папке:
 
 ```text
 mongodb_backups/
@@ -52,9 +95,42 @@ mongodb_backups/composition_backup_YYYYMMDD_HHMMSS.json
 
 Backup содержит исходные MongoDB-документы целиком. Это «страховочная копия», чтобы можно было вернуть поля состава назад.
 
-## 6. Как проверить результат
+Не коммитьте backup в Git: это локальный файл с данными живой базы.
 
-После apply скрипт создаёт локальные отчёты:
+## 8. Что проверяется перед каждым отдельным обновлением
+
+Перед каждым `update_one` скрипт заново читает MongoDB-документ и проверяет:
+
+- `_id` тот же самый;
+- identity signature тот же самый;
+- текущее `active_substances_raw` всё ещё равно значению из dry-run;
+- стабильные поля идентичности не поменялись.
+
+Если кто-то изменил документ после dry-run, скрипт останавливается. Это нужно, чтобы не перезаписать чужие свежие изменения.
+
+## 9. Если ошибка случилась после частичных обновлений
+
+В `sequential_with_backup` нет автоматического тихого rollback. Это сделано специально: человек должен сначала посмотреть, что случилось.
+
+Если часть документов уже изменилась, а потом произошла ошибка, скрипт:
+
+1. сразу останавливается;
+2. печатает, сколько документов уже было изменено;
+3. сохраняет backup;
+4. сохраняет partial apply report;
+5. печатает точную команду rollback.
+
+Пример команды rollback:
+
+```bash
+python backend/rollback_corrected_compositions.py --backup-file mongodb_backups/composition_backup_YYYYMMDD_HHMMSS.json --apply --confirm ROLLBACK_COMPOSITION_UPDATES
+```
+
+Запускайте rollback только после просмотра ошибки и backup-файла. Скрипт сам не откатывает изменения молча.
+
+## 10. Как проверить результат
+
+После успешного apply скрипт создаёт локальные отчёты:
 
 ```text
 backend/data/mongodb_composition_apply_report.csv
@@ -73,17 +149,7 @@ backend/data/mongodb_composition_apply_summary.md
 
 Эти отчёты не коммитятся, потому что они генерируются локально и могут содержать данные живой базы.
 
-## 7. Как откатиться
-
-Rollback тоже защищён подтверждением. Подставьте путь к backup-файлу из summary:
-
-```bash
-python backend/rollback_corrected_compositions.py --backup-file mongodb_backups/composition_backup_YYYYMMDD_HHMMSS.json --apply --confirm ROLLBACK_COMPOSITION_UPDATES
-```
-
-Rollback не удаляет документы. Он восстанавливает только поля состава из backup.
-
-## 8. Какие поля можно менять
+## 11. Какие поля можно менять
 
 Скрипт обновляет только поля состава:
 
