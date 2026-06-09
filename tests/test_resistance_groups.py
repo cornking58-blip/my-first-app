@@ -167,6 +167,29 @@ class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
 
         self.assertEqual([substance["concentration"] for substance in substances], [225, 25])
 
+    def test_scientific_multiplication_sign_is_not_component_separator(self):
+        raw = "2,5×10⁹ КОЕ/Мл Bacillus subtilis, штаммВ-2918 + 2,5×10⁹ КОЕ/Мл Bacillus amyloliquefaciens"
+
+        self.assertEqual(parse_active_substances(raw), [])
+        warnings = validate_active_substance_composition(raw, [], "fungicide")
+
+        self.assertNotIn("repeated_fragment", composition_warning_codes(warnings))
+
+    def test_harmless_dash_variant_does_not_create_malformed_warning(self):
+        raw = "(23 г/л Пиноксаден + 23 г/л феноксапроп-П-этил + 6 г/л антидот – клоквинтосет-мексил)"
+        parsed = parse_active_substances(raw)
+        warnings = validate_active_substance_composition(raw, parsed, "herbicide")
+
+        self.assertEqual(len(parsed), 3)
+        self.assertNotIn("malformed_delimiters", composition_warning_codes(warnings))
+
+    def test_broken_parentheses_still_create_malformed_warning(self):
+        raw = "(90 г/л Клопиралид (2-этилгексиловый эфир)"
+        parsed = parse_active_substances(raw)
+        warnings = validate_active_substance_composition(raw, parsed, "herbicide")
+
+        self.assertIn("malformed_delimiters", composition_warning_codes(warnings))
+
     def test_normal_multi_component_seed_treatment_still_parses(self):
         substances = self.assert_substance_names(
             "(25 г/л флудиоксонил + 10 г/л имидаклоприд + 15 г/л тебуконазол)",

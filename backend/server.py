@@ -389,7 +389,10 @@ def normalize_composition_text(raw: str) -> str:
     text = str(raw or "")
     text = text.replace("\u00a0", " ").replace("\ufeff", " ")
     text = re.sub(DASH_CHARS_REGEX, "-", text)
-    text = re.sub(r"[×*]", "+", text)
+    # Treat multiplication signs inside scientific notation (for example 2,5×10⁹)
+    # as part of the concentration, not as component separators. Only spaced
+    # multiplication signs are safe delimiter variants.
+    text = re.sub(r"\s+[×*]\s+", " + ", text)
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\s*([()+;])\s*", r" \1 ", text)
     text = re.sub(r"\s*,\s*", ", ", text)
@@ -520,7 +523,7 @@ def validate_active_substance_composition(
     parsed_substances = parsed_substances or []
 
     if raw_text and raw_text != normalized_raw:
-        if "\u00a0" in raw_text or re.search(DASH_CHARS_REGEX, raw_text) or re.search(r"([+;,])\s*\1", raw_text):
+        if "\u00a0" in raw_text or re.search(r"([+;,])\s*\1", raw_text):
             warnings.append(_warning(
                 "malformed_delimiters",
                 "Composition contains OCR/formatting punctuation that was normalized for parsing.",

@@ -1,14 +1,14 @@
 # Active-substance composition audit summary
 
 Total unique product compositions checked: 2235
-Clean count: 2181
-Suspicious count: 54
-Automatically corrected count: 7
-Manual-review count: 54
+Clean count: 2184
+Suspicious count: 51
+Automatically corrected count: 6
+Manual-review count: 51
 
 ## Warning counts
-- malformed_delimiters: 47
-- repeated_fragment: 7
+- malformed_delimiters: 45
+- repeated_fragment: 6
 - joined_known_substances: 1
 - unresolved_concentration: 1
 
@@ -22,23 +22,23 @@ Manual-review count: 54
 - seed-treatments / Протект Комби / joined_known_substances;repeated_fragment;unresolved_concentration / automatic parser dedupe: (48 г/л Пираклостробин - протиоконазол + 55 г/л Флудиоксонил + 37,5 г/л Тебуконазол); unresolved concentration: протиоконазол
 - fungicides / БФТИМ КС-2 / repeated_fragment / automatic parser dedupe: 1х10⁹ КОЕ / Мл Bacillus amyloliquefaciens КС - 2
 - seed-treatments / БФТИМ КС-2 / repeated_fragment / automatic parser dedupe: (1х10⁹ КОЕ / Мл Bacillus amyloliquefaciens КС - 2)
-- fungicides / Бактофорт / repeated_fragment / automatic parser dedupe: 2,5 + 10⁹ КОЕ / Мл Bacillus subtilis, штаммВ - 2918 + 10⁹ КОЕ / Мл Bacillus amyloliquefaciens, штаммИМВВ - 7100
 - fungicides / Бисолбицид / repeated_fragment / automatic parser dedupe: 0,108 КОЕ / Мл Bacillus subtilis, штамм ВL01
 - seed-treatments / Бисолбицид / repeated_fragment / automatic parser dedupe: (0,108 КОЕ / Мл Bacillus subtilis, штамм ВL01)
 - insecticides / Доктор Харвест Форте Про / repeated_fragment / automatic parser dedupe: (30 г/л Пиретрины натуральные масляный экстракт)
-- herbicides / Агритокс / malformed_delimiters / 
-- herbicides / Агроксон / malformed_delimiters / 
-- herbicides / Агрошанс / malformed_delimiters / 
-- herbicides / Аксакал Практик / malformed_delimiters / 
-- herbicides / Алебарда / malformed_delimiters / 
-- herbicides / Аметил / malformed_delimiters / 
-- herbicides / Анкор-85 / malformed_delimiters / 
-- herbicides / Антарес / malformed_delimiters / 
-- herbicides / Ассолюта / malformed_delimiters / 
-- seed-treatments / Бактофит / malformed_delimiters / 
-- seed-treatments / Бактофит / malformed_delimiters / 
-- fungicides / Биокомпозит-Про / malformed_delimiters / 
-- insecticides / Биостоп / malformed_delimiters / 
+- herbicides / Агритокс / malformed_delimiters /
+- herbicides / Агроксон / malformed_delimiters /
+- herbicides / Агрошанс / malformed_delimiters /
+- herbicides / Аметил / malformed_delimiters /
+- herbicides / Анкор-85 / malformed_delimiters /
+- herbicides / Антарес / malformed_delimiters /
+- herbicides / Ассолюта / malformed_delimiters /
+- seed-treatments / Бактофит / malformed_delimiters /
+- seed-treatments / Бактофит / malformed_delimiters /
+- fungicides / Биокомпозит-Про / malformed_delimiters /
+- insecticides / Биостоп / malformed_delimiters /
+- herbicides / Властелин / malformed_delimiters /
+- herbicides / Гербикс / malformed_delimiters /
+- herbicides / Гербитокс / malformed_delimiters /
 
 ## Exact details for Протект Комби
 - Category: seed-treatments

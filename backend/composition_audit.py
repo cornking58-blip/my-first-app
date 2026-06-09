@@ -278,7 +278,7 @@ def write_reports(rows: Sequence[Dict[str, Any]]) -> None:
         "automatic_fix_applied", "requires_manual_review", "notes",
     ]
     with report_csv.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=columns)
+        writer = csv.DictWriter(fh, fieldnames=columns, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -317,7 +317,7 @@ def write_reports(rows: Sequence[Dict[str, Any]]) -> None:
     summary_lines += [f"- {category}: {count}" for category, count in sorted(category_counts.items())]
     summary_lines += ["", "## Top suspicious products"]
     summary_lines += [
-        f"- {row['pesticide_category']} / {row['product_name']} / {row['warning_codes']} / {row['notes']}"
+        f"- {row['pesticide_category']} / {row['product_name']} / {row['warning_codes']} / {row['notes']}".rstrip()
         for row in top_suspicious
     ] or ["- none"]
     summary_lines += ["", "## Exact details for Протект Комби"]
