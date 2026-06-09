@@ -29,8 +29,6 @@ This concise Markdown report lists suspicious compositions. The full row-level r
 | herbicides | Царумин | malformed_delimiters | warning |  |
 | herbicides | Момус | malformed_delimiters | warning |  |
 | herbicides | Милагро Плюс | malformed_delimiters | warning |  |
-| herbicides | Алебарда | malformed_delimiters | warning |  |
-| herbicides | Аксакал Практик | malformed_delimiters | warning |  |
 | herbicides | Анкор-85 | malformed_delimiters | warning |  |
 | herbicides | Тербутилазин + 2,4-Д кислота (2-этилгексиловый эфир) + клопиралид (2-этилгексиловый эфир) + никосульфурон Корнеги Плюс | malformed_delimiters | warning |  |
 | herbicides | Тербутилазин + 2,4-Д кислота (2-этилгексиловый эфир) + никосульфурон Корнеги | malformed_delimiters | warning |  |
@@ -40,7 +38,6 @@ This concise Markdown report lists suspicious compositions. The full row-level r
 | herbicides | Ассолюта | malformed_delimiters | warning |  |
 | herbicides | Флекс | malformed_delimiters | warning |  |
 | fungicides | БФТИМ КС-2 | repeated_fragment | error | automatic parser dedupe: 1х10⁹ КОЕ / Мл Bacillus amyloliquefaciens КС - 2 |
-| fungicides | Бактофорт | repeated_fragment | error | automatic parser dedupe: 2,5 + 10⁹ КОЕ / Мл Bacillus subtilis, штаммВ - 2918 + 10⁹ КОЕ / Мл Bacillus amyloliquefaciens, штаммИМВВ - 7100 |
 | fungicides | Биокомпозит-Про | malformed_delimiters | warning |  |
 | fungicides | Бисолбицид | repeated_fragment | error | automatic parser dedupe: 0,108 КОЕ / Мл Bacillus subtilis, штамм ВL01 |
 | fungicides | Кагатник | malformed_delimiters | warning |  |
