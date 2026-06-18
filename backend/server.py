@@ -810,6 +810,37 @@ def parse_active_substances(raw: Optional[str]) -> List[Dict]:
     return substances
 
 
+
+
+def first_parseable_composition(records: Sequence[Dict[str, Any]]) -> Optional[str]:
+    """Pick the first non-empty composition that actually parses, then any non-empty value.
+
+    Mongo rows for one product can contain duplicate application rows. Some old imports also
+    left the composition blank on a subset of rows, so relying on records[0] or Mongo $first
+    can make the product card and compare endpoint lose active substances.
+    """
+    fallback = None
+    for record in records or []:
+        raw = record.get("active_substances_raw") if isinstance(record, dict) else None
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if not text or text.lower() in {"nan", "none", "нет данных"}:
+            continue
+        if fallback is None:
+            fallback = text
+        if parse_active_substances(text):
+            return text
+    return fallback
+
+
+def with_canonical_composition(record: Dict[str, Any], records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return a copy whose active_substances_raw is the safest product-level composition."""
+    canonical = first_parseable_composition(records)
+    if canonical is None:
+        return dict(record)
+    return {**record, "active_substances_raw": canonical}
+
 def normalize_substance_name(name: str) -> str:
     """Normalize active substance names for safe comparison and lookups."""
     normalized = str(name or "").casefold().replace("ё", "е").replace("\u00a0", " ")
@@ -1246,7 +1277,7 @@ def annotate_substances_with_resistance(substances: List[Dict], pesticide_type: 
 def _substance_names_match(left_name: str, right_name: str) -> bool:
     left_norm = normalize_substance_name(left_name)
     right_norm = normalize_substance_name(right_name)
-    return left_norm == right_norm or left_norm in right_norm or right_norm in left_norm
+    return bool(left_norm and right_norm and left_norm == right_norm)
 
 
 def _known_group_key(substance: Dict) -> Optional[tuple]:
@@ -1694,8 +1725,8 @@ async def build_advanced_compare_response(
     if not right_records:
         raise HTTPException(status_code=404, detail=right_not_found)
 
-    left_first = left_records[0]
-    right_first = right_records[0]
+    left_first = with_canonical_composition(left_records[0], left_records)
+    right_first = with_canonical_composition(right_records[0], right_records)
 
     left_substances = parse_active_substances(left_first.get("active_substances_raw"))
     right_substances = parse_active_substances(right_first.get("active_substances_raw"))
@@ -2054,7 +2085,7 @@ async def search_herbicides(
                     "_id": "$product_key",
                     "product_name": {"$first": "$product_name"},
                     "formulation": {"$first": "$formulation"},
-                    "active_substances_raw": {"$first": "$active_substances_raw"},
+                    "active_substances_raw_values": {"$addToSet": "$active_substances_raw"},
                     "manufacturer": {"$first": "$manufacturer"},
                     "registrant": {"$push": "$registrant"},
                     "producer": {"$push": "$producer"},
@@ -2083,7 +2114,7 @@ async def search_herbicides(
                 product_key=r["_id"],
                 product_name=r["product_name"],
                 formulation=r.get("formulation"),
-                active_substances_raw=r.get("active_substances_raw"),
+                active_substances_raw=first_parseable_composition([{"active_substances_raw": value} for value in r.get("active_substances_raw_values", [])]),
                 manufacturer=r.get("manufacturer"),
                 registrant=next((v for v in r.get("registrant", []) if v), None),
                 producer=next((v for v in r.get("producer", []) if v), None),
@@ -2119,7 +2150,7 @@ async def get_herbicide(product_key: str):
         if not records:
             raise HTTPException(status_code=404, detail="Product not found")
         
-        first_record = records[0]
+        first_record = with_canonical_composition(records[0], records)
         
         applications = []
         for r in records:
@@ -2352,7 +2383,7 @@ async def search_insecticides(
                     "_id": "$product_key",
                     "product_name": {"$first": "$product_name"},
                     "formulation": {"$first": "$formulation"},
-                    "active_substances_raw": {"$first": "$active_substances_raw"},
+                    "active_substances_raw_values": {"$addToSet": "$active_substances_raw"},
                     "manufacturer": {"$first": "$manufacturer"},
                     "registrant": {"$push": "$registrant"},
                     "producer": {"$push": "$producer"},
@@ -2381,7 +2412,7 @@ async def search_insecticides(
                 product_key=r["_id"],
                 product_name=r["product_name"],
                 formulation=r.get("formulation"),
-                active_substances_raw=r.get("active_substances_raw"),
+                active_substances_raw=first_parseable_composition([{"active_substances_raw": value} for value in r.get("active_substances_raw_values", [])]),
                 manufacturer=r.get("manufacturer"),
                 registrant=next((v for v in r.get("registrant", []) if v), None),
                 producer=next((v for v in r.get("producer", []) if v), None),
@@ -2417,7 +2448,7 @@ async def get_insecticide(product_key: str):
         if not records:
             raise HTTPException(status_code=404, detail="Insecticide product not found")
         
-        first_record = records[0]
+        first_record = with_canonical_composition(records[0], records)
         
         applications = []
         for r in records:
@@ -2588,7 +2619,7 @@ async def search_fungicides(
                     "_id": "$product_key",
                     "product_name": {"$first": "$product_name"},
                     "formulation": {"$first": "$formulation"},
-                    "active_substances_raw": {"$first": "$active_substances_raw"},
+                    "active_substances_raw_values": {"$addToSet": "$active_substances_raw"},
                     "manufacturer": {"$first": "$manufacturer"},
                     "registrant": {"$push": "$registrant"},
                     "producer": {"$push": "$producer"},
@@ -2617,7 +2648,7 @@ async def search_fungicides(
                 product_key=r["_id"],
                 product_name=r["product_name"],
                 formulation=r.get("formulation"),
-                active_substances_raw=r.get("active_substances_raw"),
+                active_substances_raw=first_parseable_composition([{"active_substances_raw": value} for value in r.get("active_substances_raw_values", [])]),
                 manufacturer=r.get("manufacturer"),
                 registrant=next((v for v in r.get("registrant", []) if v), None),
                 producer=next((v for v in r.get("producer", []) if v), None),
@@ -2653,7 +2684,7 @@ async def get_fungicide(product_key: str):
         if not records:
             raise HTTPException(status_code=404, detail="Fungicide product not found")
         
-        first_record = records[0]
+        first_record = with_canonical_composition(records[0], records)
         
         applications = []
         for r in records:
@@ -2823,7 +2854,7 @@ async def search_seed_treatments(
                     "_id": "$product_key",
                     "product_name": {"$first": "$product_name"},
                     "formulation": {"$first": "$formulation"},
-                    "active_substances_raw": {"$first": "$active_substances_raw"},
+                    "active_substances_raw_values": {"$addToSet": "$active_substances_raw"},
                     "manufacturer": {"$first": "$manufacturer"},
                     "registrant": {"$push": "$registrant"},
                     "producer": {"$push": "$producer"},
@@ -2853,7 +2884,7 @@ async def search_seed_treatments(
                 "product_key": r["_id"],
                 "product_name": r["product_name"],
                 "formulation": r.get("formulation"),
-                "active_substances_raw": r.get("active_substances_raw"),
+                "active_substances_raw": first_parseable_composition([{"active_substances_raw": value} for value in r.get("active_substances_raw_values", [])]),
                 "manufacturer": r.get("manufacturer"),
                 "registrant": next((v for v in r.get("registrant", []) if v), None),
                 "producer": next((v for v in r.get("producer", []) if v), None),
@@ -2890,7 +2921,7 @@ async def get_seed_treatment(product_key: str):
         if not records:
             raise HTTPException(status_code=404, detail="Seed treatment product not found")
         
-        first_record = records[0]
+        first_record = with_canonical_composition(records[0], records)
         
         applications = []
         for r in records:

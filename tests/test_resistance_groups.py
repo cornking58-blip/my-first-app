@@ -69,6 +69,8 @@ build_resistance_group_analysis = namespace["build_resistance_group_analysis"]
 parse_rate_max_with_unit = namespace["parse_rate_max_with_unit"]
 calculate_active_amount = namespace["calculate_active_amount"]
 build_advanced_compare_response = namespace["build_advanced_compare_response"]
+first_parseable_composition = namespace["first_parseable_composition"]
+_substance_names_match = namespace["_substance_names_match"]
 load_resistance_groups = namespace["load_resistance_groups"]
 RESISTANCE_GROUP_DATA = namespace["RESISTANCE_GROUP_DATA"]
 OLD_HARDCODED_RESISTANCE_GROUP_COUNT = namespace["OLD_HARDCODED_RESISTANCE_GROUP_COUNT"]
@@ -1124,6 +1126,72 @@ class AdvancedCompareResponseTest(unittest.TestCase):
         for phrase in forbidden_phrases:
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, lowered_source)
+
+
+    def test_tuareg_compare_uses_parseable_composition_from_later_duplicate_row(self):
+        tuareg_raw = "(60 г/л тебуконазол + 40 г/л азоксистробин)"
+        collection = FakeCollection({
+            "tuareg": [
+                {
+                    "product_key": "tuareg",
+                    "product_name": "Туарег",
+                    "formulation": "КС",
+                    "active_substances_raw": None,
+                    "registration_status": "Действует",
+                    "rate_raw": "1,0 л/т",
+                    "crop": "пшеница",
+                },
+                {
+                    "product_key": "tuareg",
+                    "product_name": "Туарег",
+                    "formulation": "КС",
+                    "active_substances_raw": tuareg_raw,
+                    "registration_status": "Действует",
+                    "rate_raw": "1,0 л/т",
+                    "crop": "ячмень",
+                },
+            ],
+            "other": [
+                {
+                    "product_key": "other",
+                    "product_name": "Другой протравитель",
+                    "formulation": "КС",
+                    "active_substances_raw": "(25 г/л флудиоксонил)",
+                    "registration_status": "Действует",
+                    "rate_raw": "1,0 л/т",
+                    "crop": "пшеница",
+                }
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="tuareg",
+            right_key="other",
+            left_price=None,
+            right_price=None,
+            left_rate=None,
+            right_rate=None,
+            crop=None,
+        )
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "seed-treatment"))
+
+        self.assertEqual(response["left"]["product_name"], "Туарег")
+        self.assertEqual(response["left"]["active_substances_raw"], tuareg_raw)
+        self.assertGreater(len(response["left"]["substances"]), 0)
+        self.assertEqual([item["name"] for item in response["left"]["substances"]], ["тебуконазол", "азоксистробин"])
+
+    def test_first_parseable_composition_prefers_non_empty_parseable_row(self):
+        records = [
+            {"active_substances_raw": None},
+            {"active_substances_raw": "нет данных"},
+            {"active_substances_raw": "(25 г/л флудиоксонил)"},
+        ]
+
+        self.assertEqual(first_parseable_composition(records), "(25 г/л флудиоксонил)")
+
+    def test_backend_substance_matching_is_exact_not_partial(self):
+        self.assertFalse(_substance_names_match("металаксил", "мефеноксам металаксил-М"))
+        self.assertTrue(_substance_names_match("Тебуконазол", "тебуконазол"))
 
     def test_price_analysis_does_not_return_fake_substance_cost_without_price(self):
         response = self.compare(left_price=1200, right_price=None)
