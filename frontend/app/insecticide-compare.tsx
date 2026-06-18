@@ -32,7 +32,7 @@ const Logo = () => (
 
 interface Substance {
   name: string;
-  concentration: number;
+  concentration: number | null;
   unit: string;
   is_antidote: boolean;
   resistance_system?: string | null;
@@ -45,9 +45,9 @@ interface Substance {
 
 interface IdenticalSubstance {
   name: string;
-  left_concentration: number;
+  left_concentration: number | null;
   left_unit: string;
-  right_concentration: number;
+  right_concentration: number | null;
   right_unit: string;
   left_per_ha: number | null;
   right_per_ha: number | null;
@@ -55,8 +55,8 @@ interface IdenticalSubstance {
 
 interface SimilarCategory {
   category: string;
-  left_substances: { name: string; concentration: number; unit: string }[];
-  right_substances: { name: string; concentration: number; unit: string }[];
+  left_substances: { name: string; concentration: number | null; unit: string }[];
+  right_substances: { name: string; concentration: number | null; unit: string }[];
 }
 
 interface ProductInfo {
@@ -106,7 +106,7 @@ interface SubstanceCost {
   side: 'left' | 'right';
   substance_name: string;
   name?: string;
-  concentration: number;
+  concentration: number | null;
   unit: string;
   rate_used: number;
   rate_unit?: string | null;
@@ -186,7 +186,7 @@ export default function InsecticideCompareScreen() {
   );
 
   const calculateActiveAmount = (substance?: Substance, product?: ProductInfo) => {
-    if (!substance || !product?.rate_used) return null;
+    if (!substance || !product?.rate_used || substance.concentration === null || substance.concentration === undefined) return null;
     if (!product.rate_unit) return substance.concentration * product.rate_used;
     if (substance.unit === 'г/кг' && product.rate_unit.startsWith('кг/')) {
       return substance.concentration * product.rate_used;
@@ -253,6 +253,11 @@ export default function InsecticideCompareScreen() {
   const formatNumber = (value: number | null | undefined, digits = 2) => {
     if (value === null || value === undefined || !Number.isFinite(value)) return '—';
     return Number(value.toFixed(digits)).toString();
+  };
+
+  const formatConcentration = (value: number | null | undefined, unit?: string | null) => {
+    const formattedValue = formatNumber(value);
+    return formattedValue === '—' ? formattedValue : unit ? `${formattedValue} ${unit}` : formattedValue;
   };
 
   const getValueTone = (leftValue: number | null | undefined, rightValue: number | null | undefined, side: 'left' | 'right') => {
@@ -328,13 +333,13 @@ export default function InsecticideCompareScreen() {
     return (
       <View style={[styles.metricSubstanceCard, side === 'left' ? styles.leftColumnCard : styles.rightColumnCard]}>
         <Text style={styles.uniqueSubstanceName}>{substance.name}</Text>
-        <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatNumber(substance.concentration)} {substance.unit}</Text>
+        <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatConcentration(substance.concentration, substance.unit)}</Text>
         <Text style={styles.uniqueSubstanceInfo}>Норма: {formatRate(product?.rate_used, product?.rate_unit)}</Text>
-        <Text style={styles.uniqueSubstanceInfo}>ДВ на 1 га: {formatNumber(calculatedPerHa)} г/га</Text>
+        <Text style={styles.uniqueSubstanceInfo}>ДВ на гектар: {formatNumber(calculatedPerHa)} г/га</Text>
         {showCost && (
           <Text style={styles.uniqueSubstanceInfo}>Затраты на 1 г ДВ: {formatNumber(cost?.estimated_cost_per_gram)} ₽/г</Text>
         )}
-        <Text style={styles.uniqueSubstanceInfo}>Группа: {renderGroupLabel(substance)}</Text>
+        <Text style={styles.uniqueSubstanceInfo}>Группа устойчивости: {renderGroupLabel(substance)}</Text>
         {renderEffectSummary(substance.effect_summary)}
       </View>
     );
@@ -349,12 +354,12 @@ export default function InsecticideCompareScreen() {
     return (
       <View style={[styles.uniqueSubstance, side === 'left' ? styles.leftColumnCard : styles.rightColumnCard]}>
         <Text style={styles.uniqueSubstanceName}>{sub.name}</Text>
-        <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatNumber(sub.concentration)} {sub.unit}</Text>
-        <Text style={styles.uniqueSubstanceInfo}>ДВ на 1 га: {formatNumber(calculatedPerHa)} г/га</Text>
+        <Text style={styles.uniqueSubstanceInfo}>Концентрация: {formatConcentration(sub.concentration, sub.unit)}</Text>
+        <Text style={styles.uniqueSubstanceInfo}>ДВ на гектар: {formatNumber(calculatedPerHa)} г/га</Text>
         {showCost && (
           <Text style={styles.uniqueSubstanceInfo}>Затраты на 1 г ДВ: {formatNumber(cost?.estimated_cost_per_gram)} ₽/г</Text>
         )}
-        <Text style={styles.uniqueSubstanceInfo}>Группа: {renderGroupLabel(sub)}</Text>
+        <Text style={styles.uniqueSubstanceInfo}>Группа устойчивости: {renderGroupLabel(sub)}</Text>
         {renderEffectSummary(sub.effect_summary)}
         <Text style={styles.uniqueSubstanceInfo}>Прямое сопоставление не найдено.</Text>
       </View>
@@ -623,7 +628,7 @@ export default function InsecticideCompareScreen() {
             {hasAnyPrice && hasPriceResultValues && price_analysis ? (
               <View style={styles.priceResults}>
                 <View style={styles.priceResultRow}>
-                  <Text style={styles.priceResultLabel}>Стоимость обработки 1 га, ₽</Text>
+                  <Text style={styles.priceResultLabel}>Стоимость обработки</Text>
                   <View style={styles.priceResultValues}>
                     <View style={[styles.priceResultValueBox, styles.leftValue, getValueTone(price_analysis.left_cost_per_ha, price_analysis.right_cost_per_ha, 'left')]}>
                       <Text style={styles.summaryValueText}>{formatNumber(price_analysis.left_cost_per_ha, 0)}</Text>
@@ -676,7 +681,7 @@ export default function InsecticideCompareScreen() {
                 </View>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>ДВ на 1 га, г</Text>
+                <Text style={styles.summaryLabel}>ДВ на гектар, г</Text>
                 <View style={styles.summaryValues}>
                   <View style={[styles.summaryValueBox, styles.leftValue, getValueTone(left.total_per_ha, right.total_per_ha, 'left')]}>
                     <Text style={styles.summaryValueText}>{formatNumber(left.total_per_ha)}</Text>
@@ -720,9 +725,9 @@ export default function InsecticideCompareScreen() {
                     <View style={styles.substanceComparison}>
                       <View style={[styles.substanceValue, styles.leftColumnCard, getValueTone(sub.left_concentration, sub.right_concentration, 'left')]}>
                         <Text style={styles.valueLabel}>Концентрация</Text>
-                        <Text style={styles.substanceConc}>{formatNumber(sub.left_concentration)} {sub.left_unit}</Text>
+                        <Text style={styles.substanceConc}>{formatConcentration(sub.left_concentration, sub.left_unit)}</Text>
                         <Text style={styles.comparisonTag}>{getValueLabel(sub.left_concentration, sub.right_concentration, 'left')}</Text>
-                        <Text style={styles.valueLabel}>ДВ на 1 га</Text>
+                        <Text style={styles.valueLabel}>ДВ на гектар</Text>
                         <Text style={styles.substancePerHa}>{formatNumber(sub.left_per_ha)} г/га</Text>
                         {showLeftCost && (
                           <>
@@ -730,15 +735,15 @@ export default function InsecticideCompareScreen() {
                             <Text style={styles.substancePerHa}>{formatNumber(leftCost?.estimated_cost_per_gram)} ₽/г</Text>
                           </>
                         )}
-                        <Text style={styles.valueLabel}>Группа</Text>
+                        <Text style={styles.valueLabel}>Группа устойчивости</Text>
                         <Text style={styles.groupInlineText}>{renderGroupLabel(leftDetails)}</Text>
                         {renderEffectSummary(leftDetails?.effect_summary)}
                       </View>
                       <View style={[styles.substanceValue, styles.rightColumnCard, getValueTone(sub.left_concentration, sub.right_concentration, 'right')]}>
                         <Text style={styles.valueLabel}>Концентрация</Text>
-                        <Text style={styles.substanceConc}>{formatNumber(sub.right_concentration)} {sub.right_unit}</Text>
+                        <Text style={styles.substanceConc}>{formatConcentration(sub.right_concentration, sub.right_unit)}</Text>
                         <Text style={styles.comparisonTag}>{getValueLabel(sub.left_concentration, sub.right_concentration, 'right')}</Text>
-                        <Text style={styles.valueLabel}>ДВ на 1 га</Text>
+                        <Text style={styles.valueLabel}>ДВ на гектар</Text>
                         <Text style={styles.substancePerHa}>{formatNumber(sub.right_per_ha)} г/га</Text>
                         {showRightCost && (
                           <>
@@ -746,7 +751,7 @@ export default function InsecticideCompareScreen() {
                             <Text style={styles.substancePerHa}>{formatNumber(rightCost?.estimated_cost_per_gram)} ₽/г</Text>
                           </>
                         )}
-                        <Text style={styles.valueLabel}>Группа</Text>
+                        <Text style={styles.valueLabel}>Группа устойчивости</Text>
                         <Text style={styles.groupInlineText}>{renderGroupLabel(rightDetails)}</Text>
                         {renderEffectSummary(rightDetails?.effect_summary)}
                       </View>
