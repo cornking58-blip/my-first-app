@@ -1112,6 +1112,19 @@ class AdvancedCompareResponseTest(unittest.TestCase):
         self.assertIn('@api_router.post("/fungicides/compare-advanced")', SERVER_TEXT)
         self.assertIn('@api_router.post("/seed-treatments/compare-advanced")', SERVER_TEXT)
 
+    def test_backend_does_not_use_forbidden_recommendation_wording(self):
+        forbidden_phrases = [
+            "win" + "ner",
+            "побед" + "итель",
+            "лучший " + "препарат",
+            "ротация " + "лучше",
+        ]
+        lowered_source = SERVER_TEXT.lower()
+
+        for phrase in forbidden_phrases:
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(phrase, lowered_source)
+
     def test_price_analysis_does_not_return_fake_substance_cost_without_price(self):
         response = self.compare(left_price=1200, right_price=None)
 
