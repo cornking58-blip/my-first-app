@@ -200,6 +200,42 @@ class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
 
         self.assertEqual([substance["concentration"] for substance in substances], [25, 10, 15])
 
+
+    def test_tuareg_product_name_composition_is_extracted_and_display_name_cleaned(self):
+        raw_name = "Туарег, СМЭЗ (280 г/л Имидаклоприд + 34 г/л Имазалил + 20 г/л Тебуконазол)"
+
+        candidate = namespace["product_name_composition_candidate"](raw_name)
+        substances = parse_active_substances(candidate)
+
+        self.assertEqual(namespace["clean_seed_treatment_display_name"](raw_name), "Туарег, СМЭЗ")
+        self.assertEqual([s["name"] for s in substances], ["Имидаклоприд", "Имазалил", "Тебуконазол"])
+        self.assertEqual([s["concentration"] for s in substances], [280, 34, 20])
+
+    def test_normal_formulation_parentheses_are_not_stripped(self):
+        raw_name = "Нормальный препарат (СМЭЗ)"
+
+        self.assertIsNone(namespace["product_name_composition_candidate"](raw_name))
+        self.assertEqual(namespace["clean_seed_treatment_display_name"](raw_name), raw_name)
+
+    def test_seed_treatment_canonical_composition_prefers_parseable_duplicate(self):
+        records = [
+            {"product_name": "Дубль", "active_substances_raw": None, "pesticide_type": "seed-treatment"},
+            {"product_name": "Дубль", "active_substances_raw": "(10 г/л имидаклоприд)", "pesticide_type": "seed-treatment"},
+        ]
+
+        self.assertEqual(first_parseable_composition(records, "seed-treatment"), "(10 г/л имидаклоприд)")
+
+    def test_seed_treatment_conflicting_duplicates_are_reported_not_merged(self):
+        records = [
+            {"product_name": "Конфликт", "active_substances_raw": "(10 г/л имидаклоприд)"},
+            {"product_name": "Конфликт", "active_substances_raw": "(20 г/л тебуконазол)"},
+        ]
+
+        selected = namespace["canonical_seed_treatment_composition"](records)
+
+        self.assertTrue(selected["manual_review_required"])
+        self.assertEqual(selected["composition"], "(10 г/л имидаклоприд)")
+
     def test_percent_concentration_still_parses(self):
         substances = self.assert_substance_names("(10 % имидаклоприд)", ["имидаклоприд"])
 
@@ -278,6 +314,22 @@ class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
         for raw, expected_names in cases:
             with self.subTest(raw=raw):
                 self.assert_substance_names(raw, expected_names)
+
+
+class SeedTreatmentCompareCanonicalCompositionTest(unittest.TestCase):
+    def test_tuareg_compare_returns_three_substances_from_product_name(self):
+        raw_name = "Туарег, СМЭЗ (280 г/л Имидаклоприд + 34 г/л Имазалил + 20 г/л Тебуконазол)"
+        records = {
+            "left": [{"product_key": "left", "product_name": "Левый", "active_substances_raw": "(10 г/л имидаклоприд)", "pesticide_type": "seed-treatment"}],
+            "right": [{"product_key": "right", "product_name": raw_name, "active_substances_raw": None, "pesticide_type": "seed-treatment"}],
+        }
+        request = SimpleNamespace(left_key="left", right_key="right", left_price=None, right_price=None, left_rate=None, right_rate=None, crop=None)
+
+        response = asyncio.run(build_advanced_compare_response(request, FakeCollection(records), "seed-treatment"))
+
+        self.assertEqual(response["right"]["product_name"], "Туарег, СМЭЗ")
+        self.assertEqual(response["right"]["substance_count"], 3)
+        self.assertEqual(response["right"]["total_concentration"], 334)
 
 
 class ResistanceGroupDataFileTest(unittest.TestCase):
