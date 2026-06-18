@@ -394,7 +394,9 @@ def normalize_composition_text(raw: str) -> str:
     # multiplication signs are safe delimiter variants.
     text = re.sub(r"\s+[×*]\s+", " + ", text)
     text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"\s*([()+;])\s*", r" \1 ", text)
+    text = re.sub(r"\s*([+;])\s*", r" \1 ", text)
+    text = re.sub(r"\(\s*", "(", text)
+    text = re.sub(r"\s*\)", ")", text)
     text = re.sub(r"\s*,\s*", ", ", text)
     text = re.sub(r"(\d)\s*,\s*(\d)", r"\1,\2", text)
     text = re.sub(r"г\s*/\s*л", "г/л", text, flags=re.IGNORECASE)
@@ -668,6 +670,84 @@ def _iter_canonical_composition_values(raw) -> List[str]:
     return canonical_values
 
 
+def product_name_composition_candidate(product_name: Optional[str]) -> Optional[str]:
+    """Extract explicit composition from product-name parentheses only when units prove it."""
+    text = str(product_name or "").strip()
+    if not text:
+        return None
+    candidates = re.findall(r"\(([^()]*)\)", text)
+    for candidate in reversed(candidates):
+        candidate = candidate.strip()
+        if re.search(rf"\d+(?:[.,]\d+)?\s*(?:{SUPPORTED_CONCENTRATION_UNITS_REGEX})", candidate, re.IGNORECASE):
+            parsed = parse_active_substances(candidate)
+            if parsed:
+                return f"({candidate})"
+    return None
+
+
+def clean_seed_treatment_display_name(product_name: Optional[str]) -> Optional[str]:
+    """For display only, remove parseable active-substance parentheses from a product title."""
+    text = str(product_name or "").strip()
+    if not text:
+        return product_name
+
+    def replace_if_composition(match: re.Match) -> str:
+        inner = match.group(1).strip()
+        if re.search(rf"\d+(?:[.,]\d+)?\s*(?:{SUPPORTED_CONCENTRATION_UNITS_REGEX})", inner, re.IGNORECASE):
+            if parse_active_substances(inner):
+                return ""
+        return match.group(0)
+
+    cleaned = re.sub(r"\s*\(([^()]*)\)", replace_if_composition, text)
+    return re.sub(r"\s+", " ", cleaned).strip(" ,;")
+
+
+def seed_treatment_record_composition_candidates(record: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """Return safe composition candidates in priority order: active field, then product name."""
+    candidates: List[Tuple[str, str]] = []
+    raw = record.get("active_substances_raw") if isinstance(record, dict) else None
+    if raw is not None:
+        text = str(raw).strip()
+        if text and text.lower() not in {"nan", "none", "нет данных"} and parse_active_substances(text):
+            candidates.append(("active_substances_raw", text))
+    product_candidate = product_name_composition_candidate(record.get("product_name") if isinstance(record, dict) else None)
+    if product_candidate:
+        candidates.append(("product_name", product_candidate))
+    return candidates
+
+
+def canonical_seed_treatment_composition(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Select one explicit seed-treatment composition without silently merging conflicts."""
+    chosen_source = None
+    chosen = None
+    conflicts = []
+    seen = set()
+    all_parseable = []
+
+    for record in records or []:
+        for source, composition in seed_treatment_record_composition_candidates(record):
+            deduped, repeated = deduplicate_repeated_composition_fragments(composition)
+            key = tuple(_active_substance_dedupe_key(s) for s in parse_active_substances(deduped))
+            if not key:
+                continue
+            all_parseable.append((source, deduped, key, repeated))
+            seen.add(key)
+            if chosen is None or (chosen_source != "active_substances_raw" and source == "active_substances_raw"):
+                chosen_source = source
+                chosen = deduped
+
+    manual_review_required = len(seen) > 1
+    if manual_review_required:
+        conflicts = sorted({_composition_compare_key(item[1]) for item in all_parseable})
+
+    return {
+        "composition": chosen,
+        "source": chosen_source,
+        "manual_review_required": manual_review_required,
+        "conflicting_compositions": conflicts,
+    }
+
+
 def _active_substance_dedupe_key(substance: Dict) -> tuple:
     return (
         normalize_substance_name(substance.get("name", "")),
@@ -812,13 +892,18 @@ def parse_active_substances(raw: Optional[str]) -> List[Dict]:
 
 
 
-def first_parseable_composition(records: Sequence[Dict[str, Any]]) -> Optional[str]:
+def first_parseable_composition(records: Sequence[Dict[str, Any]], pesticide_type: Optional[str] = None) -> Optional[str]:
     """Pick the first non-empty composition that actually parses, then any non-empty value.
 
     Mongo rows for one product can contain duplicate application rows. Some old imports also
     left the composition blank on a subset of rows, so relying on records[0] or Mongo $first
     can make the product card and compare endpoint lose active substances.
     """
+    if (pesticide_type or "").strip().lower() in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"}:
+        selected = canonical_seed_treatment_composition(records)
+        if selected.get("composition"):
+            return selected["composition"]
+
     fallback = None
     for record in records or []:
         raw = record.get("active_substances_raw") if isinstance(record, dict) else None
@@ -836,10 +921,14 @@ def first_parseable_composition(records: Sequence[Dict[str, Any]]) -> Optional[s
 
 def with_canonical_composition(record: Dict[str, Any], records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """Return a copy whose active_substances_raw is the safest product-level composition."""
-    canonical = first_parseable_composition(records)
-    if canonical is None:
-        return dict(record)
-    return {**record, "active_substances_raw": canonical}
+    pesticide_type = record.get("pesticide_type") or ("seed-treatment" if any(r.get("pesticide_type") == "seed-treatment" for r in records or []) else None)
+    canonical = first_parseable_composition(records, pesticide_type)
+    result = dict(record)
+    if canonical is not None:
+        result["active_substances_raw"] = canonical
+    if (pesticide_type or "").strip().lower() in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"}:
+        result["product_name"] = clean_seed_treatment_display_name(result.get("product_name"))
+    return result
 
 def normalize_substance_name(name: str) -> str:
     """Normalize active substance names for safe comparison and lookups."""
@@ -1751,7 +1840,7 @@ async def build_advanced_compare_response(
         left_name_norm = normalize_substance_name(left_substance["name"])
         for right_substance in right_active:
             right_name_norm = normalize_substance_name(right_substance["name"])
-            if left_name_norm == right_name_norm or left_name_norm in right_name_norm or right_name_norm in left_name_norm:
+            if left_name_norm == right_name_norm:
                 left_per_ha = (calculate_active_amount(left_substance["concentration"], left_substance.get("unit"), left_rate_used, left_rate_unit)) if left_rate_used else None
                 right_per_ha = (calculate_active_amount(right_substance["concentration"], right_substance.get("unit"), right_rate_used, right_rate_unit)) if right_rate_used else None
                 identical_substances.append({
@@ -1794,9 +1883,7 @@ async def build_advanced_compare_response(
     for substance in left_active:
         name_norm = normalize_substance_name(substance["name"])
         if not any(
-            name_norm == normalize_substance_name(item["name"]) or
-            name_norm in normalize_substance_name(item["name"]) or
-            normalize_substance_name(item["name"]) in name_norm
+            name_norm == normalize_substance_name(item["name"])
             for item in identical_substances
         ):
             per_ha = (calculate_active_amount(substance["concentration"], substance.get("unit"), left_rate_used, left_rate_unit)) if left_rate_used else None
@@ -1810,9 +1897,7 @@ async def build_advanced_compare_response(
     for substance in right_active:
         name_norm = normalize_substance_name(substance["name"])
         if not any(
-            name_norm == normalize_substance_name(item["name"]) or
-            name_norm in normalize_substance_name(item["name"]) or
-            normalize_substance_name(item["name"]) in name_norm
+            name_norm == normalize_substance_name(item["name"])
             for item in identical_substances
         ):
             per_ha = (calculate_active_amount(substance["concentration"], substance.get("unit"), right_rate_used, right_rate_unit)) if right_rate_used else None
@@ -2882,9 +2967,9 @@ async def search_seed_treatments(
         return [
             {
                 "product_key": r["_id"],
-                "product_name": r["product_name"],
+                "product_name": clean_seed_treatment_display_name(r["product_name"]),
                 "formulation": r.get("formulation"),
-                "active_substances_raw": first_parseable_composition([{"active_substances_raw": value} for value in r.get("active_substances_raw_values", [])]),
+                "active_substances_raw": first_parseable_composition([{"active_substances_raw": value, "product_name": r.get("product_name")} for value in r.get("active_substances_raw_values", [])], "seed-treatment"),
                 "manufacturer": r.get("manufacturer"),
                 "registrant": next((v for v in r.get("registrant", []) if v), None),
                 "producer": next((v for v in r.get("producer", []) if v), None),
