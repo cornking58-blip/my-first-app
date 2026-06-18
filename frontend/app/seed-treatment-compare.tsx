@@ -274,12 +274,12 @@ export default function SeedTreatmentCompareScreen() {
     return (side === 'left' && leftValue > rightValue) || (side === 'right' && rightValue > leftValue) ? 'выше' : 'ниже';
   };
 
-  const getSubstanceKey = (name: string) => name.trim().toLowerCase();
+  const getSubstanceKey = (name: string) => name.trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
 
   const namesMatch = (leftName?: string | null, rightName?: string | null) => {
     const leftKey = getSubstanceKey(leftName ?? '');
     const rightKey = getSubstanceKey(rightName ?? '');
-    return Boolean(leftKey && rightKey && (leftKey === rightKey || leftKey.includes(rightKey) || rightKey.includes(leftKey)));
+    return Boolean(leftKey && rightKey && leftKey === rightKey);
   };
 
   const getSubstanceDetails = (product: ProductInfo, substanceName: string) => {
