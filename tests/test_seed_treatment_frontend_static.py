@@ -27,6 +27,33 @@ class SeedTreatmentCompareFrontendStaticTest(unittest.TestCase):
         for phrase in ["Затраты на 1 г ДВ", "Концентрация:", "ДВ на гектар"]:
             self.assertRegex(COMPARE_TEXT, rf"<Text[^>]*>[^<]*{re.escape(phrase)}")
 
+    def test_product_title_prefers_clean_display_name_and_never_product_key(self):
+        title_helper = re.search(r"const getProductTitle = .*?=> \((?P<body>.*?)\n  \);", COMPARE_TEXT, re.S)
+        self.assertIsNotNone(title_helper)
+        body = title_helper.group("body")
+
+        self.assertLess(body.index("display_product_name"), body.index("product_name"))
+        self.assertLess(body.index("product_name"), body.index("name"))
+        self.assertNotIn("product_key", body)
+        self.assertIn("{leftProductTitle}", COMPARE_TEXT)
+        self.assertIn("{rightProductTitle}", COMPARE_TEXT)
+
+    def test_composition_prefers_clean_active_substances_raw_only(self):
+        composition_helper = re.search(r"const getProductComposition = .*?=> \{(?P<body>.*?)\n  \};", COMPARE_TEXT, re.S)
+        self.assertIsNotNone(composition_helper)
+        body = composition_helper.group("body")
+
+        self.assertIn("active_substances_raw", body)
+        self.assertIn("renderCanonicalSubstances(product.substances)", body)
+        self.assertLess(body.index("active_substances_raw"), body.index("renderCanonicalSubstances"))
+        self.assertNotIn("source_active_substances_raw", COMPARE_TEXT)
+        self.assertNotIn("raw_active_substances_raw", COMPARE_TEXT)
+        self.assertNotIn("raw_product_name", COMPARE_TEXT)
+
+    def test_cleaned_header_values_stay_inside_text_components(self):
+        for value in ["leftProductTitle", "rightProductTitle", "leftComposition", "rightComposition"]:
+            self.assertRegex(COMPARE_TEXT, rf"<Text[^>]*>[^<]*\{{{value}\}}")
+
 
 if __name__ == "__main__":
     unittest.main()
