@@ -76,6 +76,8 @@ RESISTANCE_GROUP_DATA = namespace["RESISTANCE_GROUP_DATA"]
 OLD_HARDCODED_RESISTANCE_GROUP_COUNT = namespace["OLD_HARDCODED_RESISTANCE_GROUP_COUNT"]
 MANUAL_RU_ALIASES = namespace["MANUAL_RU_ALIASES"]
 get_resistance_lookup_diagnostics = namespace["get_resistance_lookup_diagnostics"]
+build_seed_treatment_search_response = namespace["build_seed_treatment_search_response"]
+build_seed_treatment_display_record = namespace["build_seed_treatment_display_record"]
 
 
 class FakeCursor:
@@ -102,6 +104,78 @@ PROTECT_COMBI_SOURCE_COMPOSITION = (
     "37,5 г/л Тебуконазол + 48 г/л Пираклостробин - протиоконазол + "
     "55 г/л Флудиоксонил + 37,5 г/л Тебуконазол)"
 )
+
+
+class SeedTreatmentLiveApiResponseRegressionTest(unittest.TestCase):
+    TUAREG_NAME = "Туарег, СМЭЗ (280 г/л Имидаклоприд + 34 г/л Имазалил + 20 г/л Тебуконазол)"
+    TUAREG_RAW = "(280 г/л Имидаклоприд + 34 г/л Имазалил + 20 г/л Тебуконазол)"
+
+    def grouped(self, name, raw_values):
+        return {
+            "_id": name,
+            "product_name": name,
+            "active_substances_raw_values": raw_values,
+            "registrant": [],
+            "producer": [],
+            "company": [],
+            "applicant": [],
+            "registration_holder": [],
+            "registrant_name": [],
+            "manufacturer_name": [],
+            "producer_name": [],
+            "organization": [],
+            "registrant_organization": [],
+            "certificate_holder": [],
+            "all_manufacturers": [],
+            "pesticide_type": "seed-treatment",
+            "applications_count": 1,
+        }
+
+    def test_tuareg_search_response_uses_clean_name_and_parsed_composition(self):
+        response = build_seed_treatment_search_response(self.grouped(self.TUAREG_NAME, [self.TUAREG_RAW]))
+
+        self.assertEqual(response["product_name"], "Туарег, СМЭЗ")
+        self.assertNotIn("280 г/л", response["product_name"])
+        self.assertEqual([s["name"] for s in response["active_substances"]], ["Имидаклоприд", "Имазалил", "Тебуконазол"])
+        self.assertEqual([s["concentration"] for s in response["active_substances"]], [280, 34, 20])
+
+    def test_tuareg_product_detail_response_helper_uses_clean_name_and_three_substances(self):
+        records = [{"product_key": "tuareg", "product_name": self.TUAREG_NAME, "active_substances_raw": self.TUAREG_RAW, "pesticide_type": "seed-treatment"}]
+        response = build_seed_treatment_display_record(records[0], records)
+
+        self.assertEqual(response["product_name"], "Туарег, СМЭЗ")
+        self.assertEqual(response["substance_count"], 3)
+        self.assertEqual(len(response["active_substances"]), 3)
+
+    def test_tuareg_compare_response_has_three_substances_and_total_334(self):
+        collection = FakeCollection({
+            "tuareg": [{"product_key": "tuareg", "product_name": self.TUAREG_NAME, "active_substances_raw": self.TUAREG_RAW, "pesticide_type": "seed-treatment", "rate_raw": "1,0 л/т"}],
+            "other": [{"product_key": "other", "product_name": "Другой", "active_substances_raw": "(25 г/л флудиоксонил)", "pesticide_type": "seed-treatment", "rate_raw": "1,0 л/т"}],
+        })
+        request = SimpleNamespace(left_key="tuareg", right_key="other", left_price=None, right_price=None, left_rate=None, right_rate=None, crop=None)
+
+        response = asyncio.run(build_advanced_compare_response(request, collection, "seed-treatment"))
+
+        self.assertEqual(response["left"]["product_name"], "Туарег, СМЭЗ")
+        self.assertEqual(response["left"]["substance_count"], 3)
+        self.assertEqual(response["left"]["total_concentration"], 334)
+
+    def test_protect_combi_search_product_and_compare_keep_four_canonical_substances(self):
+        response = build_seed_treatment_search_response(self.grouped("Протект Комби", [PROTECT_COMBI_SOURCE_COMPOSITION]))
+        product = build_seed_treatment_display_record({"product_name": "Протект Комби", "active_substances_raw": PROTECT_COMBI_SOURCE_COMPOSITION, "pesticide_type": "seed-treatment"}, [{"product_name": "Протект Комби", "active_substances_raw": PROTECT_COMBI_SOURCE_COMPOSITION, "pesticide_type": "seed-treatment"}])
+        collection = FakeCollection({
+            "protect": [{"product_key": "protect", "product_name": "Протект Комби", "active_substances_raw": PROTECT_COMBI_SOURCE_COMPOSITION, "pesticide_type": "seed-treatment", "rate_raw": "1,0 л/т"}],
+            "other": [{"product_key": "other", "product_name": "Другой", "active_substances_raw": "(25 г/л флудиоксонил)", "pesticide_type": "seed-treatment", "rate_raw": "1,0 л/т"}],
+        })
+        request = SimpleNamespace(left_key="protect", right_key="other", left_price=None, right_price=None, left_rate=None, right_rate=None, crop=None)
+        compare = asyncio.run(build_advanced_compare_response(request, collection, "seed-treatment"))["left"]
+
+        for item in (response, product, compare):
+            substances = item.get("active_substances") or item.get("substances")
+            self.assertEqual(len(substances), 4)
+            self.assertEqual([s["name"] for s in substances], ["Пираклостробин", "протиоконазол", "Флудиоксонил", "Тебуконазол"])
+            self.assertIsNone(substances[1]["concentration"])
+            self.assertTrue(substances[1]["concentration_unresolved"])
 
 
 class ActiveSubstanceParsingRegressionTest(unittest.TestCase):

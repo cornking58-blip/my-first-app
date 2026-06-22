@@ -1935,8 +1935,11 @@ async def build_advanced_compare_response(
         "left": {
             "product_key": left_first.get("product_key"),
             "product_name": left_first.get("product_name"),
+            "display_product_name": left_first.get("product_name"),
+            "raw_product_name": left_records[0].get("product_name"),
             "formulation": left_first.get("formulation"),
             "active_substances_raw": left_first.get("active_substances_raw"),
+            "active_substances": left_active,
             **build_composition_metadata(left_first.get("active_substances_raw"), pesticide_type),
             **manufacturer_response_fields(left_first, left_records),
             "registration_status": left_first.get("registration_status"),
@@ -1954,8 +1957,11 @@ async def build_advanced_compare_response(
         "right": {
             "product_key": right_first.get("product_key"),
             "product_name": right_first.get("product_name"),
+            "display_product_name": right_first.get("product_name"),
+            "raw_product_name": right_records[0].get("product_name"),
             "formulation": right_first.get("formulation"),
             "active_substances_raw": right_first.get("active_substances_raw"),
+            "active_substances": right_active,
             **build_composition_metadata(right_first.get("active_substances_raw"), pesticide_type),
             **manufacturer_response_fields(right_first, right_records),
             "registration_status": right_first.get("registration_status"),
@@ -1981,6 +1987,83 @@ async def build_advanced_compare_response(
     if crop_registration:
         response["crop_registration"] = crop_registration
     return response
+
+
+def build_seed_treatment_display_record(record: Dict[str, Any], records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build safe seed-treatment response fields from the same canonical source.
+
+    MongoDB keeps the imported raw product name unchanged. API responses, however,
+    should show a clean product title and expose parsed composition so the frontend
+    does not have to parse display strings.
+    """
+    base = with_canonical_composition(record or {}, records or [])
+    canonical_raw = base.get("active_substances_raw")
+    substances = parse_active_substances(canonical_raw)
+    metadata = build_composition_metadata(canonical_raw, "seed-treatment")
+    return {
+        "raw_product_name": (record or {}).get("product_name"),
+        "product_name": clean_seed_treatment_display_name(base.get("product_name")),
+        "display_product_name": clean_seed_treatment_display_name(base.get("product_name")),
+        "active_substances_raw": canonical_raw,
+        "active_substances": substances,
+        "substances": substances,
+        "substance_count": len([s for s in substances if not s.get("is_antidote")]),
+        **metadata,
+    }
+
+
+
+def build_seed_treatment_search_response(grouped_record: Dict[str, Any]) -> Dict[str, Any]:
+    """Build one /api/seed-treatments/search item from the aggregation row."""
+    r = grouped_record
+    return {
+        "product_key": r["_id"],
+        **build_seed_treatment_display_record(
+            {
+                "product_name": r.get("product_name"),
+                "active_substances_raw": None,
+                "pesticide_type": "seed-treatment",
+            },
+            build_seed_treatment_search_records(r),
+        ),
+        "formulation": r.get("formulation"),
+        "manufacturer": r.get("manufacturer"),
+        "registrant": next((v for v in r.get("registrant", []) if v), None),
+        "producer": next((v for v in r.get("producer", []) if v), None),
+        "company": next((v for v in r.get("company", []) if v), None),
+        "applicant": next((v for v in r.get("applicant", []) if v), None),
+        "registration_holder": next((v for v in r.get("registration_holder", []) if v), None),
+        "registrant_name": next((v for v in r.get("registrant_name", []) if v), None),
+        "manufacturer_name": next((v for v in r.get("manufacturer_name", []) if v), None),
+        "producer_name": next((v for v in r.get("producer_name", []) if v), None),
+        "organization": next((v for v in r.get("organization", []) if v), None),
+        "registrant_organization": next((v for v in r.get("registrant_organization", []) if v), None),
+        "certificate_holder": next((v for v in r.get("certificate_holder", []) if v), None),
+        "display_manufacturer": get_display_manufacturer({**r, "manufacturer": next((v for v in r.get("all_manufacturers", []) if v), r.get("manufacturer"))}),
+        "registration_status": r.get("registration_status"),
+        "pesticide_type": r.get("pesticide_type"),
+        "applications_count": r.get("applications_count", 0),
+    }
+
+
+def build_seed_treatment_search_records(grouped_record: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Recreate product-level composition candidates from an aggregation result."""
+    records = []
+    product_name = grouped_record.get("product_name") if isinstance(grouped_record, dict) else None
+    for value in (grouped_record.get("active_substances_raw_values", []) if isinstance(grouped_record, dict) else []):
+        records.append({
+            "product_name": product_name,
+            "active_substances_raw": value,
+            "pesticide_type": "seed-treatment",
+        })
+    # Always include product_name as its own candidate. This covers rows where
+    # active_substances_raw is blank but the imported title contains composition.
+    records.append({
+        "product_name": product_name,
+        "active_substances_raw": None,
+        "pesticide_type": "seed-treatment",
+    })
+    return records
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -2964,31 +3047,7 @@ async def search_seed_treatments(
         
         results = await db.seed_treatment_records.aggregate(pipeline).to_list(length=limit)
         
-        return [
-            {
-                "product_key": r["_id"],
-                "product_name": clean_seed_treatment_display_name(r["product_name"]),
-                "formulation": r.get("formulation"),
-                "active_substances_raw": first_parseable_composition([{"active_substances_raw": value, "product_name": r.get("product_name")} for value in r.get("active_substances_raw_values", [])], "seed-treatment"),
-                "manufacturer": r.get("manufacturer"),
-                "registrant": next((v for v in r.get("registrant", []) if v), None),
-                "producer": next((v for v in r.get("producer", []) if v), None),
-                "company": next((v for v in r.get("company", []) if v), None),
-                "applicant": next((v for v in r.get("applicant", []) if v), None),
-                "registration_holder": next((v for v in r.get("registration_holder", []) if v), None),
-                "registrant_name": next((v for v in r.get("registrant_name", []) if v), None),
-                "manufacturer_name": next((v for v in r.get("manufacturer_name", []) if v), None),
-                "producer_name": next((v for v in r.get("producer_name", []) if v), None),
-                "organization": next((v for v in r.get("organization", []) if v), None),
-                "registrant_organization": next((v for v in r.get("registrant_organization", []) if v), None),
-                "certificate_holder": next((v for v in r.get("certificate_holder", []) if v), None),
-                "display_manufacturer": get_display_manufacturer({**r, "manufacturer": next((v for v in r.get("all_manufacturers", []) if v), r.get("manufacturer"))}),
-                "registration_status": r.get("registration_status"),
-                "pesticide_type": r.get("pesticide_type"),
-                "applications_count": r.get("applications_count", 0)
-            }
-            for r in results
-        ]
+        return [build_seed_treatment_search_response(r) for r in results]
         
     except Exception as e:
         logger.error(f"Seed treatment search failed: {e}")
@@ -3025,10 +3084,8 @@ async def get_seed_treatment(product_key: str):
         
         return {
             "product_key": product_key,
-            "product_name": first_record.get("product_name"),
+            **build_seed_treatment_display_record(first_record, records),
             "formulation": first_record.get("formulation"),
-            "active_substances_raw": first_record.get("active_substances_raw"),
-            **build_composition_metadata(first_record.get("active_substances_raw"), "seed-treatment"),
             "manufacturer": first_record.get("manufacturer"),
             **manufacturer_response_fields(first_record, records),
             "registration_number": first_record.get("registration_number"),
