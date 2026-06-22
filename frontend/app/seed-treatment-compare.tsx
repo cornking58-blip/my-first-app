@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import axios from 'axios';
 import { useHerbicideStore } from '../src/store/herbicideStore';
 import { RetryErrorCard } from '../src/components/RetryErrorCard';
@@ -156,6 +156,10 @@ interface CompareResult {
 
 export default function SeedTreatmentCompareScreen() {
   const router = useRouter();
+  const routeParams = useLocalSearchParams<{
+    left_key?: string | string[];
+    right_key?: string | string[];
+  }>();
   const { selectedSeedTreatmentsForCompare, clearSeedTreatmentSelection } = useHerbicideStore();
   const [compareData, setCompareData] = useState<CompareResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -167,11 +171,24 @@ export default function SeedTreatmentCompareScreen() {
   const [crop, setCrop] = useState('');
   const [priceLoading, setPriceLoading] = useState(false);
 
-  useEffect(() => {
-    if (selectedSeedTreatmentsForCompare.length === 2) {
-      fetchCompareData();
-    }
-  }, [selectedSeedTreatmentsForCompare]);
+  const getRouteParamValue = (value?: string | string[]) => (
+    Array.isArray(value) ? value[0] : value
+  );
+
+  const selectedProductKeys = useMemo(() => {
+    const routeProductKeys = [
+      getRouteParamValue(routeParams.left_key),
+      getRouteParamValue(routeParams.right_key),
+    ];
+
+    return routeProductKeys.every(Boolean)
+      ? routeProductKeys as string[]
+      : selectedSeedTreatmentsForCompare;
+  }, [routeParams.left_key, routeParams.right_key, selectedSeedTreatmentsForCompare]);
+
+  const hasComparableProducts = selectedProductKeys.length === 2;
+  const leftSelectedProductKey = selectedProductKeys[0];
+  const rightSelectedProductKey = selectedProductKeys[1];
 
   const parseOptionalNumber = (value: string) => {
     const parsed = value ? parseFloat(value.replace(',', '.')) : undefined;
@@ -209,8 +226,8 @@ export default function SeedTreatmentCompareScreen() {
 
     try {
       const body: any = {
-        left_key: selectedSeedTreatmentsForCompare[0],
-        right_key: selectedSeedTreatmentsForCompare[1],
+        left_key: leftSelectedProductKey,
+        right_key: rightSelectedProductKey,
       };
 
       const lPrice = parseOptionalNumber(leftPrice);
@@ -233,6 +250,15 @@ export default function SeedTreatmentCompareScreen() {
       setPriceLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (hasComparableProducts) {
+      fetchCompareData();
+    } else {
+      setLoading(false);
+      setError('Выберите два препарата для сравнения');
+    }
+  }, [leftSelectedProductKey, rightSelectedProductKey, hasComparableProducts]);
 
   const handlePriceCalculation = () => {
     fetchCompareData(true);
