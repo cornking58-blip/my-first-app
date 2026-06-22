@@ -302,12 +302,16 @@ export default function SeedTreatmentCompareScreen() {
     return (side === 'left' && leftValue > rightValue) || (side === 'right' && rightValue > leftValue) ? 'выше' : 'ниже';
   };
 
-  const getProductTitle = (product: ProductInfo) => (
-    product.display_product_name?.trim()
-    || product.product_name?.trim()
-    || product.name?.trim()
-    || 'Препарат без названия'
-  );
+  const stripCompositionFromTitle = (value: string) => value.replace(/\s*\([^)]*\)\s*$/u, '').trim();
+
+  const getVisibleProductTitle = (product: ProductInfo) => {
+    const displayTitle = product.display_product_name?.trim()
+      || product.product_name?.trim()
+      || product.name?.trim()
+      || 'Препарат';
+
+    return stripCompositionFromTitle(displayTitle) || 'Препарат';
+  };
 
   const stripOuterParentheses = (value: string) => {
     const trimmed = value.trim();
@@ -324,7 +328,7 @@ export default function SeedTreatmentCompareScreen() {
       .join(' + ')
   );
 
-  const getProductComposition = (product: ProductInfo) => {
+  const getVisibleProductComposition = (product: ProductInfo) => {
     const cleanedRawComposition = product.active_substances_raw?.trim();
     if (cleanedRawComposition) return stripOuterParentheses(cleanedRawComposition);
     return renderCanonicalSubstances(product.substances);
@@ -459,14 +463,19 @@ export default function SeedTreatmentCompareScreen() {
 
   const { left, right, analysis, group_analysis, price_analysis, crop_registration } = compareData;
   const hasCropInput = crop.trim().length > 0;
-  const leftProductTitle = getProductTitle(left);
-  const rightProductTitle = getProductTitle(right);
-  const leftComposition = getProductComposition(left);
-  const rightComposition = getProductComposition(right);
-  const hasLeftComposition = leftComposition.length > 0;
+  const leftDisplayTitle = getVisibleProductTitle(left);
+  const rightDisplayTitle = getVisibleProductTitle(right);
+  const leftDisplayComposition = getVisibleProductComposition(left);
+  const rightDisplayComposition = getVisibleProductComposition(right);
+
+  if (__DEV__) {
+    console.log('seed compare display left', leftDisplayTitle, leftDisplayComposition);
+    console.log('seed compare display right', rightDisplayTitle, rightDisplayComposition);
+  }
+  const hasLeftComposition = leftDisplayComposition.length > 0;
   const leftDisplayManufacturer = left.display_manufacturer?.trim() || 'Производитель не указан';
   const rightDisplayManufacturer = right.display_manufacturer?.trim() || 'Производитель не указан';
-  const hasRightComposition = rightComposition.length > 0;
+  const hasRightComposition = rightDisplayComposition.length > 0;
   const hasLeftFormulation = (left.formulation?.trim().length ?? 0) > 0;
   const hasRightFormulation = (right.formulation?.trim().length ?? 0) > 0;
   const hasPriceResultValues = price_analysis !== null
@@ -513,10 +522,10 @@ export default function SeedTreatmentCompareScreen() {
           <View style={styles.productHeaders}>
             <View style={[styles.productHeaderLeft, styles.leftHeaderAccent]}>
               <Text style={styles.productSideLabel}>Препарат А</Text>
-              <Text style={styles.productHeaderName} numberOfLines={2}>{leftProductTitle}</Text>
+              <Text style={styles.productHeaderName} numberOfLines={2}>{leftDisplayTitle}</Text>
               <Text style={styles.productComposition} numberOfLines={2}>Производитель: {leftDisplayManufacturer}</Text>
               {hasLeftComposition ? (
-                <Text style={styles.productComposition} numberOfLines={4}>д.в.: {leftComposition}</Text>
+                <Text style={styles.productComposition} numberOfLines={4}>д.в.: {leftDisplayComposition}</Text>
               ) : null}
               {hasLeftFormulation ? (
                 <View style={styles.formulationBadge}>
@@ -553,10 +562,10 @@ export default function SeedTreatmentCompareScreen() {
 
             <View style={[styles.productHeaderRight, styles.rightHeaderAccent]}>
               <Text style={styles.productSideLabel}>Препарат Б</Text>
-              <Text style={styles.productHeaderName} numberOfLines={2}>{rightProductTitle}</Text>
+              <Text style={styles.productHeaderName} numberOfLines={2}>{rightDisplayTitle}</Text>
               <Text style={styles.productComposition} numberOfLines={2}>Производитель: {rightDisplayManufacturer}</Text>
               {hasRightComposition ? (
-                <Text style={styles.productComposition} numberOfLines={4}>д.в.: {rightComposition}</Text>
+                <Text style={styles.productComposition} numberOfLines={4}>д.в.: {rightDisplayComposition}</Text>
               ) : null}
               {hasRightFormulation ? (
                 <View style={styles.formulationBadge}>
@@ -598,7 +607,7 @@ export default function SeedTreatmentCompareScreen() {
 
             <View style={styles.priceInputRow}>
               <View style={[styles.priceInputContainer, styles.leftControlCard]}>
-                <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Норма: {leftProductTitle}</Text>
+                <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Норма: {leftDisplayTitle}</Text>
                 <TextInput
                   style={styles.priceInput}
                   placeholder={getManualRatePlaceholder('Напр. 0,8', left.rate_unit)}
@@ -609,7 +618,7 @@ export default function SeedTreatmentCompareScreen() {
                 />
                 <Text style={styles.inputHint}>По умолчанию: максимальная зарегистрированная норма</Text>
                 <Text style={styles.inputHint}>Источник нормы: {leftRate.trim().length > 0 ? 'введена вручную' : 'максимальная зарегистрированная'}</Text>
-                <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Цена: {leftProductTitle}</Text>
+                <Text style={[styles.priceInputLabel, styles.leftAccentText]}>Цена: {leftDisplayTitle}</Text>
                 <TextInput
                   style={styles.priceInput}
                   placeholder="Цена, ₽"
@@ -620,7 +629,7 @@ export default function SeedTreatmentCompareScreen() {
                 />
               </View>
               <View style={[styles.priceInputContainer, styles.rightControlCard]}>
-                <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Норма: {rightProductTitle}</Text>
+                <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Норма: {rightDisplayTitle}</Text>
                 <TextInput
                   style={styles.priceInput}
                   placeholder={getManualRatePlaceholder('Напр. 1,0', right.rate_unit)}
@@ -631,7 +640,7 @@ export default function SeedTreatmentCompareScreen() {
                 />
                 <Text style={styles.inputHint}>По умолчанию: максимальная зарегистрированная норма</Text>
                 <Text style={styles.inputHint}>Источник нормы: {rightRate.trim().length > 0 ? 'введена вручную' : 'максимальная зарегистрированная'}</Text>
-                <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Цена: {rightProductTitle}</Text>
+                <Text style={[styles.priceInputLabel, styles.rightAccentText]}>Цена: {rightDisplayTitle}</Text>
                 <TextInput
                   style={styles.priceInput}
                   placeholder="Цена, ₽"
@@ -656,11 +665,11 @@ export default function SeedTreatmentCompareScreen() {
             {hasCropInput && crop_registration ? (
               <View style={styles.cropResultRow}>
                 <View style={[styles.cropResultCard, styles.leftColumnCard]}>
-                  <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>{leftProductTitle}</Text>
+                  <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>{leftDisplayTitle}</Text>
                   <Text style={styles.registrationLine}>{crop_registration.left.message}</Text>
                 </View>
                 <View style={[styles.cropResultCard, styles.rightColumnCard]}>
-                  <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>{rightProductTitle}</Text>
+                  <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>{rightDisplayTitle}</Text>
                   <Text style={styles.registrationLine}>{crop_registration.right.message}</Text>
                 </View>
               </View>
@@ -779,8 +788,8 @@ export default function SeedTreatmentCompareScreen() {
                   <View key={idx} style={styles.substanceCard}>
                     <Text style={styles.substanceName}>{sub.name}</Text>
                     <View style={styles.sideBySideHeader}>
-                      {renderProductColumnLabel('left', leftProductTitle)}
-                      {renderProductColumnLabel('right', rightProductTitle)}
+                      {renderProductColumnLabel('left', leftDisplayTitle)}
+                      {renderProductColumnLabel('right', rightDisplayTitle)}
                     </View>
                     <View style={styles.substanceComparison}>
                       <View style={[styles.substanceValue, styles.leftColumnCard, getValueTone(sub.left_concentration, sub.right_concentration, 'left')]}>
@@ -836,7 +845,7 @@ export default function SeedTreatmentCompareScreen() {
                   <Text style={styles.groupNeutralText}>Разные действующие вещества, но одна группа действия.</Text>
                   <View style={styles.categoryComparison}>
                     <View style={styles.categoryColumn}>
-                      <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>{leftProductTitle}</Text>
+                      <Text style={[styles.columnSmallTitle, styles.leftAccentText]}>{leftDisplayTitle}</Text>
                       {match.left_substances.map((name, itemIdx) => (
                         <React.Fragment key={`left-same-${itemIdx}`}>
                           {renderSubstanceMetrics(getSubstanceDetails(left, name), 'left')}
@@ -844,7 +853,7 @@ export default function SeedTreatmentCompareScreen() {
                       ))}
                     </View>
                     <View style={styles.categoryColumn}>
-                      <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>{rightProductTitle}</Text>
+                      <Text style={[styles.columnSmallTitle, styles.rightAccentText]}>{rightDisplayTitle}</Text>
                       {match.right_substances.map((name, itemIdx) => (
                         <React.Fragment key={`right-same-${itemIdx}`}>
                           {renderSubstanceMetrics(getSubstanceDetails(right, name), 'right')}
@@ -878,7 +887,7 @@ export default function SeedTreatmentCompareScreen() {
               </View>
               <View style={styles.uniqueColumns}>
                 <View style={styles.uniqueBlock}>
-                  <Text style={[styles.uniqueBlockTitle, styles.leftAccentText]}>У {leftProductTitle} дополнительно:</Text>
+                  <Text style={[styles.uniqueBlockTitle, styles.leftAccentText]}>У {leftDisplayTitle} дополнительно:</Text>
                   {leftAdditionalSubstances.length > 0 ? (
                     leftAdditionalSubstances.map((sub, idx) => (
                       <React.Fragment key={`left-unique-${idx}`}>{renderUniqueSubstance(sub, 'left')}</React.Fragment>
@@ -888,7 +897,7 @@ export default function SeedTreatmentCompareScreen() {
                   )}
                 </View>
                 <View style={styles.uniqueBlock}>
-                  <Text style={[styles.uniqueBlockTitle, styles.rightAccentText]}>У {rightProductTitle} дополнительно:</Text>
+                  <Text style={[styles.uniqueBlockTitle, styles.rightAccentText]}>У {rightDisplayTitle} дополнительно:</Text>
                   {rightAdditionalSubstances.length > 0 ? (
                     rightAdditionalSubstances.map((sub, idx) => (
                       <React.Fragment key={`right-unique-${idx}`}>{renderUniqueSubstance(sub, 'right')}</React.Fragment>
