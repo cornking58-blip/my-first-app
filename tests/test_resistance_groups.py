@@ -135,6 +135,7 @@ class SeedTreatmentLiveApiResponseRegressionTest(unittest.TestCase):
         response = build_seed_treatment_search_response(self.grouped(self.TUAREG_NAME, [self.TUAREG_RAW]))
 
         self.assertEqual(response["product_name"], "Туарег, СМЭЗ")
+        self.assertEqual(response["active_substances_raw"], self.TUAREG_RAW)
         self.assertNotIn("280 г/л", response["product_name"])
         self.assertEqual([s["name"] for s in response["active_substances"]], ["Имидаклоприд", "Имазалил", "Тебуконазол"])
         self.assertEqual([s["concentration"] for s in response["active_substances"]], [280, 34, 20])
@@ -144,6 +145,7 @@ class SeedTreatmentLiveApiResponseRegressionTest(unittest.TestCase):
         response = build_seed_treatment_display_record(records[0], records)
 
         self.assertEqual(response["product_name"], "Туарег, СМЭЗ")
+        self.assertEqual(response["active_substances_raw"], self.TUAREG_RAW)
         self.assertEqual(response["substance_count"], 3)
         self.assertEqual(len(response["active_substances"]), 3)
 
@@ -157,6 +159,7 @@ class SeedTreatmentLiveApiResponseRegressionTest(unittest.TestCase):
         response = asyncio.run(build_advanced_compare_response(request, collection, "seed-treatment"))
 
         self.assertEqual(response["left"]["product_name"], "Туарег, СМЭЗ")
+        self.assertEqual(response["left"]["active_substances_raw"], self.TUAREG_RAW)
         self.assertEqual(response["left"]["substance_count"], 3)
         self.assertEqual(response["left"]["total_concentration"], 334)
 
@@ -172,10 +175,14 @@ class SeedTreatmentLiveApiResponseRegressionTest(unittest.TestCase):
 
         for item in (response, product, compare):
             substances = item.get("active_substances") or item.get("substances")
+            self.assertEqual(item["active_substances_raw"], "(55 г/л Пираклостробин + 48 г/л протиоконазол + 37,5 г/л Флудиоксонил + 10 г/л Тебуконазол)")
+            self.assertIn("48 г/л Пираклостробин - протиоконазол", item["source_active_substances_raw"])
             self.assertEqual(len(substances), 4)
             self.assertEqual([s["name"] for s in substances], ["Пираклостробин", "протиоконазол", "Флудиоксонил", "Тебуконазол"])
-            self.assertIsNone(substances[1]["concentration"])
-            self.assertTrue(substances[1]["concentration_unresolved"])
+            self.assertEqual([s["concentration"] for s in substances], [55, 48, 37.5, 10])
+            self.assertEqual([s["unit"] for s in substances], ["г/л", "г/л", "г/л", "г/л"])
+            self.assertFalse(any(s.get("concentration_unresolved") for s in substances))
+            self.assertNotIn("55 г/л Флудиоксонил", item["active_substances_raw"])
 
 
 class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
@@ -185,16 +192,27 @@ class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
         self.assertEqual([substance["name"] for substance in substances], expected_names)
         return substances
 
-    def test_protect_combi_source_composition_deduplicates_repeated_components(self):
+    def test_protect_combi_verified_normalization_returns_canonical_composition(self):
+        canonical = namespace["normalize_verified_seed_treatment_composition"]("Протект Комби", PROTECT_COMBI_SOURCE_COMPOSITION)
         substances = self.assert_substance_names(
-            PROTECT_COMBI_SOURCE_COMPOSITION,
+            canonical,
             ["Пираклостробин", "протиоконазол", "Флудиоксонил", "Тебуконазол"],
         )
 
+        self.assertEqual(canonical, "(55 г/л Пираклостробин + 48 г/л протиоконазол + 37,5 г/л Флудиоксонил + 10 г/л Тебуконазол)")
         self.assertEqual(len(substances), 4)
-        self.assertEqual([substance["concentration"] for substance in substances], [48, None, 55, 37.5])
-        self.assertEqual([substance["unit"] for substance in substances], ["г/л", None, "г/л", "г/л"])
-        self.assertTrue(substances[1]["concentration_unresolved"])
+        self.assertEqual([substance["concentration"] for substance in substances], [55, 48, 37.5, 10])
+        self.assertEqual([substance["unit"] for substance in substances], ["г/л", "г/л", "г/л", "г/л"])
+        self.assertFalse(any(substance.get("concentration_unresolved") for substance in substances))
+
+    def test_unverified_dash_fragment_does_not_share_concentration_broadly(self):
+        substances = self.assert_substance_names(
+            "(100 г/л Пираклостробин - протиоконазол)",
+            ["Пираклостробин", "протиоконазол"],
+        )
+
+        self.assertEqual([substance["concentration"] for substance in substances], [100, None])
+        self.assertEqual(namespace["normalize_verified_seed_treatment_composition"]("Другой продукт", "(100 г/л Пираклостробин - протиоконазол)"), None)
 
     def test_protect_combi_does_not_parse_unrelated_record_fragments(self):
         unrelated_fragments = [
@@ -1327,7 +1345,7 @@ class AdvancedCompareResponseTest(unittest.TestCase):
             any(item["side"] == "right" for item in response["price_analysis"]["substances_cost"])
         )
 
-    def test_price_analysis_does_not_return_fake_cost_for_unresolved_concentration(self):
+    def test_protect_combi_verified_concentrations_are_available_for_price_analysis(self):
         collection = FakeCollection({
             "left": [
                 {
@@ -1363,11 +1381,9 @@ class AdvancedCompareResponseTest(unittest.TestCase):
         )
 
         response = asyncio.run(build_advanced_compare_response(request, collection, "seed-treatment"))
-        left_costs = response["price_analysis"]["left_substances_cost"]
-
-        self.assertFalse(any(item["substance_name"] == "протиоконазол" for item in left_costs))
-        self.assertTrue(response["left"]["has_composition_warning"])
-        self.assertIn("unresolved_concentration", composition_warning_codes(response["left"]["composition_warnings"]))
+        self.assertEqual([s["concentration"] for s in response["left"]["active_substances"]], [55, 48, 37.5, 10])
+        self.assertFalse(any(s.get("concentration_unresolved") for s in response["left"]["active_substances"]))
+        self.assertNotIn("unresolved_concentration", composition_warning_codes(response["left"]["composition_warnings"]))
 
     def test_crop_provided_and_product_has_row_returns_true(self):
         response = self.compare(crop="подсолнечник")

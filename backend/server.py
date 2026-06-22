@@ -716,13 +716,72 @@ def seed_treatment_record_composition_candidates(record: Dict[str, Any]) -> List
     return candidates
 
 
+
+
+PROTECT_COMBI_CANONICAL_SUBSTANCES = [
+    {"name": "Пираклостробин", "concentration": 55, "unit": "г/л", "is_antidote": False},
+    {"name": "протиоконазол", "concentration": 48, "unit": "г/л", "is_antidote": False},
+    {"name": "Флудиоксонил", "concentration": 37.5, "unit": "г/л", "is_antidote": False},
+    {"name": "Тебуконазол", "concentration": 10, "unit": "г/л", "is_antidote": False},
+]
+
+
+def _format_concentration_for_composition(value: Any) -> str:
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return (str(number).rstrip("0").rstrip(".")).replace(".", ",")
+
+
+def build_canonical_active_substances_raw(substances: Sequence[Dict[str, Any]]) -> Optional[str]:
+    """Build clean UI-facing composition text from final parsed substances."""
+    components = []
+    for substance in substances or []:
+        concentration = substance.get("concentration")
+        unit = substance.get("unit")
+        name = substance.get("name")
+        if concentration is None or not unit or not name:
+            return None
+        components.append(f"{_format_concentration_for_composition(concentration)} {unit} {name}")
+    if not components:
+        return None
+    return "(" + " + ".join(components) + ")"
+
+
+PROTECT_COMBI_CANONICAL_COMPOSITION = build_canonical_active_substances_raw(PROTECT_COMBI_CANONICAL_SUBSTANCES)
+
+
+def normalize_verified_seed_treatment_composition(product_name: Optional[str], raw_composition: Optional[str] = None) -> Optional[str]:
+    """Return explicit verified seed-treatment corrections only for named products.
+
+    This intentionally avoids a broad dash rule: ambiguous fragments like
+    ``100 г/л A - B`` are not interpreted as two equal concentrations.
+    """
+    normalized_name = normalize_search_text(clean_seed_treatment_display_name(product_name or ""))
+    if normalized_name == "протект комби":
+        return PROTECT_COMBI_CANONICAL_COMPOSITION
+    return None
+
 def canonical_seed_treatment_composition(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """Select one explicit seed-treatment composition without silently merging conflicts."""
     chosen_source = None
     chosen = None
+    chosen_original = None
     conflicts = []
     seen = set()
     all_parseable = []
+
+    product_name = next((record.get("product_name") for record in records or [] if isinstance(record, dict) and record.get("product_name")), None)
+    verified = normalize_verified_seed_treatment_composition(product_name)
+    if verified:
+        original = next((record.get("active_substances_raw") for record in records or [] if isinstance(record, dict) and record.get("active_substances_raw")), None)
+        return {
+            "composition": verified,
+            "source": "verified_seed_treatment_correction",
+            "source_active_substances_raw": original,
+            "manual_review_required": False,
+            "conflicting_compositions": [],
+        }
 
     for record in records or []:
         for source, composition in seed_treatment_record_composition_candidates(record):
@@ -735,6 +794,7 @@ def canonical_seed_treatment_composition(records: Sequence[Dict[str, Any]]) -> D
             if chosen is None or (chosen_source != "active_substances_raw" and source == "active_substances_raw"):
                 chosen_source = source
                 chosen = deduped
+                chosen_original = composition
 
     manual_review_required = len(seen) > 1
     if manual_review_required:
@@ -743,6 +803,7 @@ def canonical_seed_treatment_composition(records: Sequence[Dict[str, Any]]) -> D
     return {
         "composition": chosen,
         "source": chosen_source,
+        "source_active_substances_raw": chosen_original if chosen_original != chosen else None,
         "manual_review_required": manual_review_required,
         "conflicting_compositions": conflicts,
     }
@@ -922,9 +983,16 @@ def first_parseable_composition(records: Sequence[Dict[str, Any]], pesticide_typ
 def with_canonical_composition(record: Dict[str, Any], records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """Return a copy whose active_substances_raw is the safest product-level composition."""
     pesticide_type = record.get("pesticide_type") or ("seed-treatment" if any(r.get("pesticide_type") == "seed-treatment" for r in records or []) else None)
-    canonical = first_parseable_composition(records, pesticide_type)
+    if pesticide_type is None and normalize_verified_seed_treatment_composition(record.get("product_name")):
+        pesticide_type = "seed-treatment"
+    selected = canonical_seed_treatment_composition(records) if (pesticide_type or "").strip().lower() in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"} else {}
+    canonical = selected.get("composition") or first_parseable_composition(records, pesticide_type)
     result = dict(record)
     if canonical is not None:
+        if result.get("active_substances_raw") and result.get("active_substances_raw") != canonical:
+            result["source_active_substances_raw"] = result.get("active_substances_raw")
+        if selected.get("source_active_substances_raw"):
+            result["source_active_substances_raw"] = selected.get("source_active_substances_raw")
         result["active_substances_raw"] = canonical
     if (pesticide_type or "").strip().lower() in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"}:
         result["product_name"] = clean_seed_treatment_display_name(result.get("product_name"))
@@ -1939,6 +2007,7 @@ async def build_advanced_compare_response(
             "raw_product_name": left_records[0].get("product_name"),
             "formulation": left_first.get("formulation"),
             "active_substances_raw": left_first.get("active_substances_raw"),
+            "source_active_substances_raw": left_first.get("source_active_substances_raw"),
             "active_substances": left_active,
             **build_composition_metadata(left_first.get("active_substances_raw"), pesticide_type),
             **manufacturer_response_fields(left_first, left_records),
@@ -1961,6 +2030,7 @@ async def build_advanced_compare_response(
             "raw_product_name": right_records[0].get("product_name"),
             "formulation": right_first.get("formulation"),
             "active_substances_raw": right_first.get("active_substances_raw"),
+            "source_active_substances_raw": right_first.get("source_active_substances_raw"),
             "active_substances": right_active,
             **build_composition_metadata(right_first.get("active_substances_raw"), pesticide_type),
             **manufacturer_response_fields(right_first, right_records),
@@ -2005,6 +2075,7 @@ def build_seed_treatment_display_record(record: Dict[str, Any], records: Sequenc
         "product_name": clean_seed_treatment_display_name(base.get("product_name")),
         "display_product_name": clean_seed_treatment_display_name(base.get("product_name")),
         "active_substances_raw": canonical_raw,
+        "source_active_substances_raw": base.get("source_active_substances_raw"),
         "active_substances": substances,
         "substances": substances,
         "substance_count": len([s for s in substances if not s.get("is_antidote")]),
