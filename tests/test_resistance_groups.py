@@ -184,6 +184,35 @@ class SeedTreatmentLiveApiResponseRegressionTest(unittest.TestCase):
             self.assertFalse(any(s.get("concentration_unresolved") for s in substances))
             self.assertNotIn("55 г/л Флудиоксонил", item["active_substances_raw"])
 
+    def test_protect_combi_compare_response_exposes_clean_field_for_top_card(self):
+        collection = FakeCollection({
+            "protect": [{
+                "product_key": "protect",
+                "product_name": "Протект Комби",
+                "active_substances_raw": PROTECT_COMBI_SOURCE_COMPOSITION,
+                "pesticide_type": "seed-treatment",
+                "rate_raw": "1,0 л/т",
+            }],
+            "other": [{
+                "product_key": "other",
+                "product_name": "Другой",
+                "active_substances_raw": "(25 г/л флудиоксонил)",
+                "pesticide_type": "seed-treatment",
+                "rate_raw": "1,0 л/т",
+            }],
+        })
+        request = SimpleNamespace(left_key="protect", right_key="other", left_price=None, right_price=None, left_rate=None, right_rate=None, crop=None)
+
+        compare = asyncio.run(build_advanced_compare_response(request, collection, "seed-treatment"))["left"]
+
+        self.assertEqual(
+            compare["active_substances_raw"],
+            "(55 г/л Пираклостробин + 48 г/л протиоконазол + 37,5 г/л Флудиоксонил + 10 г/л Тебуконазол)",
+        )
+        self.assertNotEqual(compare["active_substances_raw"], compare["source_active_substances_raw"])
+        self.assertIn("48 г/л Пираклостробин - протиоконазол", compare["source_active_substances_raw"])
+        self.assertNotIn("55 г/л Флудиоксонил", compare["active_substances_raw"])
+
 
 class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
     def assert_substance_names(self, raw, expected_names):
