@@ -331,7 +331,8 @@ export default function SeedTreatmentCompareScreen() {
   const getVisibleProductComposition = (product: ProductInfo) => {
     const cleanedRawComposition = product.active_substances_raw?.trim();
     if (cleanedRawComposition) return stripOuterParentheses(cleanedRawComposition);
-    return renderCanonicalSubstances(product.substances);
+    const renderedSubstances = renderCanonicalSubstances(product.substances ?? []);
+    return renderedSubstances.trim();
   };
 
   const getSubstanceKey = (name: string) => name.trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
