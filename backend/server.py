@@ -2232,6 +2232,74 @@ def is_active_status(status: Optional[str]) -> bool:
     return status_lower == "действует"
 
 
+def is_valid_product_name(product_name: Optional[str]) -> bool:
+    """Reject spreadsheet fragments that cannot be real product names."""
+    text = str(product_name or "").strip()
+    return bool(text and re.search(r"[A-Za-zА-Яа-яЁё]", text))
+
+
+def normalize_product_display_name(product_name: Optional[str]) -> str:
+    """Build a stable key for visually identical product names."""
+    text = str(product_name or "").casefold().replace("ё", "е")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip(" ,;")
+
+
+def grouped_product_registration_status(record: Dict[str, Any]) -> Optional[str]:
+    statuses = [
+        str(value).strip()
+        for value in record.get("registration_status_values", [])
+        if value is not None and str(value).strip()
+    ]
+    first_status = record.get("registration_status")
+    if first_status is not None and str(first_status).strip():
+        statuses.append(str(first_status).strip())
+    if any(status.casefold() == "действует" for status in statuses):
+        return "Действует"
+    return statuses[0] if statuses else None
+
+
+def _grouped_product_priority(record: Dict[str, Any]) -> Tuple[int, int, int]:
+    status = str(grouped_product_registration_status(record) or "").strip().casefold()
+    active_priority = 1 if status == "действует" else 0
+    composition_priority = sum(
+        1 for value in record.get("active_substances_raw_values", []) if value
+    )
+    applications_count = int(record.get("applications_count") or 0)
+    return active_priority, composition_priority, applications_count
+
+
+def deduplicate_grouped_products(
+    records: Sequence[Dict[str, Any]],
+    limit: int,
+    display_name_cleaner=None,
+) -> List[Dict[str, Any]]:
+    """Keep one visible card per product name, preferring an active registration."""
+    selected: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+
+    for record in records or []:
+        record = dict(record)
+        record["registration_status"] = grouped_product_registration_status(record)
+        raw_name = record.get("product_name")
+        display_name = display_name_cleaner(raw_name) if display_name_cleaner else raw_name
+        if not is_valid_product_name(display_name):
+            continue
+
+        normalized_name = normalize_product_display_name(display_name)
+        if not normalized_name:
+            continue
+
+        current = selected.get(normalized_name)
+        if current is None:
+            selected[normalized_name] = record
+            order.append(normalized_name)
+        elif _grouped_product_priority(record) > _grouped_product_priority(current):
+            selected[normalized_name] = record
+
+    return [selected[name] for name in order[:limit]]
+
+
 # ==================== ENDPOINTS ====================
 
 @api_router.get("/health")
@@ -2267,7 +2335,7 @@ async def import_excel(file: UploadFile = File(...)):
         records = []
         for idx, row in df.iterrows():
             product_name = clean_value(row.get('product_name'))
-            if not product_name:
+            if not is_valid_product_name(product_name):
                 continue
             
             registration_number = clean_value(row.get('registration_number'))
@@ -2362,6 +2430,7 @@ async def search_herbicides(
         if only_active:
             pipeline.append({"$match": {"registration_status": "Действует"}})
         
+        candidate_limit = min(limit * 4, 800)
         pipeline.extend([
             {
                 "$group": {
@@ -2383,14 +2452,16 @@ async def search_herbicides(
                     "certificate_holder": {"$push": "$certificate_holder"},
                     "all_manufacturers": {"$push": "$manufacturer"},
                     "registration_status": {"$first": "$registration_status"},
+                    "registration_status_values": {"$addToSet": "$registration_status"},
                     "applications_count": {"$sum": 1}
                 }
             },
             {"$sort": {"product_name": 1}},
-            {"$limit": limit}
+            {"$limit": candidate_limit}
         ])
         
-        results = await db.herbicide_records.aggregate(pipeline).to_list(length=limit)
+        results = await db.herbicide_records.aggregate(pipeline).to_list(length=candidate_limit)
+        results = deduplicate_grouped_products(results, limit, clean_seed_treatment_display_name)
         
         return [
             SearchResult(
@@ -2411,7 +2482,7 @@ async def search_herbicides(
                 registrant_organization=next((v for v in r.get("registrant_organization", []) if v), None),
                 certificate_holder=next((v for v in r.get("certificate_holder", []) if v), None),
                 display_manufacturer=get_display_manufacturer({**r, "manufacturer": next((v for v in r.get("all_manufacturers", []) if v), r.get("manufacturer"))}),
-                registration_status=r.get("registration_status"),
+                registration_status=grouped_product_registration_status(r),
                 applications_count=r.get("applications_count", 0)
             )
             for r in results
@@ -2564,7 +2635,7 @@ async def import_insecticides(file: UploadFile = File(...)):
         records = []
         for idx, row in df.iterrows():
             product_name = clean_value(row.get('product_name'))
-            if not product_name:
+            if not is_valid_product_name(product_name):
                 continue
             
             registration_number = clean_value(row.get('registration_number'))
@@ -2660,6 +2731,7 @@ async def search_insecticides(
         if only_active:
             pipeline.append({"$match": {"registration_status": "Действует"}})
         
+        candidate_limit = min(limit * 4, 800)
         pipeline.extend([
             {
                 "$group": {
@@ -2681,14 +2753,16 @@ async def search_insecticides(
                     "certificate_holder": {"$push": "$certificate_holder"},
                     "all_manufacturers": {"$push": "$manufacturer"},
                     "registration_status": {"$first": "$registration_status"},
+                    "registration_status_values": {"$addToSet": "$registration_status"},
                     "applications_count": {"$sum": 1}
                 }
             },
             {"$sort": {"product_name": 1}},
-            {"$limit": limit}
+            {"$limit": candidate_limit}
         ])
         
-        results = await db.insecticide_records.aggregate(pipeline).to_list(length=limit)
+        results = await db.insecticide_records.aggregate(pipeline).to_list(length=candidate_limit)
+        results = deduplicate_grouped_products(results, limit, clean_seed_treatment_display_name)
         
         return [
             SearchResult(
@@ -2712,7 +2786,7 @@ async def search_insecticides(
                 registrant_organization=next((v for v in r.get("registrant_organization", []) if v), None),
                 certificate_holder=next((v for v in r.get("certificate_holder", []) if v), None),
                 display_manufacturer=get_display_manufacturer({**r, "manufacturer": next((v for v in r.get("all_manufacturers", []) if v), r.get("manufacturer"))}),
-                registration_status=r.get("registration_status"),
+                registration_status=grouped_product_registration_status(r),
                 applications_count=r.get("applications_count", 0)
             )
             for r in results
@@ -2801,7 +2875,7 @@ async def import_fungicides(file: UploadFile = File(...)):
         records = []
         for idx, row in df.iterrows():
             product_name = clean_value(row.get('product_name'))
-            if not product_name:
+            if not is_valid_product_name(product_name):
                 continue
             
             registration_number = clean_value(row.get('registration_number'))
@@ -2899,6 +2973,7 @@ async def search_fungicides(
         if only_active:
             pipeline.append({"$match": {"registration_status": "Действует"}})
         
+        candidate_limit = min(limit * 4, 800)
         pipeline.extend([
             {
                 "$group": {
@@ -2920,14 +2995,16 @@ async def search_fungicides(
                     "certificate_holder": {"$push": "$certificate_holder"},
                     "all_manufacturers": {"$push": "$manufacturer"},
                     "registration_status": {"$first": "$registration_status"},
+                    "registration_status_values": {"$addToSet": "$registration_status"},
                     "applications_count": {"$sum": 1}
                 }
             },
             {"$sort": {"product_name": 1}},
-            {"$limit": limit}
+            {"$limit": candidate_limit}
         ])
         
-        results = await db.fungicide_records.aggregate(pipeline).to_list(length=limit)
+        results = await db.fungicide_records.aggregate(pipeline).to_list(length=candidate_limit)
+        results = deduplicate_grouped_products(results, limit, clean_seed_treatment_display_name)
         
         return [
             SearchResult(
@@ -2948,7 +3025,7 @@ async def search_fungicides(
                 registrant_organization=next((v for v in r.get("registrant_organization", []) if v), None),
                 certificate_holder=next((v for v in r.get("certificate_holder", []) if v), None),
                 display_manufacturer=get_display_manufacturer({**r, "manufacturer": next((v for v in r.get("all_manufacturers", []) if v), r.get("manufacturer"))}),
-                registration_status=r.get("registration_status"),
+                registration_status=grouped_product_registration_status(r),
                 applications_count=r.get("applications_count", 0)
             )
             for r in results
@@ -3037,7 +3114,7 @@ async def import_seed_treatments(file: UploadFile = File(...)):
         records = []
         for idx, row in df.iterrows():
             product_name = clean_value(row.get('product_name'))
-            if not product_name:
+            if not is_valid_product_name(product_name):
                 continue
             
             registration_number = clean_value(row.get('registration_number'))
@@ -3134,6 +3211,7 @@ async def search_seed_treatments(
         if only_active:
             pipeline.append({"$match": {"registration_status": "Действует"}})
         
+        candidate_limit = min(limit * 4, 800)
         pipeline.extend([
             {
                 "$group": {
@@ -3155,15 +3233,17 @@ async def search_seed_treatments(
                     "certificate_holder": {"$push": "$certificate_holder"},
                     "all_manufacturers": {"$push": "$manufacturer"},
                     "registration_status": {"$first": "$registration_status"},
+                    "registration_status_values": {"$addToSet": "$registration_status"},
                     "pesticide_type": {"$first": "$pesticide_type"},
                     "applications_count": {"$sum": 1}
                 }
             },
             {"$sort": {"product_name": 1}},
-            {"$limit": limit}
+            {"$limit": candidate_limit}
         ])
         
-        results = await db.seed_treatment_records.aggregate(pipeline).to_list(length=limit)
+        results = await db.seed_treatment_records.aggregate(pipeline).to_list(length=candidate_limit)
+        results = deduplicate_grouped_products(results, limit, clean_seed_treatment_display_name)
         
         return [build_seed_treatment_search_response(r) for r in results]
         

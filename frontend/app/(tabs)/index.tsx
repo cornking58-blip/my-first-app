@@ -324,7 +324,13 @@ export default function HomeScreen() {
             {selectedForCompare.length === 2 && (
               <TouchableOpacity 
                 style={styles.compareButton}
-                onPress={() => router.push('/compare')}
+                onPress={() => router.push({
+                  pathname: '/compare',
+                  params: {
+                    left_key: selectedForCompare[0],
+                    right_key: selectedForCompare[1],
+                  },
+                })}
               >
                 <Ionicons name="git-compare-outline" size={18} color="#FFFFFF" />
                 <Text style={styles.compareButtonText}>Сравнить</Text>
