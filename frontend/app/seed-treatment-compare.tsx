@@ -217,6 +217,13 @@ export default function SeedTreatmentCompareScreen() {
   };
 
   const fetchCompareData = async (withInputs = false) => {
+    if (!hasComparableProducts) {
+      setLoading(false);
+      setPriceLoading(false);
+      setError('Выберите два препарата для сравнения');
+      return;
+    }
+
     if (withInputs) {
       setPriceLoading(true);
     } else {

@@ -331,7 +331,13 @@ export default function SeedTreatmentsScreen() {
             {selectedSeedTreatmentsForCompare.length === 2 && (
               <TouchableOpacity 
                 style={styles.compareButton}
-                onPress={() => router.push('/seed-treatment-compare')}
+                onPress={() => router.push({
+                  pathname: '/seed-treatment-compare',
+                  params: {
+                    left_key: selectedSeedTreatmentsForCompare[0],
+                    right_key: selectedSeedTreatmentsForCompare[1],
+                  },
+                })}
               >
                 <Ionicons name="git-compare-outline" size={18} color="#FFFFFF" />
                 <Text style={styles.compareButtonText}>Сравнить</Text>

@@ -320,7 +320,13 @@ export default function InsecticidesScreen() {
             {selectedInsecticidesForCompare.length === 2 && (
               <TouchableOpacity 
                 style={styles.compareButton}
-                onPress={() => router.push('/insecticide-compare')}
+                onPress={() => router.push({
+                  pathname: '/insecticide-compare',
+                  params: {
+                    left_key: selectedInsecticidesForCompare[0],
+                    right_key: selectedInsecticidesForCompare[1],
+                  },
+                })}
               >
                 <Ionicons name="git-compare-outline" size={18} color="#FFFFFF" />
                 <Text style={styles.compareButtonText}>Сравнить</Text>
