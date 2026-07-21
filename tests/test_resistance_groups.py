@@ -214,6 +214,91 @@ class SeedTreatmentLiveApiResponseRegressionTest(unittest.TestCase):
         self.assertNotIn("55 г/л Флудиоксонил", compare["active_substances_raw"])
 
 
+    def test_compare_uses_canonical_composition_for_multiple_fungicide_seed_rows(self):
+        collection = FakeCollection({
+            "tuareg": [
+                {
+                    "product_key": "tuareg",
+                    "product_name": self.TUAREG_NAME,
+                    "formulation": "СМЭЗ",
+                    "active_substances_raw": None,
+                    "pesticide_type": "fungicide_seed",
+                    "rate_raw": "1,0 л/т",
+                    "crop": "Пшеница озимая",
+                },
+                {
+                    "product_key": "tuareg",
+                    "product_name": self.TUAREG_NAME,
+                    "formulation": "СМЭЗ",
+                    "active_substances_raw": None,
+                    "pesticide_type": "fungicide_seed",
+                    "rate_raw": "1,0 л/т",
+                    "crop": "Ячмень яровой",
+                },
+            ],
+            "protect": [
+                {
+                    "product_key": "protect",
+                    "product_name": "Протект Комби",
+                    "formulation": "СЭ",
+                    "active_substances_raw": PROTECT_COMBI_SOURCE_COMPOSITION,
+                    "pesticide_type": "fungicide_seed",
+                    "rate_raw": rate,
+                    "crop": crop,
+                }
+                for rate, crop in (
+                    ("1,0 л/т", "Пшеница озимая"),
+                    ("0,8-1,0 л/т", "Ячмень озимый, яровой"),
+                    ("1,0 л/т", "Пшеница яровая"),
+                    ("0,8-1,0 л/т", "Пшеница озимая, яровая"),
+                )
+            ],
+        })
+        request = SimpleNamespace(
+            left_key="tuareg",
+            right_key="protect",
+            left_price=None,
+            right_price=None,
+            left_rate=None,
+            right_rate=None,
+            crop=None,
+        )
+
+        response = asyncio.run(build_advanced_compare_response(
+            request,
+            collection,
+            "seed-treatment",
+        ))
+
+        self.assertEqual(response["left"]["active_substances_raw"], self.TUAREG_RAW)
+        self.assertEqual(
+            [substance["name"] for substance in response["left"]["substances"]],
+            ["Имидаклоприд", "Имазалил", "Тебуконазол"],
+        )
+        self.assertEqual(
+            [substance["concentration"] for substance in response["left"]["substances"]],
+            [280, 34, 20],
+        )
+        self.assertEqual(response["left"]["substance_count"], 3)
+        self.assertEqual(response["left"]["total_concentration"], 334)
+
+        self.assertEqual(
+            response["right"]["active_substances_raw"],
+            "(55 г/л Пираклостробин + 48 г/л протиоконазол + "
+            "37,5 г/л Флудиоксонил + 10 г/л Тебуконазол)",
+        )
+        self.assertEqual(
+            [substance["name"] for substance in response["right"]["substances"]],
+            ["Пираклостробин", "протиоконазол", "Флудиоксонил", "Тебуконазол"],
+        )
+        self.assertEqual(
+            [substance["concentration"] for substance in response["right"]["substances"]],
+            [55, 48, 37.5, 10],
+        )
+        self.assertEqual(response["right"]["substance_count"], 4)
+        self.assertEqual(response["right"]["total_concentration"], 150.5)
+
+
 class ActiveSubstanceParsingRegressionTest(unittest.TestCase):
     def assert_substance_names(self, raw, expected_names):
         substances = parse_active_substances(raw)
