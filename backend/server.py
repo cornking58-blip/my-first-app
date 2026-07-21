@@ -679,6 +679,12 @@ def product_name_composition_candidate(product_name: Optional[str]) -> Optional[
     for candidate in reversed(candidates):
         candidate = candidate.strip()
         if re.search(rf"\d+(?:[.,]\d+)?\s*(?:{SUPPORTED_CONCENTRATION_UNITS_REGEX})", candidate, re.IGNORECASE):
+            candidate = re.sub(
+                rf"(\d+(?:[.,]\d+)?)\s*({SUPPORTED_CONCENTRATION_UNITS_REGEX})(?:\s+(?:{SUPPORTED_CONCENTRATION_UNITS_REGEX}))+",
+                lambda match: f"{match.group(1)} {match.group(2)}",
+                candidate,
+                flags=re.IGNORECASE,
+            )
             parsed = parse_active_substances(candidate)
             if parsed:
                 return f"({candidate})"
@@ -991,12 +997,26 @@ def first_parseable_composition(records: Sequence[Dict[str, Any]], pesticide_typ
             fallback = text
         if parse_active_substances(text):
             return text
-    return fallback
+    if fallback is not None:
+        return fallback
+
+    if str(pesticide_type or "").strip().lower() == "insecticide":
+        for record in records or []:
+            candidate = product_name_composition_candidate(
+                record.get("product_name") if isinstance(record, dict) else None
+            )
+            if candidate:
+                return candidate
+    return None
 
 
-def with_canonical_composition(record: Dict[str, Any], records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def with_canonical_composition(
+    record: Dict[str, Any],
+    records: Sequence[Dict[str, Any]],
+    pesticide_type: Optional[str] = None,
+) -> Dict[str, Any]:
     """Return a copy whose active_substances_raw is the safest product-level composition."""
-    pesticide_type = record.get("pesticide_type") or (
+    pesticide_type = pesticide_type or record.get("pesticide_type") or (
         "seed-treatment"
         if any(is_seed_treatment_pesticide_type(r.get("pesticide_type")) for r in records or [])
         else None
@@ -1900,8 +1920,8 @@ async def build_advanced_compare_response(
     if not right_records:
         raise HTTPException(status_code=404, detail=right_not_found)
 
-    left_first = with_canonical_composition(left_records[0], left_records)
-    right_first = with_canonical_composition(right_records[0], right_records)
+    left_first = with_canonical_composition(left_records[0], left_records, pesticide_type)
+    right_first = with_canonical_composition(right_records[0], right_records, pesticide_type)
 
     left_substances = parse_active_substances(left_first.get("active_substances_raw"))
     right_substances = parse_active_substances(right_first.get("active_substances_raw"))
@@ -2137,20 +2157,26 @@ def build_seed_treatment_search_response(grouped_record: Dict[str, Any]) -> Dict
 
 def build_seed_treatment_search_records(grouped_record: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Recreate product-level composition candidates from an aggregation result."""
+    return build_product_composition_search_records(grouped_record, "seed-treatment")
+
+
+def build_product_composition_search_records(
+    grouped_record: Dict[str, Any],
+    pesticide_type: str,
+) -> List[Dict[str, Any]]:
+    """Recreate product composition candidates from one Mongo aggregation result."""
     records = []
     product_name = grouped_record.get("product_name") if isinstance(grouped_record, dict) else None
     for value in (grouped_record.get("active_substances_raw_values", []) if isinstance(grouped_record, dict) else []):
         records.append({
             "product_name": product_name,
             "active_substances_raw": value,
-            "pesticide_type": "seed-treatment",
+            "pesticide_type": pesticide_type,
         })
-    # Always include product_name as its own candidate. This covers rows where
-    # active_substances_raw is blank but the imported title contains composition.
     records.append({
         "product_name": product_name,
         "active_substances_raw": None,
-        "pesticide_type": "seed-treatment",
+        "pesticide_type": pesticide_type,
     })
     return records
 
@@ -2669,7 +2695,10 @@ async def search_insecticides(
                 product_key=r["_id"],
                 product_name=r["product_name"],
                 formulation=r.get("formulation"),
-                active_substances_raw=first_parseable_composition([{"active_substances_raw": value} for value in r.get("active_substances_raw_values", [])]),
+                active_substances_raw=first_parseable_composition(
+                    build_product_composition_search_records(r, "insecticide"),
+                    "insecticide",
+                ),
                 manufacturer=r.get("manufacturer"),
                 registrant=next((v for v in r.get("registrant", []) if v), None),
                 producer=next((v for v in r.get("producer", []) if v), None),
@@ -2705,7 +2734,7 @@ async def get_insecticide(product_key: str):
         if not records:
             raise HTTPException(status_code=404, detail="Insecticide product not found")
         
-        first_record = with_canonical_composition(records[0], records)
+        first_record = with_canonical_composition(records[0], records, "insecticide")
         
         applications = []
         for r in records:
