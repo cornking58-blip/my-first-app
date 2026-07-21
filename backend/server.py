@@ -953,6 +953,20 @@ def parse_active_substances(raw: Optional[str]) -> List[Dict]:
 
 
 
+SEED_TREATMENT_PESTICIDE_TYPES = {
+    "seed-treatment",
+    "seed_treatment",
+    "seed-treatment-mixed",
+    "fungicide_seed",
+    "insecticide_seed",
+}
+
+
+def is_seed_treatment_pesticide_type(pesticide_type: Optional[str]) -> bool:
+    """Return True for API and imported MongoDB seed-treatment type values."""
+    return str(pesticide_type or "").strip().lower() in SEED_TREATMENT_PESTICIDE_TYPES
+
+
 def first_parseable_composition(records: Sequence[Dict[str, Any]], pesticide_type: Optional[str] = None) -> Optional[str]:
     """Pick the first non-empty composition that actually parses, then any non-empty value.
 
@@ -960,7 +974,7 @@ def first_parseable_composition(records: Sequence[Dict[str, Any]], pesticide_typ
     left the composition blank on a subset of rows, so relying on records[0] or Mongo $first
     can make the product card and compare endpoint lose active substances.
     """
-    if (pesticide_type or "").strip().lower() in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"}:
+    if is_seed_treatment_pesticide_type(pesticide_type):
         selected = canonical_seed_treatment_composition(records)
         if selected.get("composition"):
             return selected["composition"]
@@ -982,10 +996,14 @@ def first_parseable_composition(records: Sequence[Dict[str, Any]], pesticide_typ
 
 def with_canonical_composition(record: Dict[str, Any], records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """Return a copy whose active_substances_raw is the safest product-level composition."""
-    pesticide_type = record.get("pesticide_type") or ("seed-treatment" if any(r.get("pesticide_type") == "seed-treatment" for r in records or []) else None)
+    pesticide_type = record.get("pesticide_type") or (
+        "seed-treatment"
+        if any(is_seed_treatment_pesticide_type(r.get("pesticide_type")) for r in records or [])
+        else None
+    )
     if pesticide_type is None and normalize_verified_seed_treatment_composition(record.get("product_name")):
         pesticide_type = "seed-treatment"
-    selected = canonical_seed_treatment_composition(records) if (pesticide_type or "").strip().lower() in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"} else {}
+    selected = canonical_seed_treatment_composition(records) if is_seed_treatment_pesticide_type(pesticide_type) else {}
     canonical = selected.get("composition") or first_parseable_composition(records, pesticide_type)
     result = dict(record)
     if canonical is not None:
@@ -994,7 +1012,7 @@ def with_canonical_composition(record: Dict[str, Any], records: Sequence[Dict[st
         if selected.get("source_active_substances_raw"):
             result["source_active_substances_raw"] = selected.get("source_active_substances_raw")
         result["active_substances_raw"] = canonical
-    if (pesticide_type or "").strip().lower() in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"}:
+    if is_seed_treatment_pesticide_type(pesticide_type):
         result["product_name"] = clean_seed_treatment_display_name(result.get("product_name"))
     return result
 
