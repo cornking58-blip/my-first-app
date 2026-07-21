@@ -1,0 +1,63 @@
+name: Apply seed-treatment top card fix
+
+on:
+  push:
+    branches:
+      - chatgpt/fix-seed-top-card-composition
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/fix-seed-top-card-composition
+
+      - name: Patch visible composition priority
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/app/seed-treatment-compare.tsx')
+          source = path.read_text(encoding='utf-8')
+
+          old = """  const getVisibleProductComposition = (product: ProductInfo) => {
+    const cleanedRawComposition = product.active_substances_raw?.trim();
+    if (cleanedRawComposition) return stripOuterParentheses(cleanedRawComposition);
+    const renderedSubstances = renderCanonicalSubstances(product.substances ?? []);
+    return renderedSubstances.trim();
+  };
+"""
+
+          new = """  const getVisibleProductComposition = (product: ProductInfo) => {
+    const renderedSubstances = renderCanonicalSubstances(product.substances ?? []).trim();
+    if (renderedSubstances) return renderedSubstances;
+
+    const cleanedRawComposition = product.active_substances_raw?.trim();
+    return cleanedRawComposition ? stripOuterParentheses(cleanedRawComposition) : '';
+  };
+"""
+
+          if old not in source:
+              raise SystemExit('Expected composition helper block was not found')
+
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Run regression tests
+        run: python -m unittest discover tests
+
+      - name: Remove temporary workflow
+        run: rm .github/workflows/apply-seed-top-card-fix.yml
+
+      - name: Commit patched source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/app/seed-treatment-compare.tsx .github/workflows/apply-seed-top-card-fix.yml
+          git commit -m "Fix seed-treatment top card composition source"
+          git push origin HEAD:chatgpt/fix-seed-top-card-composition
