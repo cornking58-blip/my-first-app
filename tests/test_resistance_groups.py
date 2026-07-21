@@ -78,6 +78,7 @@ MANUAL_RU_ALIASES = namespace["MANUAL_RU_ALIASES"]
 get_resistance_lookup_diagnostics = namespace["get_resistance_lookup_diagnostics"]
 build_seed_treatment_search_response = namespace["build_seed_treatment_search_response"]
 build_seed_treatment_display_record = namespace["build_seed_treatment_display_record"]
+build_product_composition_search_records = namespace["build_product_composition_search_records"]
 
 
 class FakeCursor:
