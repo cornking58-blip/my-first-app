@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -44,24 +44,10 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [onlyActive, setOnlyActive] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [stats, setStats] = useState<{
-    total_records: number;
-    unique_products: number;
-    active_registrations: number;
-  } | null>(null);
   const { selectedForCompare, toggleSelection, clearSelection } = useHerbicideStore();
-
-  const fetchStats = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/stats`);
-      setStats(response.data);
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-      setRequestError('Не удалось загрузить данные');
-    }
-  };
 
   const search = async (
     query: string,
@@ -69,6 +55,7 @@ export default function HomeScreen() {
     cropValue: string,
     harmfulObjectValue: string,
   ) => {
+    setHasSearched(true);
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -90,11 +77,6 @@ export default function HomeScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchStats();
-    search('', false, '', '');
-  }, []);
-
   const handleSearch = useCallback(() => {
     Keyboard.dismiss();
     search(searchQuery, onlyActive, crop, harmfulObject);
@@ -102,26 +84,27 @@ export default function HomeScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchStats(), search(searchQuery, onlyActive, crop, harmfulObject)]);
+    await search(searchQuery, onlyActive, crop, harmfulObject);
     setRefreshing(false);
   };
 
   const handleRetry = () => {
-    fetchStats();
     search(searchQuery, onlyActive, crop, harmfulObject);
   };
 
   const toggleActiveFilter = () => {
-    const newValue = !onlyActive;
-    setOnlyActive(newValue);
-    search(searchQuery, newValue, crop, harmfulObject);
+    setOnlyActive(!onlyActive);
   };
 
   const clearFilters = () => {
     setSearchQuery('');
     setCrop('');
     setHarmfulObject('');
-    search('', onlyActive, '', '');
+    setOnlyActive(false);
+    setShowFilters(false);
+    setResults([]);
+    setRequestError(null);
+    setHasSearched(false);
   };
 
   const openComparison = () => {
@@ -221,7 +204,7 @@ export default function HomeScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
       >
-        <View style={styles.hero}>
+        <View style={[styles.hero, !hasSearched && styles.heroIdle]}>
           <View style={styles.topBar}>
             <View>
               <BrandLogo />
@@ -232,18 +215,11 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.welcomeRow}>
-            <View>
-              <Text style={styles.eyebrow}>УМНЫЙ СПРАВОЧНИК</Text>
+          {!hasSearched ? (
+            <View style={styles.welcomeRow}>
               <Text style={styles.welcomeTitle}>Как я могу помочь?</Text>
             </View>
-            {stats ? (
-              <View style={styles.catalogBadge}>
-                <Text style={styles.catalogBadgeValue}>{stats.unique_products}</Text>
-                <Text style={styles.catalogBadgeLabel}>препаратов</Text>
-              </View>
-            ) : null}
-          </View>
+          ) : null}
 
           <View style={styles.searchInputContainer}>
             <Ionicons name="search-outline" size={21} color={colors.primaryBright} />
@@ -277,15 +253,12 @@ export default function HomeScreen() {
                 color={colors.textMuted}
               />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.activeOnlyChip, onlyActive && styles.activeOnlyChipSelected]}
-              onPress={toggleActiveFilter}
-            >
-              <View style={[styles.activeOnlyDot, onlyActive && styles.activeOnlyDotSelected]} />
-              <Text style={[styles.activeOnlyText, onlyActive && styles.activeOnlyTextSelected]}>
-                Действующие
-              </Text>
-            </TouchableOpacity>
+            {hasSearched ? (
+              <TouchableOpacity onPress={clearFilters} style={styles.returnHomeButton}>
+                <Ionicons name="home-outline" size={15} color={colors.textSecondary} />
+                <Text style={styles.returnHomeText}>На главную</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           {showFilters ? (
@@ -306,47 +279,53 @@ export default function HomeScreen() {
                 onChangeText={setHarmfulObject}
                 onSubmitEditing={handleSearch}
               />
+              <TouchableOpacity
+                style={[styles.activeOnlyChip, onlyActive && styles.activeOnlyChipSelected]}
+                onPress={toggleActiveFilter}
+              >
+                <View style={[styles.activeOnlyDot, onlyActive && styles.activeOnlyDotSelected]} />
+                <Text style={[styles.activeOnlyText, onlyActive && styles.activeOnlyTextSelected]}>
+                  Только действующие регистрации
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.filterSearchButton} onPress={handleSearch}>
                 <Text style={styles.filterSearchButtonText}>Показать результаты</Text>
               </TouchableOpacity>
             </View>
           ) : null}
 
-          <View style={styles.quickHeader}>
-            <Text style={styles.quickTitle}>Быстрый доступ</Text>
-            <Text style={styles.quickCaption}>Основные возможности</Text>
-          </View>
-          <View style={styles.quickActions}>
-            <TouchableOpacity
-              style={[styles.quickAction, selectedForCompare.length === 2 && styles.quickActionReady]}
-              onPress={openComparison}
-              activeOpacity={0.8}
-            >
-              <View style={styles.quickIcon}>
-                <Ionicons name="git-compare-outline" size={22} color={colors.primaryBright} />
-              </View>
-              <Text style={styles.quickActionTitle}>Сравнить</Text>
-              <Text style={styles.quickActionText}>
-                {selectedForCompare.length > 0 ? `Выбрано ${selectedForCompare.length} из 2` : 'Два препарата'}
-              </Text>
-            </TouchableOpacity>
+          {!hasSearched ? (
+            <View style={styles.quickActions}>
+              <TouchableOpacity
+                style={[styles.quickAction, selectedForCompare.length === 2 && styles.quickActionReady]}
+                onPress={openComparison}
+                activeOpacity={0.8}
+              >
+                <View style={styles.quickIcon}>
+                  <Ionicons name="git-compare-outline" size={22} color={colors.primaryBright} />
+                </View>
+                <Text style={styles.quickActionTitle}>Сравнить</Text>
+                {selectedForCompare.length > 0 ? (
+                  <Text style={styles.quickActionText}>{selectedForCompare.length} из 2</Text>
+                ) : null}
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.quickAction} activeOpacity={0.8}>
-              <View style={styles.quickIcon}>
-                <Ionicons name="sparkles-outline" size={22} color={colors.primaryBright} />
-              </View>
-              <Text style={styles.quickActionTitle}>Спросить AI</Text>
-              <Text style={styles.quickActionText}>Умный ответ</Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.quickAction} activeOpacity={0.8}>
+                <View style={styles.quickIcon}>
+                  <Ionicons name="sparkles-outline" size={22} color={colors.primaryBright} />
+                </View>
+                <Text style={styles.quickActionTitle}>Спросить AI</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.quickAction} activeOpacity={0.8}>
-              <View style={styles.quickIcon}>
-                <Ionicons name="camera-outline" size={22} color={colors.primaryBright} />
-              </View>
-              <Text style={styles.quickActionTitle}>Определить</Text>
-              <Text style={styles.quickActionText}>Сорняк по фото</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity style={styles.quickAction} activeOpacity={0.8}>
+                <View style={styles.quickIcon}>
+                  <Ionicons name="camera-outline" size={22} color={colors.primaryBright} />
+                </View>
+                <Text style={styles.quickActionTitle}>Определить</Text>
+                <Text style={styles.quickActionText}>по фото</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
 
         {selectedForCompare.length > 0 ? (
@@ -373,41 +352,43 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        <View style={styles.resultsContainer}>
-          <View style={styles.resultsHeader}>
-            <Text style={styles.resultsTitle}>Каталог препаратов</Text>
-            <Text style={styles.resultsCount}>{results.length} найдено</Text>
-          </View>
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primaryBright} />
-              <Text style={styles.loadingText}>Загружаем препараты...</Text>
+        {hasSearched ? (
+          <View style={styles.resultsContainer}>
+            <View style={styles.resultsHeader}>
+              <Text style={styles.resultsTitle}>Каталог препаратов</Text>
+              <Text style={styles.resultsCount}>{results.length} найдено</Text>
             </View>
-          ) : requestError ? (
-            <RetryErrorCard onRetry={handleRetry} compact />
-          ) : (
-            <FlashList
-              data={results}
-              renderItem={renderItem}
-              keyExtractor={(item) => item.product_key}
-              contentContainerStyle={styles.listContent}
-              refreshControl={(
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={handleRefresh}
-                  tintColor={colors.primaryBright}
-                />
-              )}
-              ListEmptyComponent={(
-                <View style={styles.emptyContainer}>
-                  <Ionicons name="leaf-outline" size={52} color={colors.borderStrong} />
-                  <Text style={styles.emptyTitle}>Ничего не найдено</Text>
-                  <Text style={styles.emptyText}>Попробуйте изменить запрос</Text>
-                </View>
-              )}
-            />
-          )}
-        </View>
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primaryBright} />
+                <Text style={styles.loadingText}>Загружаем препараты...</Text>
+              </View>
+            ) : requestError ? (
+              <RetryErrorCard onRetry={handleRetry} compact />
+            ) : (
+              <FlashList
+                data={results}
+                renderItem={renderItem}
+                keyExtractor={(item) => item.product_key}
+                contentContainerStyle={styles.listContent}
+                refreshControl={(
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    tintColor={colors.primaryBright}
+                  />
+                )}
+                ListEmptyComponent={(
+                  <View style={styles.emptyContainer}>
+                    <Ionicons name="leaf-outline" size={52} color={colors.borderStrong} />
+                    <Text style={styles.emptyTitle}>Ничего не найдено</Text>
+                    <Text style={styles.emptyText}>Попробуйте изменить запрос</Text>
+                  </View>
+                )}
+              />
+            )}
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -418,10 +399,11 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   hero: {
     paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 14,
-    backgroundColor: 'rgba(7,10,28,0.74)',
+    paddingTop: 12,
+    paddingBottom: 18,
+    backgroundColor: 'rgba(17,23,53,0.82)',
   },
+  heroIdle: { flex: 1 },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   subtitle: { color: colors.textSecondary, fontSize: 12, marginTop: -2 },
   profileButton: {
@@ -434,28 +416,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  welcomeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginTop: 18,
-    marginBottom: 13,
-  },
-  eyebrow: { color: colors.primaryBright, fontSize: 10, fontWeight: '800', letterSpacing: 1.3 },
-  welcomeTitle: { color: colors.text, fontSize: 24, fontWeight: '700', marginTop: 4, letterSpacing: -0.5 },
-  catalogBadge: { alignItems: 'flex-end', paddingBottom: 1 },
-  catalogBadgeValue: { color: colors.text, fontSize: 18, fontWeight: '800' },
-  catalogBadgeLabel: { color: colors.textMuted, fontSize: 10, marginTop: 1 },
+  welcomeRow: { marginTop: 34, marginBottom: 18 },
+  welcomeTitle: { color: colors.text, fontSize: 27, fontWeight: '700', letterSpacing: -0.6 },
   searchInputContainer: {
-    height: 54,
+    height: 58,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surfaceElevated,
-    borderRadius: 17,
+    borderRadius: 18,
     paddingLeft: 15,
     paddingRight: 8,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
+    borderColor: colors.primaryBorder,
     ...shadows.card,
   },
   searchInput: { flex: 1, color: colors.text, fontSize: 15, marginLeft: 10, paddingVertical: 0 },
@@ -480,16 +452,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 9,
+    marginTop: 12,
   },
   filtersToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 },
   filtersToggleText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  returnHomeButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 5 },
+  returnHomeText: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
   activeOnlyChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 11,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -520,19 +494,17 @@ const styles = StyleSheet.create({
   },
   filterSearchButton: { height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary },
   filterSearchButtonText: { color: colors.white, fontSize: 13, fontWeight: '700' },
-  quickHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 13, marginBottom: 9 },
-  quickTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
-  quickCaption: { color: colors.textMuted, fontSize: 10 },
-  quickActions: { flexDirection: 'row', gap: 9 },
+  quickActions: { flexDirection: 'row', gap: 10, marginTop: 22 },
   quickAction: {
     flex: 1,
     minWidth: 0,
-    minHeight: 104,
-    borderRadius: 16,
-    padding: 10,
-    backgroundColor: colors.surface,
+    minHeight: 112,
+    borderRadius: 18,
+    padding: 12,
+    backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
+    ...shadows.card,
   },
   quickActionReady: { borderColor: colors.primaryBright, backgroundColor: colors.primarySoft },
   quickIcon: {
@@ -546,8 +518,8 @@ const styles = StyleSheet.create({
     borderColor: '#493D87',
     marginBottom: 8,
   },
-  quickActionTitle: { color: colors.text, fontSize: 12, fontWeight: '700' },
-  quickActionText: { color: colors.textMuted, fontSize: 10, lineHeight: 13, marginTop: 3 },
+  quickActionTitle: { color: colors.text, fontSize: 12, fontWeight: '700', lineHeight: 16 },
+  quickActionText: { color: colors.textSecondary, fontSize: 10, lineHeight: 13, marginTop: 2 },
   compareBar: {
     flexDirection: 'row',
     alignItems: 'center',

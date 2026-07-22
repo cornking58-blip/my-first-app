@@ -378,13 +378,13 @@ export default function FungicidesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#070A1C',
+    backgroundColor: '#111735',
   },
   flex: {
     flex: 1,
   },
   header: {
-    backgroundColor: '#0B0F26',
+    backgroundColor: '#151D40',
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 20,
@@ -423,7 +423,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 16,
-    backgroundColor: '#FFF7ED',
+    backgroundColor: '#202B58',
+    borderWidth: 1,
+    borderColor: '#50619A',
     borderRadius: 12,
     padding: 12,
   },
@@ -447,7 +449,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#2A335A',
   },
   searchContainer: {
-    backgroundColor: '#070A1C',
+    backgroundColor: '#111735',
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
@@ -456,7 +458,7 @@ const styles = StyleSheet.create({
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#171D3B',
+    backgroundColor: '#202B58',
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 48,
@@ -470,7 +472,7 @@ const styles = StyleSheet.create({
     color: '#F8F8FF',
   },
   filterInput: {
-    backgroundColor: '#11162E',
+    backgroundColor: '#1A234A',
     borderWidth: 1,
     borderColor: '#2A335A',
     borderRadius: 12,
@@ -492,7 +494,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#171D3B',
+    backgroundColor: '#202B58',
   },
   filterButtonActive: {
     backgroundColor: '#123C38',
@@ -520,11 +522,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFBEB',
+    backgroundColor: '#37306D',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#FDE68A',
+    borderBottomColor: '#6D67B8',
   },
   compareInfo: {
     flexDirection: 'row',
@@ -533,7 +535,7 @@ const styles = StyleSheet.create({
   compareText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#92400E',
+    color: '#F8F8FF',
   },
   clearText: {
     marginLeft: 12,
@@ -567,7 +569,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   card: {
-    backgroundColor: '#11162E',
+    backgroundColor: '#1A234A',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -577,7 +579,7 @@ const styles = StyleSheet.create({
   cardSelected: {
     borderColor: '#F59E0B',
     borderWidth: 2,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: '#37306D',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -688,7 +690,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: '#37306D',
     borderWidth: 1,
     borderColor: '#F59E0B',
   },

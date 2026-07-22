@@ -382,10 +382,10 @@ export default function SeedTreatmentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#070A1C' },
+  container: { flex: 1, backgroundColor: '#111735' },
   flex: { flex: 1 },
   header: {
-    backgroundColor: '#0B0F26',
+    backgroundColor: '#151D40',
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 20,
@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 16,
-    backgroundColor: '#11162E',
+    backgroundColor: '#1A234A',
     borderRadius: 12,
     padding: 12,
   },
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 12, color: '#C8CBE0', marginTop: 2 },
   statDivider: { width: 1, height: 30, backgroundColor: '#2A335A' },
   searchContainer: {
-    backgroundColor: '#070A1C',
+    backgroundColor: '#111735',
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#171D3B',
+    backgroundColor: '#202B58',
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 48,
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 16, color: '#F8F8FF' },
   filterInput: {
-    backgroundColor: '#11162E',
+    backgroundColor: '#1A234A',
     borderWidth: 1,
     borderColor: '#2A335A',
     borderRadius: 12,
@@ -451,7 +451,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#171D3B',
+    backgroundColor: '#202B58',
   },
   filterButtonActive: { backgroundColor: '#123C38' },
   filterText: { marginLeft: 6, fontSize: 14, color: '#C8CBE0' },
@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F5F3FF',
+    backgroundColor: '#37306D',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
@@ -489,14 +489,14 @@ const styles = StyleSheet.create({
   resultsContainer: { flex: 1 },
   listContent: { padding: 16 },
   card: {
-    backgroundColor: '#11162E',
+    backgroundColor: '#1A234A',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#2A335A',
   },
-  cardSelected: { borderColor: '#8B5CF6', borderWidth: 2, backgroundColor: '#F5F3FF' },
+  cardSelected: { borderColor: '#9B7BFF', borderWidth: 2, backgroundColor: '#37306D' },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -551,7 +551,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
-    backgroundColor: '#F5F3FF',
+    backgroundColor: '#37306D',
     borderWidth: 1,
     borderColor: '#8B5CF6',
   },
