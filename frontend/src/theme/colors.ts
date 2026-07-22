@@ -1,0 +1,41 @@
+export const colors = {
+  background: '#070A1C',
+  backgroundRaised: '#0B0F26',
+  surface: '#11162E',
+  surfaceElevated: '#171D3B',
+  surfaceSoft: '#1D2446',
+  border: '#2A335A',
+  borderStrong: '#3C4775',
+  primary: '#7657FF',
+  primaryBright: '#9B7BFF',
+  primarySoft: '#292455',
+  cyan: '#55C7FF',
+  text: '#F8F8FF',
+  textSecondary: '#C8CBE0',
+  textMuted: '#969DBB',
+  success: '#48D6A5',
+  successSoft: '#123C38',
+  danger: '#FF718E',
+  dangerSoft: '#421F35',
+  warning: '#FFD172',
+  warningSoft: '#45371F',
+  white: '#FFFFFF',
+  black: '#000000',
+};
+
+export const shadows = {
+  card: {
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  glow: {
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.34,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+};

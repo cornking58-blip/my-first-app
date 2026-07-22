@@ -1,23 +1,26 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
-  RefreshControl,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Keyboard,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
-import { useHerbicideStore } from '../../src/store/herbicideStore';
+import { AmbientBackground } from '../../src/components/AmbientBackground';
+import { BrandLogo } from '../../src/components/BrandLogo';
 import { RetryErrorCard } from '../../src/components/RetryErrorCard';
+import { useHerbicideStore } from '../../src/store/herbicideStore';
+import { colors, shadows } from '../../src/theme/colors';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -32,17 +35,6 @@ interface SearchResult {
   applications_count: number;
 }
 
-// Logo Component
-const Logo = () => (
-  <View style={styles.logoContainer}>
-    <Text style={styles.logoText}>
-      <Text style={styles.logoB}>b</Text>
-      <Text style={styles.logoAI}>AI</Text>
-      <Text style={styles.logoKov}>kov</Text>
-    </Text>
-  </View>
-);
-
 export default function HomeScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,7 +45,12 @@ export default function HomeScreen() {
   const [requestError, setRequestError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [onlyActive, setOnlyActive] = useState(false);
-  const [stats, setStats] = useState<{ total_records: number; unique_products: number; active_registrations: number } | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [stats, setStats] = useState<{
+    total_records: number;
+    unique_products: number;
+    active_registrations: number;
+  } | null>(null);
   const { selectedForCompare, toggleSelection, clearSelection } = useHerbicideStore();
 
   const fetchStats = async () => {
@@ -66,7 +63,12 @@ export default function HomeScreen() {
     }
   };
 
-  const search = async (query: string, active: boolean, cropValue: string, harmfulObjectValue: string) => {
+  const search = async (
+    query: string,
+    active: boolean,
+    cropValue: string,
+    harmfulObjectValue: string,
+  ) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -122,23 +124,34 @@ export default function HomeScreen() {
     search('', onlyActive, '', '');
   };
 
-  const isActive = (status: string | null) => {
-    return status?.toLowerCase().trim() === 'действует';
+  const openComparison = () => {
+    if (selectedForCompare.length !== 2) return;
+    router.push({
+      pathname: '/compare',
+      params: {
+        left_key: selectedForCompare[0],
+        right_key: selectedForCompare[1],
+      },
+    });
   };
+
+  const isActive = (status: string | null) => status?.toLowerCase().trim() === 'действует';
 
   const renderItem = ({ item }: { item: SearchResult }) => {
     const active = isActive(item.registration_status);
     const displayManufacturer = item.display_manufacturer?.trim() || '';
-    const shouldShowManufacturer = Boolean(displayManufacturer && displayManufacturer !== 'Производитель не указан');
+    const shouldShowManufacturer = Boolean(
+      displayManufacturer && displayManufacturer !== 'Производитель не указан',
+    );
     const isSelected = selectedForCompare.includes(item.product_key);
     const canSelect = selectedForCompare.length < 2 || isSelected;
-    
+
     return (
       <View style={[styles.card, isSelected && styles.cardSelected]}>
         <TouchableOpacity
           style={styles.cardContent}
           onPress={() => router.push(`/product/${encodeURIComponent(item.product_key)}`)}
-          activeOpacity={0.7}
+          activeOpacity={0.76}
         >
           <View style={styles.cardHeader}>
             <View style={styles.cardTitleRow}>
@@ -149,32 +162,21 @@ export default function HomeScreen() {
                 </View>
               ) : null}
             </View>
-            <View style={[
-              styles.statusBadge,
-              active ? styles.statusActive : styles.statusInactive
-            ]}>
-              <View style={[
-                styles.statusDot,
-                active ? styles.statusDotActive : styles.statusDotInactive
-              ]} />
-              <Text style={[
-                styles.statusText,
-                active ? styles.statusTextActive : styles.statusTextInactive
-              ]}>
+            <View style={[styles.statusBadge, active ? styles.statusActive : styles.statusInactive]}>
+              <View style={[styles.statusDot, active ? styles.statusDotActive : styles.statusDotInactive]} />
+              <Text style={[styles.statusText, active ? styles.statusTextActive : styles.statusTextInactive]}>
                 {active ? 'Действует' : 'Не действует'}
               </Text>
             </View>
           </View>
 
           {(item.active_substances_raw?.trim().length ?? 0) > 0 ? (
-            <Text style={styles.substances} numberOfLines={2}>
-              {item.active_substances_raw}
-            </Text>
+            <Text style={styles.substances} numberOfLines={2}>{item.active_substances_raw}</Text>
           ) : null}
 
           {shouldShowManufacturer ? (
             <View style={styles.manufacturerRow}>
-              <Ionicons name="business-outline" size={14} color="#9CA3AF" />
+              <Ionicons name="business-outline" size={14} color={colors.textMuted} />
               <Text style={styles.manufacturer} numberOfLines={1}>{displayManufacturer}</Text>
             </View>
           ) : null}
@@ -182,27 +184,27 @@ export default function HomeScreen() {
 
         <View style={styles.cardFooter}>
           <View style={styles.applicationsCount}>
-            <Ionicons name="layers-outline" size={14} color="#6B7280" />
+            <Ionicons name="layers-outline" size={14} color={colors.textMuted} />
             <Text style={styles.applicationsText}>{item.applications_count} применений</Text>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
               styles.compareSelectButton,
               isSelected && styles.compareSelectButtonActive,
-              !canSelect && !isSelected && styles.compareSelectButtonDisabled
+              !canSelect && !isSelected && styles.compareSelectButtonDisabled,
             ]}
             onPress={() => toggleSelection(item.product_key)}
             disabled={!canSelect && !isSelected}
           >
-            <Ionicons 
-              name={isSelected ? "checkmark-circle" : "add-circle-outline"} 
-              size={18} 
-              color={isSelected ? "#FFFFFF" : (!canSelect ? "#D1D5DB" : "#3B82F6")} 
+            <Ionicons
+              name={isSelected ? 'checkmark-circle' : 'add-circle-outline'}
+              size={18}
+              color={isSelected ? colors.white : (!canSelect ? colors.textMuted : colors.primaryBright)}
             />
             <Text style={[
               styles.compareSelectText,
               isSelected && styles.compareSelectTextActive,
-              !canSelect && !isSelected && styles.compareSelectTextDisabled
+              !canSelect && !isSelected && styles.compareSelectTextDisabled,
             ]}>
               {isSelected ? 'Выбрано' : 'Сравнить'}
             </Text>
@@ -214,140 +216,172 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView 
+      <AmbientBackground />
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
       >
-        {/* Header with Logo */}
-        <View style={styles.header}>
-          <View style={styles.titleRow}>
+        <View style={styles.hero}>
+          <View style={styles.topBar}>
             <View>
-              <Logo />
+              <BrandLogo />
               <Text style={styles.subtitle}>Справочник гербицидов РФ</Text>
             </View>
+            <TouchableOpacity style={styles.profileButton} activeOpacity={0.8}>
+              <Ionicons name="person-outline" size={21} color={colors.text} />
+            </TouchableOpacity>
           </View>
 
-          {stats && (
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{stats.unique_products}</Text>
-                <Text style={styles.statLabel}>препаратов</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{stats.active_registrations}</Text>
-                <Text style={styles.statLabel}>действующих</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{stats.total_records}</Text>
-                <Text style={styles.statLabel}>применений</Text>
-              </View>
+          <View style={styles.welcomeRow}>
+            <View>
+              <Text style={styles.eyebrow}>УМНЫЙ СПРАВОЧНИК</Text>
+              <Text style={styles.welcomeTitle}>Как я могу помочь?</Text>
             </View>
-          )}
-        </View>
+            {stats ? (
+              <View style={styles.catalogBadge}>
+                <Text style={styles.catalogBadgeValue}>{stats.unique_products}</Text>
+                <Text style={styles.catalogBadgeLabel}>препаратов</Text>
+              </View>
+            ) : null}
+          </View>
 
-        {/* Search */}
-        <View style={styles.searchContainer}>
           <View style={styles.searchInputContainer}>
-            <Ionicons name="search-outline" size={20} color="#9CA3AF" style={styles.searchIcon} />
+            <Ionicons name="search-outline" size={21} color={colors.primaryBright} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Поиск по названию или ДВ..."
-              placeholderTextColor="#9CA3AF"
+              placeholder="Название, действующее вещество..."
+              placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={handleSearch}
               returnKeyType="search"
             />
-            {(searchQuery.length > 0 || crop.length > 0 || harmfulObject.length > 0) && (
-              <TouchableOpacity onPress={clearFilters}>
-                <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+            {(searchQuery.length > 0 || crop.length > 0 || harmfulObject.length > 0) ? (
+              <TouchableOpacity onPress={clearFilters} style={styles.clearSearchButton}>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={handleSearch} style={styles.searchSubmitButton}>
+                <Ionicons name="arrow-forward" size={19} color={colors.white} />
               </TouchableOpacity>
             )}
           </View>
 
-          <TextInput
-            style={styles.filterInput}
-            placeholder="Культура (опционально)"
-            placeholderTextColor="#9CA3AF"
-            value={crop}
-            onChangeText={setCrop}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
-
-          <TextInput
-            style={styles.filterInput}
-            placeholder="Сорное растение / вредный объект (опционально)"
-            placeholderTextColor="#9CA3AF"
-            value={harmfulObject}
-            onChangeText={setHarmfulObject}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
-
-          <View style={styles.filterRow}>
+          <View style={styles.searchToolsRow}>
+            <TouchableOpacity style={styles.filtersToggle} onPress={() => setShowFilters(!showFilters)}>
+              <Ionicons name="options-outline" size={17} color={colors.textSecondary} />
+              <Text style={styles.filtersToggleText}>Расширенный поиск</Text>
+              <Ionicons
+                name={showFilters ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.textMuted}
+              />
+            </TouchableOpacity>
             <TouchableOpacity
-              style={[
-                styles.filterButton,
-                onlyActive && styles.filterButtonActive
-              ]}
+              style={[styles.activeOnlyChip, onlyActive && styles.activeOnlyChipSelected]}
               onPress={toggleActiveFilter}
             >
-              <Ionicons 
-                name={onlyActive ? "checkmark-circle" : "ellipse-outline"} 
-                size={18} 
-                color={onlyActive ? "#10B981" : "#6B7280"} 
+              <View style={[styles.activeOnlyDot, onlyActive && styles.activeOnlyDotSelected]} />
+              <Text style={[styles.activeOnlyText, onlyActive && styles.activeOnlyTextSelected]}>
+                Действующие
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {showFilters ? (
+            <View style={styles.expandedFilters}>
+              <TextInput
+                style={styles.filterInput}
+                placeholder="Культура"
+                placeholderTextColor={colors.textMuted}
+                value={crop}
+                onChangeText={setCrop}
+                onSubmitEditing={handleSearch}
               />
-              <Text style={[
-                styles.filterText,
-                onlyActive && styles.filterTextActive
-              ]}>Только действующие</Text>
+              <TextInput
+                style={styles.filterInput}
+                placeholder="Сорное растение / вредный объект"
+                placeholderTextColor={colors.textMuted}
+                value={harmfulObject}
+                onChangeText={setHarmfulObject}
+                onSubmitEditing={handleSearch}
+              />
+              <TouchableOpacity style={styles.filterSearchButton} onPress={handleSearch}>
+                <Text style={styles.filterSearchButtonText}>Показать результаты</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          <View style={styles.quickHeader}>
+            <Text style={styles.quickTitle}>Быстрый доступ</Text>
+            <Text style={styles.quickCaption}>Основные возможности</Text>
+          </View>
+          <View style={styles.quickActions}>
+            <TouchableOpacity
+              style={[styles.quickAction, selectedForCompare.length === 2 && styles.quickActionReady]}
+              onPress={openComparison}
+              activeOpacity={0.8}
+            >
+              <View style={styles.quickIcon}>
+                <Ionicons name="git-compare-outline" size={22} color={colors.primaryBright} />
+              </View>
+              <Text style={styles.quickActionTitle}>Сравнить</Text>
+              <Text style={styles.quickActionText}>
+                {selectedForCompare.length > 0 ? `Выбрано ${selectedForCompare.length} из 2` : 'Два препарата'}
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-              <Text style={styles.searchButtonText}>Найти</Text>
+            <TouchableOpacity style={styles.quickAction} activeOpacity={0.8}>
+              <View style={styles.quickIcon}>
+                <Ionicons name="sparkles-outline" size={22} color={colors.primaryBright} />
+              </View>
+              <Text style={styles.quickActionTitle}>Спросить AI</Text>
+              <Text style={styles.quickActionText}>Умный ответ</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.quickAction} activeOpacity={0.8}>
+              <View style={styles.quickIcon}>
+                <Ionicons name="camera-outline" size={22} color={colors.primaryBright} />
+              </View>
+              <Text style={styles.quickActionTitle}>Определить</Text>
+              <Text style={styles.quickActionText}>Сорняк по фото</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Compare Bar */}
-        {selectedForCompare.length > 0 && (
+        {selectedForCompare.length > 0 ? (
           <View style={styles.compareBar}>
             <View style={styles.compareInfo}>
-              <Text style={styles.compareText}>Выбрано: {selectedForCompare.length}</Text>
-              <TouchableOpacity onPress={clearSelection}>
-                <Text style={styles.clearText}>Очистить</Text>
-              </TouchableOpacity>
+              <View style={styles.compareIconSmall}>
+                <Ionicons name="git-compare-outline" size={17} color={colors.primaryBright} />
+              </View>
+              <View>
+                <Text style={styles.compareText}>Сравнение · {selectedForCompare.length}/2</Text>
+                <TouchableOpacity onPress={clearSelection}>
+                  <Text style={styles.clearText}>Очистить выбор</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            {selectedForCompare.length === 2 && (
-              <TouchableOpacity 
-                style={styles.compareButton}
-                onPress={() => router.push({
-                  pathname: '/compare',
-                  params: {
-                    left_key: selectedForCompare[0],
-                    right_key: selectedForCompare[1],
-                  },
-                })}
-              >
-                <Ionicons name="git-compare-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.compareButtonText}>Сравнить</Text>
+            {selectedForCompare.length === 2 ? (
+              <TouchableOpacity style={styles.compareButton} onPress={openComparison}>
+                <Text style={styles.compareButtonText}>Открыть</Text>
+                <Ionicons name="arrow-forward" size={17} color={colors.white} />
               </TouchableOpacity>
-            )}
-            {selectedForCompare.length === 1 && (
-              <Text style={styles.compareHint}>Выберите ещё 1 препарат</Text>
+            ) : (
+              <Text style={styles.compareHint}>Выберите ещё один</Text>
             )}
           </View>
-        )}
+        ) : null}
 
-        {/* Results */}
         <View style={styles.resultsContainer}>
+          <View style={styles.resultsHeader}>
+            <Text style={styles.resultsTitle}>Каталог препаратов</Text>
+            <Text style={styles.resultsCount}>{results.length} найдено</Text>
+          </View>
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#3B82F6" />
-              <Text style={styles.loadingText}>Загрузка...</Text>
+              <ActivityIndicator size="large" color={colors.primaryBright} />
+              <Text style={styles.loadingText}>Загружаем препараты...</Text>
             </View>
           ) : requestError ? (
             <RetryErrorCard onRetry={handleRetry} compact />
@@ -356,22 +390,21 @@ export default function HomeScreen() {
               data={results}
               renderItem={renderItem}
               keyExtractor={(item) => item.product_key}
-              estimatedItemSize={140}
               contentContainerStyle={styles.listContent}
-              refreshControl={
+              refreshControl={(
                 <RefreshControl
                   refreshing={refreshing}
                   onRefresh={handleRefresh}
-                  tintColor="#3B82F6"
+                  tintColor={colors.primaryBright}
                 />
-              }
-              ListEmptyComponent={
+              )}
+              ListEmptyComponent={(
                 <View style={styles.emptyContainer}>
-                  <Ionicons name="leaf-outline" size={64} color="#D1D5DB" />
+                  <Ionicons name="leaf-outline" size={52} color={colors.borderStrong} />
                   <Text style={styles.emptyTitle}>Ничего не найдено</Text>
                   <Text style={styles.emptyText}>Попробуйте изменить запрос</Text>
                 </View>
-              }
+              )}
             />
           )}
         </View>
@@ -381,378 +414,203 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
+  container: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
+  hero: {
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 14,
+    backgroundColor: 'rgba(7,10,28,0.74)',
   },
-  flex: {
-    flex: 1,
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  subtitle: { color: colors.textSecondary, fontSize: 12, marginTop: -2 },
+  profileButton: {
+    width: 43,
+    height: 43,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  titleRow: {
+  welcomeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    marginTop: 18,
+    marginBottom: 13,
   },
-  logoContainer: {
-    marginBottom: 2,
-  },
-  logoText: {
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -1,
-  },
-  logoB: {
-    color: '#374151',
-  },
-  logoAI: {
-    color: '#3B82F6',
-    fontWeight: '900',
-  },
-  logoKov: {
-    color: '#374151',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 16,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    padding: 12,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: '#D1D5DB',
-  },
-  searchContainer: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
+  eyebrow: { color: colors.primaryBright, fontSize: 10, fontWeight: '800', letterSpacing: 1.3 },
+  welcomeTitle: { color: colors.text, fontSize: 24, fontWeight: '700', marginTop: 4, letterSpacing: -0.5 },
+  catalogBadge: { alignItems: 'flex-end', paddingBottom: 1 },
+  catalogBadgeValue: { color: colors.text, fontSize: 18, fontWeight: '800' },
+  catalogBadgeLabel: { color: colors.textMuted, fontSize: 10, marginTop: 1 },
   searchInputContainer: {
+    height: 54,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: 17,
+    paddingLeft: 15,
+    paddingRight: 8,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    ...shadows.card,
+  },
+  searchInput: { flex: 1, color: colors.text, fontSize: 15, marginLeft: 10, paddingVertical: 0 },
+  searchSubmitButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    ...shadows.glow,
+  },
+  clearSearchButton: {
+    width: 36,
+    height: 36,
     borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceSoft,
   },
-  searchIcon: {
-    marginRight: 8,
+  searchToolsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 9,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#111827',
+  filtersToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 },
+  filtersToggleText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  activeOnlyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  activeOnlyChipSelected: { backgroundColor: colors.successSoft, borderColor: colors.success },
+  activeOnlyDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.textMuted, marginRight: 6 },
+  activeOnlyDotSelected: { backgroundColor: colors.success },
+  activeOnlyText: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
+  activeOnlyTextSelected: { color: colors.success },
+  expandedFilters: {
+    marginTop: 10,
+    padding: 11,
+    borderRadius: 15,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
   },
   filterInput: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: '#1F2937',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 10,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
+    height: 42,
+    borderRadius: 11,
     paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    fontSize: 13,
+    color: colors.text,
+    backgroundColor: colors.backgroundRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  filterButtonActive: {
-    backgroundColor: '#D1FAE5',
+  filterSearchButton: { height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary },
+  filterSearchButtonText: { color: colors.white, fontSize: 13, fontWeight: '700' },
+  quickHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 13, marginBottom: 9 },
+  quickTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  quickCaption: { color: colors.textMuted, fontSize: 10 },
+  quickActions: { flexDirection: 'row', gap: 9 },
+  quickAction: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 104,
+    borderRadius: 16,
+    padding: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  filterText: {
-    marginLeft: 6,
-    fontSize: 14,
-    color: '#6B7280',
+  quickActionReady: { borderColor: colors.primaryBright, backgroundColor: colors.primarySoft },
+  quickIcon: {
+    width: 37,
+    height: 37,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: '#493D87',
+    marginBottom: 8,
   },
-  filterTextActive: {
-    color: '#059669',
-  },
-  searchButton: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  searchButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  quickActionTitle: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  quickActionText: { color: colors.textMuted, fontSize: 10, lineHeight: 13, marginTop: 3 },
   compareBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#BFDBFE',
+    marginHorizontal: 18,
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: '#4C408C',
   },
-  compareInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  compareText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E40AF',
-  },
-  clearText: {
-    marginLeft: 12,
-    fontSize: 14,
-    color: '#6B7280',
-    textDecorationLine: 'underline',
-  },
-  compareButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3B82F6',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  compareButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  compareHint: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontStyle: 'italic',
-  },
-  resultsContainer: {
-    flex: 1,
-  },
-  listContent: {
-    padding: 16,
-  },
+  compareInfo: { flexDirection: 'row', alignItems: 'center' },
+  compareIconSmall: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceElevated, marginRight: 9 },
+  compareText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  clearText: { color: colors.textSecondary, fontSize: 10, marginTop: 2 },
+  compareButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primary, borderRadius: 11, paddingHorizontal: 13, paddingVertical: 9 },
+  compareButtonText: { color: colors.white, fontSize: 12, fontWeight: '700' },
+  compareHint: { color: colors.textSecondary, fontSize: 11 },
+  resultsContainer: { flex: 1, minHeight: 0 },
+  resultsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 18, paddingTop: 9, paddingBottom: 7 },
+  resultsTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  resultsCount: { color: colors.textMuted, fontSize: 11 },
+  listContent: { paddingHorizontal: 18, paddingBottom: 20 },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
   },
-  cardSelected: {
-    borderColor: '#3B82F6',
-    borderWidth: 2,
-    backgroundColor: '#EFF6FF',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  cardTitleRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  productName: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#111827',
-    flexShrink: 1,
-  },
-  formulationBadge: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginLeft: 8,
-  },
-  formulationText: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statusActive: {
-    backgroundColor: '#D1FAE5',
-  },
-  statusInactive: {
-    backgroundColor: '#FEE2E2',
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  statusDotActive: {
-    backgroundColor: '#10B981',
-  },
-  statusDotInactive: {
-    backgroundColor: '#EF4444',
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  statusTextActive: {
-    color: '#059669',
-  },
-  statusTextInactive: {
-    color: '#DC2626',
-  },
-  substances: {
-    fontSize: 14,
-    color: '#4B5563',
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  manufacturerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  manufacturer: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginLeft: 6,
-    flex: 1,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 4,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  applicationsCount: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  applicationsText: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginLeft: 6,
-  },
-  selectedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  selectedText: {
-    fontSize: 13,
-    color: '#10B981',
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  cardContent: {
-    flex: 1,
-  },
-  compareSelectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-  },
-  compareSelectButtonActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  compareSelectButtonDisabled: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#D1D5DB',
-  },
-  compareSelectText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#3B82F6',
-    marginLeft: 4,
-  },
-  compareSelectTextActive: {
-    color: '#FFFFFF',
-  },
-  compareSelectTextDisabled: {
-    color: '#D1D5DB',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
-    marginTop: 16,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    marginTop: 4,
-  },
+  cardSelected: { borderColor: colors.primaryBright, backgroundColor: colors.primarySoft },
+  cardContent: { flex: 1 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  cardTitleRow: { flex: 1, flexDirection: 'row', alignItems: 'center', marginRight: 8 },
+  productName: { color: colors.text, fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  formulationBadge: { backgroundColor: colors.surfaceSoft, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, marginLeft: 7 },
+  formulationText: { color: colors.textSecondary, fontSize: 10, fontWeight: '600' },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
+  statusActive: { backgroundColor: colors.successSoft },
+  statusInactive: { backgroundColor: colors.dangerSoft },
+  statusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 5 },
+  statusDotActive: { backgroundColor: colors.success },
+  statusDotInactive: { backgroundColor: colors.danger },
+  statusText: { fontSize: 10, fontWeight: '700' },
+  statusTextActive: { color: colors.success },
+  statusTextInactive: { color: colors.danger },
+  substances: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginBottom: 8 },
+  manufacturerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 7 },
+  manufacturer: { color: colors.textMuted, fontSize: 12, marginLeft: 6, flex: 1 },
+  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 9, borderTopWidth: 1, borderTopColor: colors.border },
+  applicationsCount: { flexDirection: 'row', alignItems: 'center' },
+  applicationsText: { color: colors.textMuted, fontSize: 11, marginLeft: 6 },
+  compareSelectButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 9, backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: '#4A3E89' },
+  compareSelectButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  compareSelectButtonDisabled: { backgroundColor: colors.surfaceSoft, borderColor: colors.border },
+  compareSelectText: { color: colors.primaryBright, fontSize: 11, fontWeight: '700', marginLeft: 4 },
+  compareSelectTextActive: { color: colors.white },
+  compareSelectTextDisabled: { color: colors.textMuted },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 42 },
+  loadingText: { color: colors.textSecondary, fontSize: 13, marginTop: 12 },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 45 },
+  emptyTitle: { color: colors.text, fontSize: 17, fontWeight: '700', marginTop: 14 },
+  emptyText: { color: colors.textMuted, fontSize: 13, marginTop: 4 },
 });

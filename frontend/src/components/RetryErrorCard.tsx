@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../theme/colors';
 
 interface RetryErrorCardProps {
   onRetry: () => void;
@@ -10,7 +11,7 @@ interface RetryErrorCardProps {
 export function RetryErrorCard({ onRetry, compact = false }: RetryErrorCardProps) {
   return (
     <View style={[styles.card, compact && styles.compactCard]}>
-      <Ionicons name="cloud-offline-outline" size={compact ? 28 : 44} color="#EF4444" />
+      <Ionicons name="cloud-offline-outline" size={compact ? 28 : 44} color={colors.danger} />
       <Text style={styles.title}>Не удалось загрузить данные</Text>
       <Text style={styles.message}>Проверьте интернет и нажмите «Повторить».</Text>
       <TouchableOpacity style={styles.retryButton} onPress={onRetry} activeOpacity={0.8}>
@@ -25,9 +26,9 @@ const styles = StyleSheet.create({
     margin: 20,
     padding: 20,
     borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: colors.danger,
     alignItems: 'center',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
@@ -43,21 +44,21 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.text,
     textAlign: 'center',
   },
   message: {
     marginTop: 6,
     fontSize: 14,
     lineHeight: 20,
-    color: '#6B7280',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   retryButton: {
     marginTop: 14,
     paddingHorizontal: 18,
     paddingVertical: 10,
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     borderRadius: 10,
   },
   retryText: {

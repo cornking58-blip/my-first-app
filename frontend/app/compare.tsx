@@ -14,21 +14,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import axios from 'axios';
+import { AmbientBackground } from '../src/components/AmbientBackground';
+import { BrandLogo } from '../src/components/BrandLogo';
 import { useHerbicideStore } from '../src/store/herbicideStore';
 import { RetryErrorCard } from '../src/components/RetryErrorCard';
+import { colors, shadows } from '../src/theme/colors';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-
-// Logo Component
-const Logo = () => (
-  <View style={styles.logoContainer}>
-    <Text style={styles.logoText}>
-      <Text style={styles.logoB}>b</Text>
-      <Text style={styles.logoAI}>AI</Text>
-      <Text style={styles.logoKov}>kov</Text>
-    </Text>
-  </View>
-);
 
 interface Substance {
   name: string;
@@ -397,15 +389,16 @@ export default function CompareScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <AmbientBackground />
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons name="arrow-back" size={24} color="#111827" />
+            <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
-          <Logo />
+          <BrandLogo compact />
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3B82F6" />
+          <ActivityIndicator size="large" color={colors.primaryBright} />
           <Text style={styles.loadingText}>Анализ действующих веществ...</Text>
         </View>
       </SafeAreaView>
@@ -415,11 +408,12 @@ export default function CompareScreen() {
   if (error || !compareData) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <AmbientBackground />
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons name="arrow-back" size={24} color="#111827" />
+            <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
-          <Logo />
+          <BrandLogo compact />
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.errorContainer}>
@@ -464,15 +458,19 @@ export default function CompareScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <AmbientBackground />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons name="arrow-back" size={24} color="#111827" />
+            <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
-          <Logo />
+          <View style={styles.headerCenter}>
+            <BrandLogo compact />
+            <Text style={styles.headerSubtitle}>Сравнение препаратов</Text>
+          </View>
           <View style={{ width: 40 }} />
         </View>
 
@@ -559,7 +557,7 @@ export default function CompareScreen() {
           {/* Top Calculation Controls */}
           <View style={styles.priceSection}>
             <View style={styles.sectionHeader}>
-              <Ionicons name="calculator" size={20} color="#059669" />
+              <Ionicons name="calculator" size={20} color={colors.primaryBright} />
               <Text style={styles.sectionTitle}>Параметры расчёта</Text>
             </View>
             <Text style={styles.priceHint}>Если норму не заполнить, берётся максимальная зарегистрированная норма. Цена нужна только для экономики.</Text>
@@ -570,7 +568,7 @@ export default function CompareScreen() {
                 <TextInput
                   style={styles.priceInput}
                   placeholder={getManualRatePlaceholder('Напр. 0,8', left.rate_unit)}
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
                   value={leftRate}
                   onChangeText={setLeftRate}
@@ -581,7 +579,7 @@ export default function CompareScreen() {
                 <TextInput
                   style={styles.priceInput}
                   placeholder="Цена, ₽"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
                   value={leftPrice}
                   onChangeText={setLeftPrice}
@@ -592,7 +590,7 @@ export default function CompareScreen() {
                 <TextInput
                   style={styles.priceInput}
                   placeholder={getManualRatePlaceholder('Напр. 1,0', right.rate_unit)}
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
                   value={rightRate}
                   onChangeText={setRightRate}
@@ -603,7 +601,7 @@ export default function CompareScreen() {
                 <TextInput
                   style={styles.priceInput}
                   placeholder="Цена, ₽"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
                   value={rightPrice}
                   onChangeText={setRightPrice}
@@ -616,7 +614,7 @@ export default function CompareScreen() {
               <TextInput
                 style={styles.priceInput}
                 placeholder="Напр. подсолнечник"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={colors.textMuted}
                 value={crop}
                 onChangeText={setCrop}
               />
@@ -640,10 +638,10 @@ export default function CompareScreen() {
               disabled={priceLoading}
             >
               {priceLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={colors.white} />
               ) : (
                 <>
-                  <Ionicons name="calculator" size={18} color="#FFFFFF" />
+                  <Ionicons name="calculator" size={18} color={colors.white} />
                   <Text style={styles.calculateButtonText}>Рассчитать</Text>
                 </>
               )}
@@ -732,7 +730,7 @@ export default function CompareScreen() {
           {analysis.identical_substances.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                 <Text style={styles.sectionTitle}>Одинаковые действующие вещества</Text>
               </View>
               <Text style={styles.costMetricNote}>Полная стоимость обработки делится на количество этого ДВ на гектар. Дополнительные компоненты входят в стоимость препарата.</Text>
@@ -794,7 +792,7 @@ export default function CompareScreen() {
           {sameGroupMatches.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="shield-checkmark" size={20} color="#0F766E" />
+                <Ionicons name="shield-checkmark" size={20} color={colors.success} />
                 <Text style={styles.sectionTitle}>Одна группа действия</Text>
               </View>
               {sameGroupMatches.map((match, idx) => (
@@ -828,7 +826,7 @@ export default function CompareScreen() {
           {!hasDirectComparison && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="information-circle" size={20} color="#6B7280" />
+                <Ionicons name="information-circle" size={20} color={colors.textSecondary} />
                 <Text style={styles.sectionTitle}>Прямое сопоставление</Text>
               </View>
               <Text style={styles.neutralMessage}>Действующие вещества и группы действия разные.</Text>
@@ -841,7 +839,7 @@ export default function CompareScreen() {
           {(leftAdditionalSubstances.length > 0 || rightAdditionalSubstances.length > 0) && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="add-circle" size={20} color="#6366F1" />
+                <Ionicons name="add-circle" size={20} color={colors.primaryBright} />
                 <Text style={styles.sectionTitle}>Дополнительные компоненты</Text>
               </View>
               <View style={styles.uniqueColumns}>
@@ -880,34 +878,40 @@ export default function CompareScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(7,10,28,0.9)',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.border,
   },
   backButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 13,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   headerTitle: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.text,
     flex: 1,
     textAlign: 'center',
   },
   content: {
     flex: 1,
   },
+  headerCenter: { alignItems: 'center' },
+  headerSubtitle: { color: colors.textMuted, fontSize: 9, marginTop: -1 },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -916,7 +920,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
   errorContainer: {
     flex: 1,
@@ -926,7 +930,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: '#EF4444',
+    color: colors.danger,
     marginTop: 16,
     textAlign: 'center',
   },
@@ -934,38 +938,23 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     borderRadius: 8,
   },
   retryText: {
-    color: '#FFFFFF',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },
-  logoContainer: {
-    alignItems: 'center',
-  },
-  logoText: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  logoB: {
-    color: '#374151',
-  },
-  logoAI: {
-    color: '#3B82F6',
-    fontWeight: '900',
-  },
-  logoKov: {
-    color: '#374151',
-  },
   productHeaders: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     padding: 16,
     margin: 16,
-    borderRadius: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
   },
   productHeaderLeft: {
     flex: 1,
@@ -988,31 +977,31 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     marginBottom: 6,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
   leftHeaderAccent: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#3B82F6',
+    backgroundColor: '#182140',
+    borderColor: colors.cyan,
   },
   rightHeaderAccent: {
-    backgroundColor: '#F5F3FF',
-    borderColor: '#8B5CF6',
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primaryBright,
   },
   leftColumnCard: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
+    backgroundColor: '#182140',
+    borderColor: '#37638A',
     borderWidth: 1,
   },
   rightColumnCard: {
-    backgroundColor: '#F5F3FF',
-    borderColor: '#C4B5FD',
+    backgroundColor: colors.primarySoft,
+    borderColor: '#51468E',
     borderWidth: 1,
   },
   leftAccentText: {
-    color: '#1D4ED8',
+    color: colors.cyan,
   },
   rightAccentText: {
-    color: '#6D28D9',
+    color: colors.primaryBright,
   },
   summaryValueBox: {
     width: 76,
@@ -1028,13 +1017,13 @@ const styles = StyleSheet.create({
   summaryValueText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#111827',
+    color: colors.text,
   },
   comparisonTag: {
     marginTop: 2,
     fontSize: 10,
     fontWeight: '700',
-    color: '#374151',
+    color: colors.textSecondary,
   },
   sideBySideHeader: {
     flexDirection: 'row',
@@ -1048,10 +1037,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   columnLabelLeft: {
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#1C2B4D',
   },
   columnLabelRight: {
-    backgroundColor: '#EDE9FE',
+    backgroundColor: colors.primarySoft,
   },
   columnLabelText: {
     fontSize: 11,
@@ -1059,20 +1048,20 @@ const styles = StyleSheet.create({
   },
   columnLabelName: {
     fontSize: 10,
-    color: '#4B5563',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   valueLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#6B7280',
+    color: colors.textMuted,
     marginTop: 6,
     marginBottom: 2,
   },
   groupInlineText: {
     fontSize: 11,
     lineHeight: 15,
-    color: '#374151',
+    color: colors.textSecondary,
   },
   groupEffectText: {
     alignSelf: 'stretch',
@@ -1080,7 +1069,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     fontSize: 10,
     lineHeight: 14,
-    color: '#6B7280',
+    color: colors.textMuted,
     marginTop: 3,
   },
   columnSmallTitle: {
@@ -1091,12 +1080,12 @@ const styles = StyleSheet.create({
   groupNeutralText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#0F766E',
+    color: colors.success,
     marginTop: 8,
   },
   neutralMessage: {
     fontSize: 13,
-    color: '#4B5563',
+    color: colors.textSecondary,
     lineHeight: 19,
   },
   uniqueColumns: {
@@ -1106,7 +1095,7 @@ const styles = StyleSheet.create({
   },
   emptyColumnText: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: colors.textMuted,
     lineHeight: 17,
   },
   priceResultValueBox: {
@@ -1123,14 +1112,14 @@ const styles = StyleSheet.create({
   productHeaderName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.text,
     textAlign: 'center',
     marginBottom: 4,
   },
   productComposition: {
     fontSize: 9,
     lineHeight: 12,
-    color: '#4B5563',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -1142,10 +1131,10 @@ const styles = StyleSheet.create({
   vsText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#9CA3AF',
+    color: colors.textMuted,
   },
   formulationBadge: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceSoft,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
@@ -1153,7 +1142,7 @@ const styles = StyleSheet.create({
   },
   formulationText: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   statusBadgeMini: {
@@ -1162,20 +1151,20 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   statusActiveMini: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: colors.successSoft,
   },
   statusInactiveMini: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.dangerSoft,
   },
   statusTextMini: {
     fontSize: 11,
     fontWeight: '600',
   },
   statusTextActiveMini: {
-    color: '#059669',
+    color: colors.success,
   },
   statusTextInactiveMini: {
-    color: '#DC2626',
+    color: colors.danger,
   },
   cropRegistrationBadge: {
     marginTop: 8,
@@ -1188,12 +1177,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  registrationLine: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+  },
   summarySection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     marginHorizontal: 16,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   summaryGrid: {
     gap: 12,
@@ -1205,7 +1201,7 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 13,
-    color: '#6B7280',
+    color: colors.textSecondary,
     flex: 1,
   },
   summaryValues: {
@@ -1223,30 +1219,32 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   leftValue: {
-    backgroundColor: '#DBEAFE',
-    color: '#1E40AF',
+    backgroundColor: '#1C2B4D',
+    color: colors.cyan,
   },
   rightValue: {
-    backgroundColor: '#EDE9FE',
-    color: '#5B21B6',
+    backgroundColor: colors.primarySoft,
+    color: colors.primaryBright,
   },
   higherValue: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#22C55E',
+    backgroundColor: colors.successSoft,
+    borderColor: colors.success,
   },
   lowerValue: {
-    opacity: 0.82,
+    opacity: 1,
   },
   equalValue: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#9CA3AF',
+    backgroundColor: colors.surfaceSoft,
+    borderColor: colors.textMuted,
   },
   section: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     marginHorizontal: 16,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1257,24 +1255,24 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
+    color: colors.text,
   },
   costMetricNote: {
     marginBottom: 12,
     fontSize: 12,
     lineHeight: 17,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
   substanceCard: {
     marginBottom: 12,
     padding: 12,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.backgroundRaised,
     borderRadius: 12,
   },
   substanceName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.text,
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -1289,24 +1287,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   leftBg: {
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#1C2B4D',
   },
   rightBg: {
-    backgroundColor: '#EDE9FE',
+    backgroundColor: colors.primarySoft,
   },
   substanceConc: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.text,
   },
   substancePerHa: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginTop: 4,
   },
   categoryCard: {
     marginBottom: 12,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.backgroundRaised,
     borderRadius: 12,
     overflow: 'hidden',
   },
@@ -1314,7 +1312,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    backgroundColor: '#FEF3C7',
+    backgroundColor: colors.warningSoft,
     gap: 8,
   },
   categoryName: {
@@ -1322,7 +1320,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     fontSize: 13,
     fontWeight: '600',
-    color: '#92400E',
+    color: colors.warning,
   },
   categoryComparison: {
     flexDirection: 'row',
@@ -1336,7 +1334,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     flexWrap: 'wrap',
     fontSize: 13,
-    color: '#374151',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   uniqueBlock: {
@@ -1349,7 +1347,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     fontSize: 13,
     fontWeight: '500',
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   uniqueSubstance: {
@@ -1369,13 +1367,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.text,
   },
   uniqueSubstanceInfo: {
     flexShrink: 1,
     flexWrap: 'wrap',
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginTop: 4,
   },
   groupCard: {
@@ -1384,50 +1382,52 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   groupWarningCard: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: colors.warningSoft,
   },
   groupSuccessCard: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: colors.successSoft,
   },
   groupUnknownCard: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceSoft,
   },
   groupTitle: {
     flexShrink: 1,
     flexWrap: 'wrap',
     fontSize: 13,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.text,
     marginBottom: 4,
   },
   groupText: {
     flexShrink: 1,
     flexWrap: 'wrap',
     fontSize: 12,
-    color: '#374151',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   groupWarningText: {
     fontSize: 12,
-    color: '#92400E',
+    color: colors.warning,
     marginTop: 6,
   },
   groupExplanation: {
     fontSize: 12,
     lineHeight: 18,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   priceSection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     marginHorizontal: 16,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   priceHint: {
     fontSize: 13,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginBottom: 12,
   },
   priceInputRow: {
@@ -1439,15 +1439,15 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   leftControlCard: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
+    backgroundColor: '#182140',
+    borderColor: '#37638A',
     borderWidth: 1,
     borderRadius: 10,
     padding: 8,
   },
   rightControlCard: {
-    backgroundColor: '#F5F3FF',
-    borderColor: '#C4B5FD',
+    backgroundColor: colors.primarySoft,
+    borderColor: '#51468E',
     borderWidth: 1,
     borderRadius: 10,
     padding: 8,
@@ -1470,49 +1470,51 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     flexWrap: 'wrap',
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginBottom: 6,
     marginTop: 4,
   },
   inputHint: {
     fontSize: 10,
     lineHeight: 14,
-    color: '#6B7280',
+    color: colors.textMuted,
     marginTop: 4,
   },
   priceInput: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.backgroundRaised,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-    color: '#111827',
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   calculateButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#059669',
+    backgroundColor: colors.primary,
     paddingVertical: 12,
     borderRadius: 8,
     marginTop: 16,
     gap: 8,
   },
   calculateButtonText: {
-    color: '#FFFFFF',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },
   neutralEconomyText: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginTop: 10,
   },
   priceResults: {
     marginTop: 16,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.border,
     gap: 12,
   },
   substanceCostBlock: {
@@ -1521,7 +1523,7 @@ const styles = StyleSheet.create({
   substanceCostTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#374151',
+    color: colors.text,
     marginBottom: 8,
   },
   substanceCostColumns: {
@@ -1533,7 +1535,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   substanceCostItem: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.backgroundRaised,
     borderRadius: 8,
     padding: 8,
   },
@@ -1544,7 +1546,7 @@ const styles = StyleSheet.create({
   },
   substanceCostText: {
     fontSize: 11,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
   priceResultRow: {
     flexDirection: 'row',
@@ -1553,7 +1555,7 @@ const styles = StyleSheet.create({
   },
   priceResultLabel: {
     fontSize: 13,
-    color: '#374151',
+    color: colors.textSecondary,
     flex: 1,
   },
   priceResultValues: {

@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '../../src/theme/colors';
 
 const BASE_TAB_BAR_HEIGHT = 56;
 const MIN_TAB_BAR_BOTTOM_PADDING = 10;
@@ -22,15 +23,15 @@ export default function TabLayout() {
             paddingBottom: tabBarBottomPadding,
           },
         ],
-        tabBarActiveTintColor: '#3B82F6',
-        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarActiveTintColor: colors.primaryBright,
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Гербициды',
+          title: 'Главная',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="leaf-outline" size={size} color={color} />
           ),
@@ -69,9 +70,9 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.backgroundRaised,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.border,
     paddingTop: 8,
   },
   tabBarLabel: {

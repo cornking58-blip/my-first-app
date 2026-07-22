@@ -11,20 +11,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import axios from 'axios';
+import { AmbientBackground } from '../../src/components/AmbientBackground';
+import { BrandLogo } from '../../src/components/BrandLogo';
 import { RetryErrorCard } from '../../src/components/RetryErrorCard';
+import { colors, shadows } from '../../src/theme/colors';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-
-// Logo Component
-const Logo = () => (
-  <View style={styles.logoContainer}>
-    <Text style={styles.logoText}>
-      <Text style={styles.logoB}>b</Text>
-      <Text style={styles.logoAI}>AI</Text>
-      <Text style={styles.logoKov}>kov</Text>
-    </Text>
-  </View>
-);
 
 interface Application {
   crop: string | null;
@@ -92,8 +84,9 @@ export default function ProductDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <AmbientBackground />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3B82F6" />
+          <ActivityIndicator size="large" color={colors.primaryBright} />
           <Text style={styles.loadingText}>Загрузка...</Text>
         </View>
       </SafeAreaView>
@@ -103,9 +96,10 @@ export default function ProductDetailScreen() {
   if (error || !product) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
+        <AmbientBackground />
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#111827" />
+            <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
         </View>
         <View style={styles.errorContainer}>
@@ -119,12 +113,13 @@ export default function ProductDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <AmbientBackground />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
+          <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <Logo />
+        <BrandLogo compact />
         <View style={{ width: 40 }} />
       </View>
 
@@ -189,7 +184,7 @@ export default function ProductDetailScreen() {
         {/* Applications Section */}
         <View style={styles.applicationsSection}>
           <Text style={styles.sectionTitle}>
-            <Ionicons name="layers-outline" size={18} color="#374151" />
+            <Ionicons name="layers-outline" size={18} color={colors.primaryBright} />
             {' '}Применения ({product.applications.length})
           </Text>
 
@@ -219,7 +214,7 @@ export default function ProductDetailScreen() {
                 <Ionicons 
                   name={expandedApp === index ? "chevron-up" : "chevron-down"} 
                   size={20} 
-                  color="#9CA3AF" 
+                  color={colors.textMuted}
                 />
               </View>
 
@@ -270,6 +265,17 @@ export default function ProductDetailScreen() {
           )}
         </View>
 
+        <TouchableOpacity style={styles.aiButton} activeOpacity={0.82}>
+          <View style={styles.aiButtonIcon}>
+            <Ionicons name="sparkles-outline" size={21} color={colors.white} />
+          </View>
+          <View style={styles.aiButtonCopy}>
+            <Text style={styles.aiButtonTitle}>Спросить AI об этом препарате</Text>
+            <Text style={styles.aiButtonText}>Профессиональное объяснение по данным карточки</Text>
+          </View>
+          <Ionicons name="arrow-forward" size={19} color={colors.white} />
+        </TouchableOpacity>
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
@@ -277,50 +283,33 @@ export default function ProductDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
+  container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(7,10,28,0.88)',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.border,
   },
   backButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 13,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   headerTitle: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.text,
     flex: 1,
     textAlign: 'center',
-  },
-  logoContainer: {
-    alignItems: 'center',
-  },
-  logoText: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  logoB: {
-    color: '#374151',
-  },
-  logoAI: {
-    color: '#3B82F6',
-    fontWeight: '900',
-  },
-  logoKov: {
-    color: '#374151',
   },
   content: {
     flex: 1,
@@ -333,7 +322,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
   errorContainer: {
     flex: 1,
@@ -343,7 +332,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: '#EF4444',
+    color: colors.danger,
     marginTop: 16,
     textAlign: 'center',
   },
@@ -351,7 +340,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
     borderRadius: 8,
   },
   retryText: {
@@ -360,15 +349,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   productCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     margin: 16,
     borderRadius: 16,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.24,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 7,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   productHeader: {
     marginBottom: 20,
@@ -382,18 +373,18 @@ const styles = StyleSheet.create({
   productName: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.text,
     marginRight: 12,
   },
   formulationBadge: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surfaceSoft,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
   formulationText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   statusBadge: {
@@ -405,10 +396,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   statusActive: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: colors.successSoft,
   },
   statusInactive: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.dangerSoft,
   },
   statusDot: {
     width: 8,
@@ -417,20 +408,20 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   statusDotActive: {
-    backgroundColor: '#10B981',
+    backgroundColor: colors.success,
   },
   statusDotInactive: {
-    backgroundColor: '#EF4444',
+    backgroundColor: colors.danger,
   },
   statusText: {
     fontSize: 13,
     fontWeight: '600',
   },
   statusTextActive: {
-    color: '#059669',
+    color: colors.success,
   },
   statusTextInactive: {
-    color: '#DC2626',
+    color: colors.danger,
   },
   detailsGrid: {
     gap: 16,
@@ -444,14 +435,14 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: colors.textMuted,
     marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   detailValue: {
     fontSize: 15,
-    color: '#374151',
+    color: colors.textSecondary,
     lineHeight: 22,
   },
   applicationsSection: {
@@ -460,21 +451,21 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#374151',
+    color: colors.text,
     marginBottom: 16,
   },
   applicationCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 12,
     marginBottom: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 1,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
   },
   applicationHeader: {
     flexDirection: 'row',
@@ -491,7 +482,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: colors.primarySoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -499,7 +490,7 @@ const styles = StyleSheet.create({
   applicationNumberText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: colors.primaryBright,
   },
   applicationInfo: {
     flex: 1,
@@ -507,33 +498,33 @@ const styles = StyleSheet.create({
   cropText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.text,
   },
   targetText: {
     fontSize: 13,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   applicationDetails: {
     padding: 16,
     paddingTop: 0,
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: colors.border,
   },
   applicationDetailRow: {
     flexDirection: 'column',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: colors.border,
   },
   applicationDetailLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: colors.textMuted,
     marginBottom: 4,
   },
   applicationDetailValue: {
     fontSize: 14,
-    color: '#374151',
+    color: colors.textSecondary,
     lineHeight: 20,
   },
   noApplications: {
@@ -542,6 +533,31 @@ const styles = StyleSheet.create({
   },
   noApplicationsText: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: colors.textMuted,
   },
+  aiButton: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    minHeight: 70,
+    borderRadius: 17,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderWidth: 1,
+    borderColor: colors.primaryBright,
+    ...shadows.glow,
+  },
+  aiButtonIcon: {
+    width: 39,
+    height: 39,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    marginRight: 11,
+  },
+  aiButtonCopy: { flex: 1, minWidth: 0, marginRight: 8 },
+  aiButtonTitle: { color: colors.white, fontSize: 14, fontWeight: '800' },
+  aiButtonText: { color: '#E9E5FF', fontSize: 11, lineHeight: 15, marginTop: 3 },
 });

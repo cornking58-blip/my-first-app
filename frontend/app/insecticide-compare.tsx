@@ -880,23 +880,27 @@ export default function InsecticideCompareScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#070A1C',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B0F26',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#2A335A',
   },
   backButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 13,
+    backgroundColor: '#11162E',
+    borderWidth: 1,
+    borderColor: '#2A335A',
   },
   headerTitle: {
     fontSize: 17,
@@ -916,7 +920,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: '#C8CBE0',
   },
   errorContainer: {
     flex: 1,
@@ -951,21 +955,23 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   logoB: {
-    color: '#374151',
+    color: '#F8F8FF',
   },
   logoAI: {
-    color: '#3B82F6',
+    color: '#9B7BFF',
     fontWeight: '900',
   },
   logoKov: {
-    color: '#374151',
+    color: '#F8F8FF',
   },
   productHeaders: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#11162E',
     padding: 16,
     margin: 16,
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2A335A',
   },
   productHeaderLeft: {
     flex: 1,
@@ -991,28 +997,28 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   leftHeaderAccent: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#3B82F6',
+    backgroundColor: '#182140',
+    borderColor: '#55C7FF',
   },
   rightHeaderAccent: {
-    backgroundColor: '#F5F3FF',
-    borderColor: '#8B5CF6',
+    backgroundColor: '#292455',
+    borderColor: '#9B7BFF',
   },
   leftColumnCard: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
+    backgroundColor: '#182140',
+    borderColor: '#37638A',
     borderWidth: 1,
   },
   rightColumnCard: {
-    backgroundColor: '#F5F3FF',
-    borderColor: '#C4B5FD',
+    backgroundColor: '#292455',
+    borderColor: '#51468E',
     borderWidth: 1,
   },
   leftAccentText: {
-    color: '#1D4ED8',
+    color: '#55C7FF',
   },
   rightAccentText: {
-    color: '#6D28D9',
+    color: '#9B7BFF',
   },
   summaryValueBox: {
     width: 76,
@@ -1123,14 +1129,14 @@ const styles = StyleSheet.create({
   productHeaderName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
+    color: '#F8F8FF',
     textAlign: 'center',
     marginBottom: 4,
   },
   productComposition: {
     fontSize: 9,
     lineHeight: 12,
-    color: '#4B5563',
+    color: '#C8CBE0',
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -1145,7 +1151,7 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
   },
   formulationBadge: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#1D2446',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
@@ -1153,7 +1159,7 @@ const styles = StyleSheet.create({
   },
   formulationText: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#C8CBE0',
     fontWeight: '500',
   },
   statusBadgeMini: {
@@ -1188,12 +1194,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  registrationLine: {
+    color: '#4B5563',
+    fontSize: 11,
+    lineHeight: 16,
+  },
   summarySection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#11162E',
     marginHorizontal: 16,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#2A335A',
   },
   summaryGrid: {
     gap: 12,
@@ -1205,7 +1218,7 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#C8CBE0',
     flex: 1,
   },
   summaryValues: {
@@ -1242,11 +1255,13 @@ const styles = StyleSheet.create({
     borderColor: '#9CA3AF',
   },
   section: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#11162E',
     marginHorizontal: 16,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#2A335A',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1257,7 +1272,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
+    color: '#F8F8FF',
   },
   costMetricNote: {
     marginBottom: 12,
@@ -1268,13 +1283,13 @@ const styles = StyleSheet.create({
   substanceCard: {
     marginBottom: 12,
     padding: 12,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#0B0F26',
     borderRadius: 12,
   },
   substanceName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: '#F8F8FF',
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -1369,13 +1384,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: '#F8F8FF',
   },
   uniqueSubstanceInfo: {
     flexShrink: 1,
     flexWrap: 'wrap',
     fontSize: 12,
-    color: '#6B7280',
+    color: '#C8CBE0',
     marginTop: 4,
   },
   groupCard: {
@@ -1419,15 +1434,17 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   priceSection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#11162E',
     marginHorizontal: 16,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#2A335A',
   },
   priceHint: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#C8CBE0',
     marginBottom: 12,
   },
   priceInputRow: {
@@ -1481,12 +1498,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   priceInput: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#0B0F26',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-    color: '#111827',
+    color: '#F8F8FF',
+    borderWidth: 1,
+    borderColor: '#2A335A',
   },
   calculateButton: {
     flexDirection: 'row',

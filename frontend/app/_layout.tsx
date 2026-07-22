@@ -1,16 +1,17 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { colors } from '../src/theme/colors';
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <Stack
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
-          contentStyle: { backgroundColor: '#FFFFFF' },
+          contentStyle: { backgroundColor: colors.background },
         }}
       >
         <Stack.Screen name="(tabs)" />

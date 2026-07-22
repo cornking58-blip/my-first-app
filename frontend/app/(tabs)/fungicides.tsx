@@ -352,7 +352,6 @@ export default function FungicidesScreen() {
               data={results}
               renderItem={renderItem}
               keyExtractor={(item) => item.product_key}
-              estimatedItemSize={140}
               contentContainerStyle={styles.listContent}
               refreshControl={
                 <RefreshControl
@@ -379,18 +378,18 @@ export default function FungicidesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#070A1C',
   },
   flex: {
     flex: 1,
   },
   header: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B0F26',
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#2A335A',
   },
   titleRow: {
     flexDirection: 'row',
@@ -406,18 +405,18 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   logoB: {
-    color: '#374151',
+    color: '#F8F8FF',
   },
   logoAI: {
-    color: '#3B82F6',
+    color: '#9B7BFF',
     fontWeight: '900',
   },
   logoKov: {
-    color: '#374151',
+    color: '#F8F8FF',
   },
   subtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#C8CBE0',
     marginTop: 2,
   },
   statsRow: {
@@ -435,29 +434,29 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#111827',
+    color: '#F8F8FF',
   },
   statLabel: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#C8CBE0',
     marginTop: 2,
   },
   statDivider: {
     width: 1,
     height: 30,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: '#2A335A',
   },
   searchContainer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#070A1C',
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#2A335A',
   },
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#171D3B',
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 48,
@@ -468,17 +467,17 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#111827',
+    color: '#F8F8FF',
   },
   filterInput: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#11162E',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#2A335A',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 15,
-    color: '#111827',
+    color: '#F8F8FF',
     marginTop: 8,
   },
   filterRow: {
@@ -493,18 +492,18 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#171D3B',
   },
   filterButtonActive: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: '#123C38',
   },
   filterText: {
     marginLeft: 6,
     fontSize: 14,
-    color: '#6B7280',
+    color: '#C8CBE0',
   },
   filterTextActive: {
-    color: '#059669',
+    color: '#48D6A5',
   },
   searchButton: {
     backgroundColor: '#F59E0B',
@@ -539,7 +538,7 @@ const styles = StyleSheet.create({
   clearText: {
     marginLeft: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: '#C8CBE0',
     textDecorationLine: 'underline',
   },
   compareButton: {
@@ -558,7 +557,7 @@ const styles = StyleSheet.create({
   },
   compareHint: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#C8CBE0',
     fontStyle: 'italic',
   },
   resultsContainer: {
@@ -568,12 +567,12 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#11162E',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#2A335A',
   },
   cardSelected: {
     borderColor: '#F59E0B',
@@ -595,11 +594,11 @@ const styles = StyleSheet.create({
   productName: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#111827',
+    color: '#F8F8FF',
     flexShrink: 1,
   },
   formulationBadge: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#1D2446',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
@@ -607,7 +606,7 @@ const styles = StyleSheet.create({
   },
   formulationText: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#C8CBE0',
     fontWeight: '500',
   },
   statusBadge: {
@@ -618,10 +617,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   statusActive: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: '#123C38',
   },
   statusInactive: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#421F35',
   },
   statusDot: {
     width: 6,
@@ -640,14 +639,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   statusTextActive: {
-    color: '#059669',
+    color: '#48D6A5',
   },
   statusTextInactive: {
-    color: '#DC2626',
+    color: '#FF718E',
   },
   substances: {
     fontSize: 14,
-    color: '#4B5563',
+    color: '#C8CBE0',
     lineHeight: 20,
     marginBottom: 8,
   },
@@ -658,7 +657,7 @@ const styles = StyleSheet.create({
   },
   manufacturer: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#969DBB',
     marginLeft: 6,
     flex: 1,
   },
@@ -669,7 +668,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: '#2A335A',
   },
   applicationsCount: {
     flexDirection: 'row',
@@ -677,7 +676,7 @@ const styles = StyleSheet.create({
   },
   applicationsText: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#969DBB',
     marginLeft: 6,
   },
   cardContent: {
@@ -698,8 +697,8 @@ const styles = StyleSheet.create({
     borderColor: '#F59E0B',
   },
   compareSelectButtonDisabled: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#D1D5DB',
+    backgroundColor: '#1D2446',
+    borderColor: '#2A335A',
   },
   compareSelectText: {
     fontSize: 12,
@@ -711,7 +710,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   compareSelectTextDisabled: {
-    color: '#D1D5DB',
+    color: '#969DBB',
   },
   loadingContainer: {
     flex: 1,
@@ -722,7 +721,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: '#C8CBE0',
   },
   emptyContainer: {
     flex: 1,
@@ -733,12 +732,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#374151',
+    color: '#F8F8FF',
     marginTop: 16,
   },
   emptyText: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: '#969DBB',
     marginTop: 4,
   },
 });

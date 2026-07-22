@@ -279,28 +279,32 @@ export default function InsecticideDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#070A1C',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0B0F26',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#2A335A',
   },
   backButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 13,
+    backgroundColor: '#11162E',
+    borderWidth: 1,
+    borderColor: '#2A335A',
   },
   headerTitle: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#111827',
+    color: '#F8F8FF',
     flex: 1,
     textAlign: 'center',
   },
@@ -313,14 +317,14 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   logoB: {
-    color: '#374151',
+    color: '#F8F8FF',
   },
   logoAI: {
-    color: '#3B82F6',
+    color: '#9B7BFF',
     fontWeight: '900',
   },
   logoKov: {
-    color: '#374151',
+    color: '#F8F8FF',
   },
   content: {
     flex: 1,
@@ -333,7 +337,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: '#C8CBE0',
   },
   errorContainer: {
     flex: 1,
@@ -360,15 +364,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   productCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#11162E',
     margin: 16,
     borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.24,
     shadowRadius: 8,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: '#2A335A',
   },
   productHeader: {
     marginBottom: 20,
@@ -382,18 +388,18 @@ const styles = StyleSheet.create({
   productName: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#111827',
+    color: '#F8F8FF',
     marginRight: 12,
   },
   formulationBadge: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#1D2446',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
   formulationText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#C8CBE0',
     fontWeight: '500',
   },
   statusBadge: {
@@ -405,10 +411,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   statusActive: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: '#123C38',
   },
   statusInactive: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#421F35',
   },
   statusDot: {
     width: 8,
@@ -427,10 +433,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   statusTextActive: {
-    color: '#059669',
+    color: '#48D6A5',
   },
   statusTextInactive: {
-    color: '#DC2626',
+    color: '#FF718E',
   },
   detailsGrid: {
     gap: 16,
@@ -444,14 +450,14 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: '#969DBB',
     marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   detailValue: {
     fontSize: 15,
-    color: '#374151',
+    color: '#C8CBE0',
     lineHeight: 22,
   },
   applicationsSection: {
@@ -460,11 +466,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#374151',
+    color: '#F8F8FF',
     marginBottom: 16,
   },
   applicationCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#11162E',
     borderRadius: 12,
     marginBottom: 12,
     overflow: 'hidden',
@@ -474,7 +480,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 1,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#2A335A',
   },
   applicationHeader: {
     flexDirection: 'row',
@@ -491,7 +497,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#292455',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -499,7 +505,7 @@ const styles = StyleSheet.create({
   applicationNumberText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#9B7BFF',
   },
   applicationInfo: {
     flex: 1,
@@ -507,33 +513,33 @@ const styles = StyleSheet.create({
   cropText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#111827',
+    color: '#F8F8FF',
   },
   targetText: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#C8CBE0',
     marginTop: 2,
   },
   applicationDetails: {
     padding: 16,
     paddingTop: 0,
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: '#2A335A',
   },
   applicationDetailRow: {
     flexDirection: 'column',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: '#2A335A',
   },
   applicationDetailLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: '#969DBB',
     marginBottom: 4,
   },
   applicationDetailValue: {
     fontSize: 14,
-    color: '#374151',
+    color: '#C8CBE0',
     lineHeight: 20,
   },
   noApplications: {
@@ -542,6 +548,6 @@ const styles = StyleSheet.create({
   },
   noApplicationsText: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: '#969DBB',
   },
 });
