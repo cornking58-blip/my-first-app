@@ -1284,6 +1284,11 @@ def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
         "fungicide": {},
         "insecticide": {},
     }
+    identity_indexes = {
+        "herbicide": {},
+        "fungicide": {},
+        "insecticide": {},
+    }
     record_entries = {
         "herbicide": [],
         "fungicide": [],
@@ -1298,9 +1303,11 @@ def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
             continue
 
         group_info = _resistance_record_to_group_info(record)
+        active_ingredient_key = normalize_resistance_lookup_name(record.get("active_ingredient_key") or "")
         entry = {
             "record": record,
             "group_info": group_info,
+            "active_ingredient_key": active_ingredient_key,
             "lookup_names": set(),
         }
 
@@ -1310,6 +1317,8 @@ def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
                 for normalized in _resistance_lookup_variants(str(value)):
                     entry["lookup_names"].add(normalized)
                     indexes[pesticide_type].setdefault(normalized, group_info)
+                    if active_ingredient_key:
+                        identity_indexes[pesticide_type].setdefault(normalized, active_ingredient_key)
 
         # Russian product imports often use Cyrillic active-substance names while HRAC/FRAC/IRAC
         # source records are mostly English. Store those trusted Russian names in JSON so the
@@ -1322,12 +1331,16 @@ def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
                     for normalized in _resistance_lookup_variants(str(alias)):
                         entry["lookup_names"].add(normalized)
                         indexes[pesticide_type].setdefault(normalized, group_info)
+                        if active_ingredient_key:
+                            identity_indexes[pesticide_type].setdefault(normalized, active_ingredient_key)
 
         key = record.get("active_ingredient_key")
         if key:
             for underscored in _resistance_lookup_variants(str(key).replace("_", "-")):
                 entry["lookup_names"].add(underscored)
                 indexes[pesticide_type].setdefault(underscored, group_info)
+                if active_ingredient_key:
+                    identity_indexes[pesticide_type].setdefault(underscored, active_ingredient_key)
 
         record_entries[pesticide_type].append(entry)
 
@@ -1350,11 +1363,13 @@ def load_resistance_groups(path: Optional[Path] = None) -> Dict[str, Any]:
             if group_info:
                 for normalized_alias in alias_variants:
                     table[normalized_alias] = group_info
+                    identity_indexes[pesticide_type][normalized_alias] = normalize_resistance_lookup_name(active_key)
 
     return {
         "records": records,
         "record_count": len(records),
         "indexes": indexes,
+        "identity_indexes": identity_indexes,
         "record_entries": record_entries,
     }
 
@@ -1371,6 +1386,53 @@ def normalize_resistance_lookup_name(name: str) -> str:
 
 RESISTANCE_GROUP_DATA = load_resistance_groups()
 RESISTANCE_GROUPS = RESISTANCE_GROUP_DATA["indexes"]
+ACTIVE_SUBSTANCE_IDENTITIES = RESISTANCE_GROUP_DATA["identity_indexes"]
+ACTIVE_SUBSTANCE_COMPARISON_ALIASES = {
+    ("herbicide", "флорасулама"): "florasulam",
+}
+
+
+def _lookup_active_substance_identity(substance_name: str, pesticide_type: str) -> Optional[str]:
+    """Resolve spelling and grammatical variants to one stable active-ingredient key."""
+    table = ACTIVE_SUBSTANCE_IDENTITIES.get(pesticide_type, {})
+    normalized = normalize_resistance_lookup_name(substance_name)
+
+    explicit_alias = ACTIVE_SUBSTANCE_COMPARISON_ALIASES.get((pesticide_type, normalized))
+    if explicit_alias:
+        return explicit_alias
+
+    for lookup_name in _resistance_lookup_variants(substance_name):
+        if lookup_name in table:
+            return table[lookup_name]
+
+    matches = set()
+    for known_name, identity in table.items():
+        known_normalized = normalize_resistance_lookup_name(known_name)
+        pattern = rf"(?<![а-яa-z0-9]){re.escape(known_normalized)}(?![а-яa-z0-9])"
+        if re.search(pattern, normalized, re.IGNORECASE):
+            matches.add(identity)
+
+    if len(matches) == 1:
+        return next(iter(matches))
+    return None
+
+
+def get_active_substance_identity(substance_name: str, pesticide_type: str) -> str:
+    """Return a comparison key that treats trusted aliases as the same substance."""
+    pesticide_type = (pesticide_type or "").strip().lower()
+    lookup_types = (
+        ("fungicide", "insecticide")
+        if pesticide_type in {"seed-treatment", "seed_treatment", "seed-treatment-mixed"}
+        else (pesticide_type,)
+    )
+    identities = {
+        identity
+        for lookup_type in lookup_types
+        if (identity := _lookup_active_substance_identity(substance_name, lookup_type))
+    }
+    if len(identities) == 1:
+        return next(iter(identities))
+    return normalize_substance_name(substance_name)
 
 
 def _lookup_resistance_group_in_table(substance_name: str, pesticide_type: str) -> Optional[Dict[str, Optional[str]]]:
@@ -1461,6 +1523,7 @@ def annotate_substances_with_resistance(substances: List[Dict], pesticide_type: 
         group_info = get_resistance_group(substance.get("name", ""), pesticide_type)
         annotated.append({
             **substance,
+            "comparison_key": get_active_substance_identity(substance.get("name", ""), pesticide_type),
             "resistance_system": group_info["system"],
             "resistance_group": group_info["group"],
             "resistance_group_name": group_info["name"],
@@ -1469,9 +1532,9 @@ def annotate_substances_with_resistance(substances: List[Dict], pesticide_type: 
     return annotated
 
 
-def _substance_names_match(left_name: str, right_name: str) -> bool:
-    left_norm = normalize_substance_name(left_name)
-    right_norm = normalize_substance_name(right_name)
+def _substance_names_match(left_name: str, right_name: str, pesticide_type: Optional[str] = None) -> bool:
+    left_norm = get_active_substance_identity(left_name, pesticide_type) if pesticide_type else normalize_substance_name(left_name)
+    right_norm = get_active_substance_identity(right_name, pesticide_type) if pesticide_type else normalize_substance_name(right_name)
     return bool(left_norm and right_norm and left_norm == right_norm)
 
 
@@ -1484,7 +1547,11 @@ def _known_group_key(substance: Dict) -> Optional[tuple]:
 
 
 def _active_substance_name_set(substances: List[Dict]) -> set:
-    return {normalize_substance_name(s.get("name", "")) for s in substances if s.get("name")}
+    return {
+        s.get("comparison_key") or normalize_substance_name(s.get("name", ""))
+        for s in substances
+        if s.get("name")
+    }
 
 
 def _resistance_reference_groups(substances: List[Dict]) -> List[Dict[str, Optional[str]]]:
@@ -1555,7 +1622,9 @@ def build_resistance_group_analysis(left_active: List[Dict], right_active: List[
 
     for left_substance in left_active:
         for right_substance in right_active:
-            if _substance_names_match(left_substance.get("name", ""), right_substance.get("name", "")):
+            left_identity = left_substance.get("comparison_key") or normalize_substance_name(left_substance.get("name", ""))
+            right_identity = right_substance.get("comparison_key") or normalize_substance_name(right_substance.get("name", ""))
+            if left_identity and left_identity == right_identity:
                 continue
 
             left_key = _known_group_key(left_substance)
@@ -1940,15 +2009,17 @@ async def build_advanced_compare_response(
     right_rate_used, right_rate_unit, right_rate_source = select_comparison_rate(request.right_rate, right_max_rate, right_max_rate_unit)
 
     identical_substances = []
+    identical_substance_keys = set()
     similar_by_category = []
 
     for left_substance in left_active:
-        left_name_norm = normalize_substance_name(left_substance["name"])
+        left_identity = left_substance.get("comparison_key") or normalize_substance_name(left_substance["name"])
         for right_substance in right_active:
-            right_name_norm = normalize_substance_name(right_substance["name"])
-            if left_name_norm == right_name_norm:
+            right_identity = right_substance.get("comparison_key") or normalize_substance_name(right_substance["name"])
+            if left_identity == right_identity and left_identity not in identical_substance_keys:
                 left_per_ha = (calculate_active_amount(left_substance["concentration"], left_substance.get("unit"), left_rate_used, left_rate_unit)) if left_rate_used else None
                 right_per_ha = (calculate_active_amount(right_substance["concentration"], right_substance.get("unit"), right_rate_used, right_rate_unit)) if right_rate_used else None
+                identical_substance_keys.add(left_identity)
                 identical_substances.append({
                     "name": left_substance["name"],
                     "left_concentration": left_substance["concentration"],
@@ -1977,7 +2048,12 @@ async def build_advanced_compare_response(
         if category != "Другие":
             left_cat_subs = [s for s in left_active if get_substance_category(s["name"]) == category]
             right_cat_subs = [s for s in right_active if get_substance_category(s["name"]) == category]
-            if not any(_substance_names_match(l["name"], r["name"]) for l in left_cat_subs for r in right_cat_subs):
+            if not any(
+                (l.get("comparison_key") or normalize_substance_name(l["name"]))
+                == (r.get("comparison_key") or normalize_substance_name(r["name"]))
+                for l in left_cat_subs
+                for r in right_cat_subs
+            ):
                 similar_by_category.append({
                     "category": category,
                     "left_substances": [{"name": s["name"], "concentration": s["concentration"], "unit": s["unit"]} for s in left_cat_subs],
@@ -1987,11 +2063,8 @@ async def build_advanced_compare_response(
 
     left_unique = []
     for substance in left_active:
-        name_norm = normalize_substance_name(substance["name"])
-        if not any(
-            name_norm == normalize_substance_name(item["name"])
-            for item in identical_substances
-        ):
+        identity = substance.get("comparison_key") or normalize_substance_name(substance["name"])
+        if identity not in identical_substance_keys:
             per_ha = (calculate_active_amount(substance["concentration"], substance.get("unit"), left_rate_used, left_rate_unit)) if left_rate_used else None
             left_unique.append({
                 **substance,
@@ -2001,11 +2074,8 @@ async def build_advanced_compare_response(
 
     right_unique = []
     for substance in right_active:
-        name_norm = normalize_substance_name(substance["name"])
-        if not any(
-            name_norm == normalize_substance_name(item["name"])
-            for item in identical_substances
-        ):
+        identity = substance.get("comparison_key") or normalize_substance_name(substance["name"])
+        if identity not in identical_substance_keys:
             per_ha = (calculate_active_amount(substance["concentration"], substance.get("unit"), right_rate_used, right_rate_unit)) if right_rate_used else None
             right_unique.append({
                 **substance,

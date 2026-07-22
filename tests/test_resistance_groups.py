@@ -76,6 +76,7 @@ RESISTANCE_GROUP_DATA = namespace["RESISTANCE_GROUP_DATA"]
 OLD_HARDCODED_RESISTANCE_GROUP_COUNT = namespace["OLD_HARDCODED_RESISTANCE_GROUP_COUNT"]
 MANUAL_RU_ALIASES = namespace["MANUAL_RU_ALIASES"]
 get_resistance_lookup_diagnostics = namespace["get_resistance_lookup_diagnostics"]
+get_active_substance_identity = namespace["get_active_substance_identity"]
 build_seed_treatment_search_response = namespace["build_seed_treatment_search_response"]
 build_seed_treatment_display_record = namespace["build_seed_treatment_display_record"]
 build_product_composition_search_records = namespace["build_product_composition_search_records"]
@@ -879,6 +880,69 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         ]
         for forbidden in forbidden_phrases:
             self.assertNotIn(forbidden, serialized)
+
+    def test_24d_spelling_and_acid_variants_are_the_same_active_substance(self):
+        left = annotate_substances_with_resistance(
+            parse_active_substances("(300 г/л 2,4-D + 6,25 г/л флорасулам)"),
+            "herbicide",
+        )
+        right = annotate_substances_with_resistance(
+            parse_active_substances("(300 г/л 2,4-Д кислоты (2-этилгексиловый эфир) + 6,25 г/л флорасулама)"),
+            "herbicide",
+        )
+
+        analysis = build_resistance_group_analysis(left, right)
+
+        self.assertEqual(get_active_substance_identity("2,4-D", "herbicide"), "24_d")
+        self.assertEqual(get_active_substance_identity("2,4-Д кислоты", "herbicide"), "24_d")
+        self.assertEqual(get_active_substance_identity("флорасулама", "herbicide"), "florasulam")
+        self.assertNotEqual(
+            get_active_substance_identity("метсульфурон-метил", "herbicide"),
+            get_active_substance_identity("этаметсульфурон-метил", "herbicide"),
+        )
+        self.assertTrue(analysis["identical_active_substance_sets"])
+        self.assertEqual(analysis["same_group_matches"], [])
+        self.assertEqual(
+            analysis["plain_explanation"],
+            "Действующие вещества совпадают. Группы устойчивости указаны справочно.",
+        )
+
+    def test_advanced_compare_uses_canonical_identity_in_every_comparison_block(self):
+        records = {
+            "left": [{
+                "product_key": "left",
+                "product_name": "Левый препарат",
+                "active_substances_raw": "(300 г/л 2,4-D + 6,25 г/л флорасулам)",
+                "pesticide_type": "herbicide",
+                "rate_raw": "1,0 л/га",
+            }],
+            "right": [{
+                "product_key": "right",
+                "product_name": "Правый препарат",
+                "active_substances_raw": "(300 г/л 2,4-Д кислоты (2-этилгексиловый эфир) + 6,25 г/л флорасулама)",
+                "pesticide_type": "herbicide",
+                "rate_raw": "1,0 л/га",
+            }],
+        }
+        request = SimpleNamespace(
+            left_key="left",
+            right_key="right",
+            left_rate=None,
+            right_rate=None,
+            left_price=None,
+            right_price=None,
+            crop=None,
+        )
+
+        response = asyncio.run(
+            build_advanced_compare_response(request, FakeCollection(records), "herbicide")
+        )
+
+        self.assertEqual(len(response["identical_substances"]), 2)
+        self.assertEqual(response["similar_by_category"], [])
+        self.assertEqual(response["left_unique_substances"], [])
+        self.assertEqual(response["right_unique_substances"], [])
+        self.assertTrue(response["group_analysis"]["identical_active_substance_sets"])
 
     def test_same_group_match_warning_for_different_substances(self):
         left = annotate_substances_with_resistance(
