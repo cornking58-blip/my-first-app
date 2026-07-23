@@ -1,0 +1,32 @@
+name: Run field advisor AI patch
+
+on:
+  push:
+    branches:
+      - agent/field-advisor-ai
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/field-advisor-ai
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply patch
+        run: python scripts/apply_field_advisor_ai.py
+      - name: Run AI tests
+        run: python -m unittest tests/test_ai_chat.py
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/server.py tests/test_ai_chat.py
+          git diff --cached --quiet || git commit -m "Improve AI product and manufacturer research"
+          git push
