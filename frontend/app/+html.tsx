@@ -24,6 +24,34 @@ export default function Root({ children }: PropsWithChildren) {
               body > div:first-child { position: fixed !important; top: 0; left: 0; right: 0; bottom: 0; }
               [role="tablist"] [role="tab"] * { overflow: visible !important; }
               [role="heading"], [role="heading"] * { overflow: visible !important; }
+              [data-testid="main-search-input"] {
+                appearance: none !important;
+                -webkit-appearance: none !important;
+                background-color: transparent !important;
+                color: #F7F7FC !important;
+                outline: none !important;
+                border: 0 !important;
+                box-shadow: none !important;
+                -webkit-text-fill-color: #F7F7FC !important;
+                caret-color: #9D82FF !important;
+              }
+              [data-testid="main-search-input"]:focus,
+              [data-testid="main-search-input"]:focus-visible {
+                background-color: transparent !important;
+                outline: none !important;
+                box-shadow: none !important;
+              }
+              [data-testid="main-search-input"]::selection {
+                background-color: #604BB3;
+                color: #FFFFFF;
+              }
+              [data-testid="main-search-input"]:-webkit-autofill,
+              [data-testid="main-search-input"]:-webkit-autofill:hover,
+              [data-testid="main-search-input"]:-webkit-autofill:focus {
+                -webkit-text-fill-color: #F7F7FC !important;
+                -webkit-box-shadow: 0 0 0 1000px #202B59 inset !important;
+                box-shadow: 0 0 0 1000px #202B59 inset !important;
+              }
             `,
           }}
         />

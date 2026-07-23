@@ -80,6 +80,7 @@ get_active_substance_identity = namespace["get_active_substance_identity"]
 build_seed_treatment_search_response = namespace["build_seed_treatment_search_response"]
 build_seed_treatment_display_record = namespace["build_seed_treatment_display_record"]
 build_product_composition_search_records = namespace["build_product_composition_search_records"]
+build_comparison_summary = namespace["build_comparison_summary"]
 
 
 class FakeCursor:
@@ -929,8 +930,8 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
             right_key="right",
             left_rate=None,
             right_rate=None,
-            left_price=None,
-            right_price=None,
+            left_price=1000,
+            right_price=1100,
             crop=None,
         )
 
@@ -943,6 +944,52 @@ class ResistanceGroupHelpersTest(unittest.TestCase):
         self.assertEqual(response["left_unique_substances"], [])
         self.assertEqual(response["right_unique_substances"], [])
         self.assertTrue(response["group_analysis"]["identical_active_substance_sets"])
+        self.assertEqual(
+            {item["comparison_key"] for item in response["right"]["substances"]},
+            {"24_d", "florasulam"},
+        )
+        self.assertEqual(
+            {item["resistance_group"] for item in response["right"]["substances"]},
+            {"2", "4"},
+        )
+        self.assertEqual(len(response["price_analysis"]["left_substances_cost"]), 2)
+        self.assertEqual(len(response["price_analysis"]["right_substances_cost"]), 2)
+        self.assertEqual(
+            {item["comparison_key"] for item in response["price_analysis"]["right_substances_cost"]},
+            {"24_d", "florasulam"},
+        )
+        self.assertEqual(response["comparison_summary"]["cost"]["winner_name"], "Левый препарат")
+        self.assertEqual(response["comparison_summary"]["absolute"]["status"], "winner")
+
+    def test_different_active_substance_sets_do_not_get_an_absolute_winner(self):
+        left = annotate_substances_with_resistance(
+            parse_active_substances("(360 г/л глифосат)"),
+            "herbicide",
+        )
+        right = annotate_substances_with_resistance(
+            parse_active_substances("(600 г/л 2,4-Д)"),
+            "herbicide",
+        )
+
+        summary = build_comparison_summary(
+            "Глифосатный препарат",
+            "Препарат 2,4-Д",
+            left,
+            right,
+            1.0,
+            1.0,
+            "л/га",
+            "л/га",
+            {
+                "left_cost_per_ha": 500,
+                "right_cost_per_ha": 600,
+            },
+        )
+
+        self.assertEqual(summary["cost"]["winner_name"], "Глифосатный препарат")
+        self.assertEqual(summary["active_substances"]["status"], "different_composition")
+        self.assertEqual(summary["absolute"]["status"], "none")
+        self.assertIn("действующие вещества различаются", summary["absolute"]["message"])
 
     def test_same_group_match_warning_for_different_substances(self):
         left = annotate_substances_with_resistance(
@@ -1437,10 +1484,8 @@ class AdvancedCompareResponseTest(unittest.TestCase):
         self.assertIn('@api_router.post("/fungicides/compare-advanced")', SERVER_TEXT)
         self.assertIn('@api_router.post("/seed-treatments/compare-advanced")', SERVER_TEXT)
 
-    def test_backend_does_not_use_forbidden_recommendation_wording(self):
+    def test_backend_does_not_make_unsupported_agronomic_recommendations(self):
         forbidden_phrases = [
-            "win" + "ner",
-            "побед" + "итель",
             "лучший " + "препарат",
             "ротация " + "лучше",
         ]

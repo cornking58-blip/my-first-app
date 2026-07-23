@@ -1520,10 +1520,14 @@ def annotate_substances_with_resistance(substances: List[Dict], pesticide_type: 
     """Add resistance group fields to parsed substances while keeping existing fields intact."""
     annotated = []
     for substance in substances:
-        group_info = get_resistance_group(substance.get("name", ""), pesticide_type)
+        substance_name = substance.get("name", "")
+        comparison_key = get_active_substance_identity(substance_name, pesticide_type)
+        group_info = get_resistance_group(substance_name, pesticide_type)
+        if group_info.get("name") == UNKNOWN_RESISTANCE_GROUP["name"] and comparison_key:
+            group_info = get_resistance_group(comparison_key, pesticide_type)
         annotated.append({
             **substance,
-            "comparison_key": get_active_substance_identity(substance.get("name", ""), pesticide_type),
+            "comparison_key": comparison_key,
             "resistance_system": group_info["system"],
             "resistance_group": group_info["group"],
             "resistance_group_name": group_info["name"],
@@ -1809,7 +1813,7 @@ def build_substance_cost_breakdown(
     rate_unit: Optional[str],
 ) -> List[Dict[str, Any]]:
     """Estimate full-treatment cost per gram for each active substance separately."""
-    if not price or not rate_used:
+    if price is None or rate_used is None:
         return []
 
     breakdown = []
@@ -1832,6 +1836,7 @@ def build_substance_cost_breakdown(
             "side": side,
             "substance_name": substance.get("name"),
             "name": substance.get("name"),  # Backward-friendly alias for existing frontend code.
+            "comparison_key": substance.get("comparison_key"),
             "concentration": concentration,
             "unit": substance.get("unit"),
             "rate_used": rate_used,
@@ -1872,7 +1877,7 @@ def build_price_analysis(
     left_active: List[Dict],
     right_active: List[Dict],
 ) -> Optional[Dict[str, Any]]:
-    if not left_price and not right_price:
+    if left_price is None and right_price is None:
         return None
 
     left_total_concentration = sum_known_concentrations(left_active)
@@ -1883,14 +1888,195 @@ def build_price_analysis(
     return {
         "left_price_per_unit": left_price,
         "right_price_per_unit": right_price,
-        "left_cost_per_ha": round(left_price * left_rate_used, 2) if left_price and left_rate_used else None,
-        "right_cost_per_ha": round(right_price * right_rate_used, 2) if right_price and right_rate_used else None,
+        "left_cost_per_ha": round(left_price * left_rate_used, 2) if left_price is not None and left_rate_used is not None else None,
+        "right_cost_per_ha": round(right_price * right_rate_used, 2) if right_price is not None and right_rate_used is not None else None,
         # Kept for compatibility, but frontend now highlights per-substance costs for multi-component products.
-        "left_cost_per_gram_ai": round(left_price / left_total_concentration, 4) if left_price and left_total_concentration > 0 else None,
-        "right_cost_per_gram_ai": round(right_price / right_total_concentration, 4) if right_price and right_total_concentration > 0 else None,
+        "left_cost_per_gram_ai": round(left_price / left_total_concentration, 4) if left_price is not None and left_total_concentration > 0 else None,
+        "right_cost_per_gram_ai": round(right_price / right_total_concentration, 4) if right_price is not None and right_total_concentration > 0 else None,
         "left_substances_cost": left_substances_cost,
         "right_substances_cost": right_substances_cost,
         "substances_cost": left_substances_cost + right_substances_cost,
+    }
+
+
+def _active_amounts_by_identity(
+    substances: List[Dict],
+    rate_used: Optional[float],
+    rate_unit: Optional[str],
+) -> Dict[str, Optional[float]]:
+    amounts: Dict[str, Optional[float]] = {}
+    for substance in substances:
+        identity = substance.get("comparison_key") or normalize_substance_name(substance.get("name", ""))
+        if not identity:
+            continue
+        amount = calculate_active_amount(
+            substance.get("concentration"),
+            substance.get("unit"),
+            rate_used,
+            rate_unit,
+        )
+        if identity not in amounts:
+            amounts[identity] = amount
+        elif amounts[identity] is not None and amount is not None:
+            amounts[identity] = amounts[identity] + amount
+        else:
+            amounts[identity] = None
+    return amounts
+
+
+def _format_comparison_number(value: float) -> str:
+    return f"{round(value, 2):.2f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def build_comparison_summary(
+    left_name: str,
+    right_name: str,
+    left_active: List[Dict],
+    right_active: List[Dict],
+    left_rate_used: Optional[float],
+    right_rate_used: Optional[float],
+    left_rate_unit: Optional[str],
+    right_rate_unit: Optional[str],
+    price_analysis: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Build conservative winner conclusions without treating a different composition as inherently better."""
+    left_cost = price_analysis.get("left_cost_per_ha") if price_analysis else None
+    right_cost = price_analysis.get("right_cost_per_ha") if price_analysis else None
+
+    cost_summary: Dict[str, Any] = {
+        "status": "unavailable",
+        "winner_side": None,
+        "winner_name": None,
+        "left_cost_per_ha": left_cost,
+        "right_cost_per_ha": right_cost,
+        "message": "Для победителя по стоимости укажите цену обоих препаратов.",
+    }
+    if left_cost is not None and right_cost is not None:
+        cost_difference = abs(left_cost - right_cost)
+        if cost_difference <= 0.01:
+            cost_summary.update({
+                "status": "tie",
+                "message": f"По стоимости обработки препараты равны: {_format_comparison_number(left_cost)} ₽/га.",
+            })
+        else:
+            winner_side = "left" if left_cost < right_cost else "right"
+            winner_name = left_name if winner_side == "left" else right_name
+            winner_cost = left_cost if winner_side == "left" else right_cost
+            cost_summary.update({
+                "status": "winner",
+                "winner_side": winner_side,
+                "winner_name": winner_name,
+                "difference_per_ha": round(cost_difference, 2),
+                "message": (
+                    f"Победитель по стоимости — {winner_name}: "
+                    f"{_format_comparison_number(winner_cost)} ₽/га, "
+                    f"дешевле на {_format_comparison_number(cost_difference)} ₽/га."
+                ),
+            })
+
+    left_amounts = _active_amounts_by_identity(left_active, left_rate_used, left_rate_unit)
+    right_amounts = _active_amounts_by_identity(right_active, right_rate_used, right_rate_unit)
+    same_active_set = bool(left_amounts) and set(left_amounts) == set(right_amounts)
+    active_summary: Dict[str, Any] = {
+        "status": "different_composition",
+        "winner_side": None,
+        "winner_name": None,
+        "same_active_substance_set": same_active_set,
+        "message": (
+            "По действующим веществам победитель не определяется: составы различаются. "
+            "Нужны культура, сорняки и регламент применения."
+        ),
+        "note": "Большее количество или концентрация ДВ сами по себе не гарантируют лучшую эффективность.",
+    }
+
+    if same_active_set:
+        comparable = all(
+            left_amounts[key] is not None and right_amounts[key] is not None
+            for key in left_amounts
+        )
+        if not comparable:
+            active_summary.update({
+                "status": "unavailable",
+                "message": "По действующим веществам не хватает совместимых норм и единиц для расчёта ДВ на гектар.",
+            })
+        else:
+            comparisons = []
+            for key in left_amounts:
+                left_amount = left_amounts[key] or 0
+                right_amount = right_amounts[key] or 0
+                tolerance = max(0.01, max(abs(left_amount), abs(right_amount)) * 0.000001)
+                if abs(left_amount - right_amount) <= tolerance:
+                    comparisons.append(0)
+                elif left_amount > right_amount:
+                    comparisons.append(1)
+                else:
+                    comparisons.append(-1)
+
+            if all(value == 0 for value in comparisons):
+                active_summary.update({
+                    "status": "tie",
+                    "message": "По действующим веществам — равенство: набор и количество ДВ на гектар совпадают.",
+                })
+            elif all(value >= 0 for value in comparisons) and any(value > 0 for value in comparisons):
+                active_summary.update({
+                    "status": "winner",
+                    "winner_side": "left",
+                    "winner_name": left_name,
+                    "message": f"Лидер по количеству совпадающих ДВ на гектар — {left_name}.",
+                })
+            elif all(value <= 0 for value in comparisons) and any(value < 0 for value in comparisons):
+                active_summary.update({
+                    "status": "winner",
+                    "winner_side": "right",
+                    "winner_name": right_name,
+                    "message": f"Лидер по количеству совпадающих ДВ на гектар — {right_name}.",
+                })
+            else:
+                active_summary.update({
+                    "status": "mixed",
+                    "message": "По действующим веществам единого лидера нет: у каждого препарата выше отдельные компоненты.",
+                })
+
+    absolute_summary: Dict[str, Any] = {
+        "status": "none",
+        "winner_side": None,
+        "winner_name": None,
+        "message": "Абсолютный победитель не определяется: критерии стоимости и ДВ не совпали.",
+    }
+    cost_status = cost_summary["status"]
+    active_status = active_summary["status"]
+    cost_winner = cost_summary.get("winner_side")
+    active_winner = active_summary.get("winner_side")
+
+    if same_active_set and cost_status == "tie" and active_status == "tie":
+        absolute_summary.update({
+            "status": "tie",
+            "message": "Полное равенство: препараты совпадают по набору и количеству ДВ на гектар и по стоимости.",
+        })
+    elif (
+        same_active_set
+        and cost_status == "winner"
+        and (active_status == "tie" or (active_status == "winner" and active_winner == cost_winner))
+    ):
+        winner_name = cost_summary.get("winner_name")
+        absolute_summary.update({
+            "status": "winner",
+            "winner_side": cost_winner,
+            "winner_name": winner_name,
+            "message": (
+                f"Абсолютный победитель — {winner_name}: дешевле на гектар "
+                "и не уступает по количеству совпадающих ДВ."
+            ),
+        })
+    elif not same_active_set:
+        absolute_summary["message"] = "Абсолютный победитель не определяется: действующие вещества различаются."
+    elif cost_status == "unavailable":
+        absolute_summary["message"] = "Для абсолютного победителя укажите цену обоих препаратов."
+
+    return {
+        "cost": cost_summary,
+        "active_substances": active_summary,
+        "absolute": absolute_summary,
     }
 
 
@@ -2022,6 +2208,9 @@ async def build_advanced_compare_response(
                 identical_substance_keys.add(left_identity)
                 identical_substances.append({
                     "name": left_substance["name"],
+                    "left_name": left_substance["name"],
+                    "right_name": right_substance["name"],
+                    "comparison_key": left_identity,
                     "left_concentration": left_substance["concentration"],
                     "right_concentration": right_substance["concentration"],
                     "left_unit": left_substance["unit"],
@@ -2099,6 +2288,17 @@ async def build_advanced_compare_response(
         left_active,
         right_active,
     )
+    comparison_summary = build_comparison_summary(
+        left_first.get("product_name") or "Препарат A",
+        right_first.get("product_name") or "Препарат B",
+        left_active,
+        right_active,
+        left_rate_used,
+        right_rate_used,
+        left_rate_unit,
+        right_rate_unit,
+        price_analysis,
+    )
     crop_registration = build_crop_registration(request.crop, left_records, right_records)
 
     analysis = {
@@ -2161,6 +2361,7 @@ async def build_advanced_compare_response(
         "right_unique_substances": right_unique,
         "group_analysis": group_analysis,
         "price_analysis": price_analysis,
+        "comparison_summary": comparison_summary,
     }
     if crop_registration:
         response["crop_registration"] = crop_registration

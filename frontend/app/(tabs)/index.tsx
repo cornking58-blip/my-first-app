@@ -224,6 +224,7 @@ export default function HomeScreen() {
           <View style={styles.searchInputContainer}>
             <Ionicons name="search-outline" size={21} color={colors.primaryBright} />
             <TextInput
+              testID="main-search-input"
               style={styles.searchInput}
               placeholder="Название, действующее вещество..."
               placeholderTextColor={colors.textMuted}

@@ -24,6 +24,7 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 interface Substance {
   name: string;
+  comparison_key?: string;
   concentration: number | null;
   unit: string;
   is_antidote: boolean;
@@ -37,6 +38,9 @@ interface Substance {
 
 interface IdenticalSubstance {
   name: string;
+  left_name?: string;
+  right_name?: string;
+  comparison_key?: string;
   left_concentration: number | null;
   left_unit: string;
   right_concentration: number | null;
@@ -98,6 +102,7 @@ interface SubstanceCost {
   side: 'left' | 'right';
   substance_name: string;
   name?: string;
+  comparison_key?: string;
   concentration: number | null;
   unit: string;
   rate_used: number;
@@ -130,6 +135,20 @@ interface CropRegistration {
   right: CropRegistrationSide;
 }
 
+interface ComparisonSummaryItem {
+  status: 'winner' | 'tie' | 'none' | 'unavailable' | 'different_composition' | 'mixed';
+  winner_side: 'left' | 'right' | null;
+  winner_name: string | null;
+  message: string;
+  note?: string;
+}
+
+interface ComparisonSummary {
+  cost: ComparisonSummaryItem;
+  active_substances: ComparisonSummaryItem & { same_active_substance_set?: boolean };
+  absolute: ComparisonSummaryItem;
+}
+
 interface CompareResult {
   left: ProductInfo;
   right: ProductInfo;
@@ -141,6 +160,7 @@ interface CompareResult {
   };
   group_analysis?: GroupAnalysis;
   price_analysis: PriceAnalysis | null;
+  comparison_summary?: ComparisonSummary;
   crop_registration?: CropRegistration;
 }
 
@@ -294,23 +314,35 @@ export default function CompareScreen() {
     return (side === 'left' && leftValue > rightValue) || (side === 'right' && rightValue > leftValue) ? 'выше' : 'ниже';
   };
 
-  const getSubstanceKey = (name: string) => name.trim().toLowerCase();
+  const getSubstanceKey = (name: string, comparisonKey?: string | null) => (
+    comparisonKey?.trim() || name.trim().toLowerCase()
+  );
 
-  const namesMatch = (leftName?: string | null, rightName?: string | null) => {
-    const leftKey = getSubstanceKey(leftName ?? '');
-    const rightKey = getSubstanceKey(rightName ?? '');
+  const namesMatch = (
+    leftName?: string | null,
+    rightName?: string | null,
+    leftComparisonKey?: string | null,
+    rightComparisonKey?: string | null,
+  ) => {
+    const leftKey = getSubstanceKey(leftName ?? '', leftComparisonKey);
+    const rightKey = getSubstanceKey(rightName ?? '', rightComparisonKey);
     return Boolean(leftKey && rightKey && (leftKey === rightKey || leftKey.includes(rightKey) || rightKey.includes(leftKey)));
   };
 
-  const getSubstanceDetails = (product: ProductInfo, substanceName: string) => {
-    return product.substances.find(item => namesMatch(item.name, substanceName));
+  const getSubstanceDetails = (product: ProductInfo, substanceName: string, comparisonKey?: string) => {
+    return product.substances.find(item => namesMatch(item.name, substanceName, item.comparison_key, comparisonKey));
   };
 
-  const getSubstanceCost = (side: 'left' | 'right', substanceName: string) => {
+  const getSubstanceCost = (side: 'left' | 'right', substanceName: string, comparisonKey?: string) => {
     const costs = side === 'left'
       ? compareData?.price_analysis?.left_substances_cost ?? compareData?.price_analysis?.substances_cost.filter(item => item.side === 'left')
       : compareData?.price_analysis?.right_substances_cost ?? compareData?.price_analysis?.substances_cost.filter(item => item.side === 'right');
-    return costs?.find(item => namesMatch(item.substance_name || item.name, substanceName));
+    return costs?.find(item => namesMatch(
+      item.substance_name || item.name,
+      substanceName,
+      item.comparison_key,
+      comparisonKey,
+    ));
   };
 
   const shouldShowSubstanceCost = (cost: SubstanceCost | undefined, hasPrice: boolean) => {
@@ -345,7 +377,7 @@ export default function CompareScreen() {
 
   const renderSubstanceMetrics = (substance: Substance | undefined, side: 'left' | 'right', perHa?: number | null) => {
     if (!substance) return null;
-    const cost = getSubstanceCost(side, substance.name);
+    const cost = getSubstanceCost(side, substance.name, substance.comparison_key);
     const product = side === 'left' ? compareData?.left : compareData?.right;
     const showCost = shouldShowSubstanceCost(cost, side === 'left' ? hasLeftPrice : hasRightPrice);
     const calculatedPerHa = perHa ?? substance.per_ha ?? calculateActiveAmount(substance, product);
@@ -366,7 +398,7 @@ export default function CompareScreen() {
   };
 
   const renderUniqueSubstance = (sub: Substance & { category: string; per_ha: number | null }, side: 'left' | 'right') => {
-    const cost = getSubstanceCost(side, sub.name);
+    const cost = getSubstanceCost(side, sub.name, sub.comparison_key);
     const product = side === 'left' ? compareData?.left : compareData?.right;
     const showCost = shouldShowSubstanceCost(cost, side === 'left' ? hasLeftPrice : hasRightPrice);
     const calculatedPerHa = sub.per_ha ?? calculateActiveAmount(sub, product);
@@ -423,7 +455,7 @@ export default function CompareScreen() {
     );
   }
 
-  const { left, right, analysis, group_analysis, price_analysis, crop_registration } = compareData;
+  const { left, right, analysis, group_analysis, price_analysis, comparison_summary, crop_registration } = compareData;
   const hasCropInput = crop.trim().length > 0;
   const hasLeftComposition = (left.active_substances_raw?.trim().length ?? 0) > 0;
   const leftDisplayManufacturer = left.display_manufacturer?.trim() || 'Производитель не указан';
@@ -433,8 +465,8 @@ export default function CompareScreen() {
   const hasRightFormulation = (right.formulation?.trim().length ?? 0) > 0;
   const hasPriceResultValues = price_analysis !== null
     && (price_analysis.left_price_per_unit !== null || price_analysis.right_price_per_unit !== null);
-  const usedLeftSubstances = new Set(analysis.identical_substances.map(item => getSubstanceKey(item.name)));
-  const usedRightSubstances = new Set(analysis.identical_substances.map(item => getSubstanceKey(item.name)));
+  const usedLeftSubstances = new Set(analysis.identical_substances.map(item => getSubstanceKey(item.left_name ?? item.name, item.comparison_key)));
+  const usedRightSubstances = new Set(analysis.identical_substances.map(item => getSubstanceKey(item.right_name ?? item.name, item.comparison_key)));
   const sameGroupMatches = (group_analysis?.same_group_matches ?? [])
     .map(match => {
       const leftSubstances = match.left_substances.filter(name => !usedLeftSubstances.has(getSubstanceKey(name)));
@@ -735,10 +767,12 @@ export default function CompareScreen() {
               </View>
               <Text style={styles.costMetricNote}>Полная стоимость обработки делится на количество этого ДВ на гектар. Дополнительные компоненты входят в стоимость препарата.</Text>
               {analysis.identical_substances.map((sub, idx) => {
-                const leftDetails = getSubstanceDetails(left, sub.name);
-                const rightDetails = getSubstanceDetails(right, sub.name);
-                const leftCost = getSubstanceCost('left', leftDetails?.name ?? sub.name);
-                const rightCost = getSubstanceCost('right', rightDetails?.name ?? sub.name);
+                const leftName = sub.left_name ?? sub.name;
+                const rightName = sub.right_name ?? sub.name;
+                const leftDetails = getSubstanceDetails(left, leftName, sub.comparison_key);
+                const rightDetails = getSubstanceDetails(right, rightName, sub.comparison_key);
+                const leftCost = getSubstanceCost('left', leftName, sub.comparison_key);
+                const rightCost = getSubstanceCost('right', rightName, sub.comparison_key);
                 const showLeftCost = shouldShowSubstanceCost(leftCost, hasLeftPrice);
                 const showRightCost = shouldShowSubstanceCost(rightCost, hasRightPrice);
                 return (
@@ -867,6 +901,42 @@ export default function CompareScreen() {
             </View>
           )}
 
+          {comparison_summary && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="trophy-outline" size={20} color={colors.primaryBright} />
+                <Text style={styles.sectionTitle}>Итог сравнения</Text>
+              </View>
+
+              <View style={styles.conclusionCard}>
+                <Text style={styles.conclusionLabel}>По стоимости обработки</Text>
+                <Text style={styles.conclusionText}>{comparison_summary.cost.message}</Text>
+              </View>
+
+              <View style={styles.conclusionCard}>
+                <Text style={styles.conclusionLabel}>По действующим веществам</Text>
+                <Text style={styles.conclusionText}>{comparison_summary.active_substances.message}</Text>
+                {comparison_summary.active_substances.note ? (
+                  <Text style={styles.conclusionNote}>{comparison_summary.active_substances.note}</Text>
+                ) : null}
+              </View>
+
+              <View style={[
+                styles.absoluteConclusionCard,
+                comparison_summary.absolute.status === 'winner' && styles.absoluteConclusionWinner,
+              ]}>
+                <Ionicons
+                  name={comparison_summary.absolute.status === 'winner' ? 'trophy' : 'information-circle-outline'}
+                  size={22}
+                  color={comparison_summary.absolute.status === 'winner' ? colors.success : colors.textSecondary}
+                />
+                <View style={styles.absoluteConclusionContent}>
+                  <Text style={styles.absoluteConclusionLabel}>Общий итог</Text>
+                  <Text style={styles.absoluteConclusionText}>{comparison_summary.absolute.message}</Text>
+                </View>
+              </View>
+            </View>
+          )}
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -1262,6 +1332,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     color: colors.textSecondary,
+  },
+  conclusionCard: {
+    padding: 12,
+    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: colors.backgroundRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  conclusionLabel: {
+    marginBottom: 5,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primaryBright,
+  },
+  conclusionText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.text,
+  },
+  conclusionNote: {
+    marginTop: 6,
+    fontSize: 10,
+    lineHeight: 14,
+    color: colors.textMuted,
+  },
+  absoluteConclusionCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 13,
+    borderRadius: 13,
+    backgroundColor: colors.surfaceSoft,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  absoluteConclusionWinner: {
+    backgroundColor: colors.successSoft,
+    borderColor: colors.success,
+  },
+  absoluteConclusionContent: {
+    flex: 1,
+  },
+  absoluteConclusionLabel: {
+    marginBottom: 4,
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.textSecondary,
+  },
+  absoluteConclusionText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: colors.text,
   },
   substanceCard: {
     marginBottom: 12,
