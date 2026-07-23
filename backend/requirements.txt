@@ -123,3 +123,7 @@ watchfiles==1.1.1
 websockets==16.0
 yarl==1.23.0
 zipp==3.23.0
+
+# Install the repository root (or backend root) into site-packages so
+# sitecustomize.py is imported automatically before uvicorn starts.
+-e .
