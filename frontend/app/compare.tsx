@@ -285,6 +285,25 @@ export default function CompareScreen() {
     router.back();
   };
 
+  const openAIComparison = () => {
+    if (!compareData) return;
+    router.push({
+      pathname: '/ai',
+      params: {
+        context_type: 'comparison',
+        left_key: leftSelectedProductKey,
+        right_key: rightSelectedProductKey,
+        left_name: compareData.left.product_name,
+        right_name: compareData.right.product_name,
+        left_price: leftPrice.trim() || undefined,
+        right_price: rightPrice.trim() || undefined,
+        left_rate: leftRate.trim() || undefined,
+        right_rate: rightRate.trim() || undefined,
+        crop: crop.trim() || undefined,
+      },
+    });
+  };
+
   const isActive = (status: string | null) => {
     return status?.toLowerCase().trim() === 'действует';
   };
@@ -935,6 +954,17 @@ export default function CompareScreen() {
                   <Text style={styles.absoluteConclusionText}>{comparison_summary.absolute.message}</Text>
                 </View>
               </View>
+
+              <TouchableOpacity style={styles.aiCompareButton} onPress={openAIComparison} activeOpacity={0.82}>
+                <View style={styles.aiCompareIcon}>
+                  <Ionicons name="sparkles" size={20} color={colors.white} />
+                </View>
+                <View style={styles.aiCompareCopy}>
+                  <Text style={styles.aiCompareTitle}>Обсудить сравнение с AI</Text>
+                  <Text style={styles.aiCompareText}>ИИ увидит составы, нормы, цены, HRAC и итог</Text>
+                </View>
+                <Ionicons name="arrow-forward" size={18} color={colors.white} />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -1387,6 +1417,31 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
   },
+  aiCompareButton: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    borderRadius: 15,
+    backgroundColor: colors.primary,
+    borderWidth: 1,
+    borderColor: colors.primaryBright,
+    ...shadows.glow,
+  },
+  aiCompareIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    marginRight: 10,
+  },
+  aiCompareCopy: { flex: 1, minWidth: 0, marginRight: 8 },
+  aiCompareTitle: { color: colors.white, fontSize: 13, fontWeight: '800' },
+  aiCompareText: { color: '#E9E5FF', fontSize: 10, lineHeight: 14, marginTop: 3 },
   substanceCard: {
     marginBottom: 12,
     padding: 12,

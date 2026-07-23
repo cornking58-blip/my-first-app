@@ -14,7 +14,7 @@ import axios from 'axios';
 import { AmbientBackground } from '../../src/components/AmbientBackground';
 import { BrandLogo } from '../../src/components/BrandLogo';
 import { RetryErrorCard } from '../../src/components/RetryErrorCard';
-import { colors, shadows } from '../../src/theme/colors';
+import { colors } from '../../src/theme/colors';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -264,17 +264,6 @@ export default function ProductDetailScreen() {
             </View>
           )}
         </View>
-
-        <TouchableOpacity style={styles.aiButton} activeOpacity={0.82}>
-          <View style={styles.aiButtonIcon}>
-            <Ionicons name="sparkles-outline" size={21} color={colors.white} />
-          </View>
-          <View style={styles.aiButtonCopy}>
-            <Text style={styles.aiButtonTitle}>Спросить AI об этом препарате</Text>
-            <Text style={styles.aiButtonText}>Профессиональное объяснение по данным карточки</Text>
-          </View>
-          <Ionicons name="arrow-forward" size={19} color={colors.white} />
-        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -535,29 +524,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textMuted,
   },
-  aiButton: {
-    marginHorizontal: 16,
-    marginTop: 4,
-    minHeight: 70,
-    borderRadius: 17,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderWidth: 1,
-    borderColor: colors.primaryBright,
-    ...shadows.glow,
-  },
-  aiButtonIcon: {
-    width: 39,
-    height: 39,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    marginRight: 11,
-  },
-  aiButtonCopy: { flex: 1, minWidth: 0, marginRight: 8 },
-  aiButtonTitle: { color: colors.white, fontSize: 14, fontWeight: '800' },
-  aiButtonText: { color: '#E9E5FF', fontSize: 11, lineHeight: 15, marginTop: 3 },
 });
