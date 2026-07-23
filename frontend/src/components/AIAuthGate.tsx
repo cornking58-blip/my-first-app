@@ -24,6 +24,7 @@ export function AIAuthGate({ onBack }: { onBack: () => void }) {
   const [step, setStep] = useState<Step>('details');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +43,7 @@ export function AIAuthGate({ onBack }: { onBack: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await requestCode(name, email);
+      const response = await requestCode(name, email, marketingConsent);
       setDevCode(response.dev_code || null);
       setStep('code');
     } catch (requestError) {
@@ -121,6 +122,22 @@ export function AIAuthGate({ onBack }: { onBack: () => void }) {
                   autoCorrect={false}
                   maxLength={254}
                 />
+                <TouchableOpacity
+                  style={styles.consentRow}
+                  onPress={() => setMarketingConsent(current => !current)}
+                  activeOpacity={0.75}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: marketingConsent }}
+                >
+                  <Ionicons
+                    name={marketingConsent ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={marketingConsent ? colors.primaryBright : colors.textMuted}
+                  />
+                  <Text style={styles.consentText}>
+                    Хочу получать новости, полезные материалы и специальные предложения bAIkov по электронной почте. Это необязательно.
+                  </Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={[
                     styles.primaryButton,
@@ -306,6 +323,18 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.45 },
   primaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '800' },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+    marginBottom: 12,
+  },
+  consentText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 10,
+    lineHeight: 15,
+  },
   secondaryButton: { alignItems: 'center', paddingVertical: 12 },
   secondaryButtonText: { color: colors.primaryBright, fontSize: 12, fontWeight: '700' },
   legal: {

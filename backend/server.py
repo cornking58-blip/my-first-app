@@ -173,6 +173,7 @@ class AIMessageRequest(BaseModel):
 class AuthRequestCodeRequest(BaseModel):
     name: str = Field(min_length=2, max_length=80)
     email: EmailStr
+    marketing_consent: bool = False
 
 
 class AuthVerifyCodeRequest(BaseModel):
@@ -2820,6 +2821,7 @@ AUTH_TOKEN_TTL_DAYS = 30
 TRIAL_DURATION_DAYS = 5
 AUTH_CODE_MAX_ATTEMPTS = 5
 AUTH_REQUESTS_PER_HOUR = 5
+MARKETING_CONSENT_VERSION = "2026-07-23-v1"
 
 AI_USAGE_LIMITS = {
     "trial": {"ai_requests": 10, "web_requests": 2, "photo_diagnostics": 2},
@@ -2891,6 +2893,7 @@ def serialize_user_account(user: Dict[str, Any]) -> Dict[str, Any]:
         "id": user["id"],
         "name": user.get("name") or "",
         "email": user.get("email") or "",
+        "marketing_consent": bool(user.get("marketing_consent")),
         "access": {
             "plan": plan,
             "trial_ends_at": user.get("trial_ends_at"),
@@ -3041,6 +3044,11 @@ async def request_auth_code(request: AuthRequestCodeRequest):
         "id": str(uuid.uuid4()),
         "email": email,
         "name": request.name.strip(),
+        "marketing_consent": request.marketing_consent,
+        "marketing_consent_version": (
+            MARKETING_CONSENT_VERSION if request.marketing_consent else None
+        ),
+        "marketing_consent_recorded_at": now if request.marketing_consent else None,
         "code_hash": hash_auth_code(email, code),
         "attempts": 0,
         "created_at": now,
@@ -3083,18 +3091,43 @@ async def verify_auth_code(request: AuthVerifyCodeRequest):
         {"$set": {"consumed_at": now}},
     )
     user = await db.users.find_one({"email": email})
+    marketing_consent = bool(code_document.get("marketing_consent"))
     if user:
+        user_updates = {"name": request.name.strip(), "last_login_at": now}
+        if marketing_consent:
+            user_updates.update({
+                "marketing_consent": True,
+                "marketing_consent_at": (
+                    code_document.get("marketing_consent_recorded_at") or now
+                ),
+                "marketing_consent_version": (
+                    code_document.get("marketing_consent_version")
+                    or MARKETING_CONSENT_VERSION
+                ),
+                "marketing_consent_source": "registration",
+                "marketing_consent_revoked_at": None,
+            })
         await db.users.update_one(
             {"id": user["id"]},
-            {"$set": {"name": request.name.strip(), "last_login_at": now}},
+            {"$set": user_updates},
         )
-        user["name"] = request.name.strip()
-        user["last_login_at"] = now
+        user.update(user_updates)
     else:
         user = {
             "id": str(uuid.uuid4()),
             "name": request.name.strip(),
             "email": email,
+            "marketing_consent": marketing_consent,
+            "marketing_consent_at": (
+                code_document.get("marketing_consent_recorded_at")
+                if marketing_consent else None
+            ),
+            "marketing_consent_version": (
+                code_document.get("marketing_consent_version")
+                if marketing_consent else None
+            ),
+            "marketing_consent_source": "registration" if marketing_consent else None,
+            "marketing_consent_revoked_at": None,
             "trial_started_at": now,
             "trial_ends_at": now + timedelta(days=TRIAL_DURATION_DAYS),
             "subscription_status": "inactive",

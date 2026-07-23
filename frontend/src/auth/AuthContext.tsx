@@ -15,6 +15,7 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
+  marketing_consent: boolean;
   access: {
     plan: AccessPlan;
     trial_ends_at?: string | null;
@@ -34,7 +35,11 @@ interface AuthContextValue {
   loading: boolean;
   token: string | null;
   user: AuthUser | null;
-  requestCode: (name: string, email: string) => Promise<RequestCodeResult>;
+  requestCode: (
+    name: string,
+    email: string,
+    marketingConsent: boolean,
+  ) => Promise<RequestCodeResult>;
   verifyCode: (name: string, email: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAccount: () => Promise<void>;
@@ -76,10 +81,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     restoreSession();
   }, []);
 
-  const requestCode = async (name: string, email: string) => {
+  const requestCode = async (
+    name: string,
+    email: string,
+    marketingConsent: boolean,
+  ) => {
     const response = await axios.post(`${API_URL}/api/auth/request-code`, {
       name: name.trim(),
       email: email.trim().toLowerCase(),
+      marketing_consent: marketingConsent,
     });
     return response.data as RequestCodeResult;
   };

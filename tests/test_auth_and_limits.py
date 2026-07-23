@@ -31,6 +31,19 @@ class AuthAndLimitsStaticTest(unittest.TestCase):
         self.assertIn('"user_id": user["id"]', SERVER_SOURCE)
         self.assertIn('"migrated_at": now', SERVER_SOURCE)
 
+    def test_optional_marketing_consent_is_recorded(self):
+        self.assertIn("marketing_consent: bool = False", SERVER_SOURCE)
+        self.assertIn('MARKETING_CONSENT_VERSION = "2026-07-23-v1"', SERVER_SOURCE)
+        self.assertIn('"marketing_consent_at"', SERVER_SOURCE)
+        self.assertIn('"marketing_consent_version"', SERVER_SOURCE)
+        self.assertIn('"marketing_consent_revoked_at"', SERVER_SOURCE)
+        self.assertIn("marketing_consent: marketingConsent", AUTH_CONTEXT_SOURCE)
+        self.assertIn("Это необязательно", AUTH_GATE_SOURCE)
+        self.assertNotIn(
+            "marketingConsent) && styles.buttonDisabled",
+            AUTH_GATE_SOURCE,
+        )
+
     def test_mobile_session_uses_secure_storage(self):
         self.assertIn("expo-secure-store", AUTH_CONTEXT_SOURCE + AUTH_GATE_SOURCE + (
             ROOT / "frontend" / "src" / "auth" / "sessionStorage.ts"
