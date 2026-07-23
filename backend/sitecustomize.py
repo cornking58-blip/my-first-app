@@ -233,6 +233,8 @@ def _install_patch() -> None:
     except Exception:
         return
 
+    if not hasattr(openai_module, "AsyncOpenAI"):
+        return
     if getattr(openai_module, "_baikov_runtime_patch", False):
         return
 
