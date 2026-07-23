@@ -1,17 +1,26 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Query, Header
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Query, Header, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from openai import AsyncOpenAI
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
+import jwt
 import os
 import logging
 import json
 import re
+import asyncio
+import hashlib
+import hmac
+import secrets
+import smtplib
 from pathlib import Path
-from pydantic import BaseModel, Field
+from email.message import EmailMessage
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Any, Dict, Sequence, Tuple, Literal
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 import io
 from collections import Counter, defaultdict
@@ -159,6 +168,18 @@ class AIChatCreateRequest(BaseModel):
 
 class AIMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
+
+
+class AuthRequestCodeRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    email: EmailStr
+
+
+class AuthVerifyCodeRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    email: EmailStr
+    code: str = Field(pattern=r"^\d{6}$")
+    client_id: Optional[str] = Field(default=None, max_length=128)
 
 
 RUSSIAN_ENDINGS = (
@@ -2792,6 +2813,318 @@ AI_GENERAL_STOP_WORDS = {
 }
 
 
+# ==================== AUTHENTICATION AND SUBSCRIPTIONS ====================
+
+AUTH_CODE_TTL_MINUTES = 10
+AUTH_TOKEN_TTL_DAYS = 30
+TRIAL_DURATION_DAYS = 5
+AUTH_CODE_MAX_ATTEMPTS = 5
+AUTH_REQUESTS_PER_HOUR = 5
+
+AI_USAGE_LIMITS = {
+    "trial": {"ai_requests": 10, "web_requests": 2, "photo_diagnostics": 2},
+    "pro": {"ai_requests": 80, "web_requests": 10, "photo_diagnostics": 15},
+}
+
+
+def normalize_auth_email(value: str) -> str:
+    return (value or "").strip().lower()
+
+
+def get_auth_secret() -> str:
+    secret = (os.environ.get("AUTH_JWT_SECRET") or "").strip()
+    if len(secret) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="Вход временно не настроен. Добавьте секрет авторизации на сервере.",
+        )
+    return secret
+
+
+def hash_auth_code(email: str, code: str) -> str:
+    payload = f"{normalize_auth_email(email)}:{code}".encode("utf-8")
+    return hmac.new(get_auth_secret().encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def create_access_token(user_id: str) -> str:
+    now = datetime.utcnow()
+    return jwt.encode(
+        {
+            "sub": user_id,
+            "type": "access",
+            "iat": now,
+            "exp": now + timedelta(days=AUTH_TOKEN_TTL_DAYS),
+        },
+        get_auth_secret(),
+        algorithm="HS256",
+    )
+
+
+def decode_access_token(token: str) -> str:
+    try:
+        payload = jwt.decode(token, get_auth_secret(), algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Срок входа истёк. Войдите снова.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Недействительный вход. Войдите снова.")
+    if payload.get("type") != "access" or not payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Недействительный вход. Войдите снова.")
+    return str(payload["sub"])
+
+
+def get_user_access_plan(user: Dict[str, Any], now: Optional[datetime] = None) -> str:
+    now = now or datetime.utcnow()
+    pro_until = user.get("pro_until")
+    if user.get("subscription_status") == "active" and (
+        pro_until is None or pro_until > now
+    ):
+        return "pro"
+    trial_ends_at = user.get("trial_ends_at")
+    if trial_ends_at and trial_ends_at > now:
+        return "trial"
+    return "free"
+
+
+def serialize_user_account(user: Dict[str, Any]) -> Dict[str, Any]:
+    plan = get_user_access_plan(user)
+    return {
+        "id": user["id"],
+        "name": user.get("name") or "",
+        "email": user.get("email") or "",
+        "access": {
+            "plan": plan,
+            "trial_ends_at": user.get("trial_ends_at"),
+            "pro_until": user.get("pro_until"),
+            "subscription_status": user.get("subscription_status") or "inactive",
+            "can_use_ai": plan in AI_USAGE_LIMITS,
+        },
+    }
+
+
+async def require_current_user(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> Dict[str, Any]:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Войдите в аккаунт bAIkov.")
+    user_id = decode_access_token(authorization[7:].strip())
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=401, detail="Аккаунт не найден. Войдите снова.")
+    return user
+
+
+def get_usage_period_key(user: Dict[str, Any], plan: str) -> str:
+    if plan == "trial":
+        started_at = user.get("trial_started_at") or user.get("created_at") or datetime.utcnow()
+        return f"trial:{started_at.strftime('%Y-%m-%d')}"
+    return f"pro:{datetime.utcnow().strftime('%Y-%m')}"
+
+
+async def reserve_ai_usage(user: Dict[str, Any], use_web_search: bool) -> Tuple[str, str]:
+    plan = get_user_access_plan(user)
+    if plan not in AI_USAGE_LIMITS:
+        raise HTTPException(
+            status_code=402,
+            detail="Пробный доступ завершён. Оформите bAIkov PRO за 740 ₽ в месяц.",
+        )
+    field = "web_requests" if use_web_search else "ai_requests"
+    limit = AI_USAGE_LIMITS[plan][field]
+    period_key = get_usage_period_key(user, plan)
+    usage_id = f"{user['id']}:{period_key}"
+    try:
+        usage = await db.ai_usage.find_one_and_update(
+            {
+                "_id": usage_id,
+                "$or": [
+                    {field: {"$lt": limit}},
+                    {field: {"$exists": False}},
+                ],
+            },
+            {
+                "$inc": {field: 1},
+                "$setOnInsert": {
+                    "user_id": user["id"],
+                    "period_key": period_key,
+                    "created_at": datetime.utcnow(),
+                },
+                "$set": {"updated_at": datetime.utcnow()},
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+    except DuplicateKeyError:
+        usage = None
+    if not usage:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Лимит поиска в интернете на текущий период исчерпан."
+                if use_web_search else
+                "Лимит AI-вопросов на текущий период исчерпан."
+            ),
+        )
+    return usage_id, field
+
+
+async def rollback_ai_usage(reservation: Tuple[str, str]) -> None:
+    usage_id, field = reservation
+    await db.ai_usage.update_one(
+        {"_id": usage_id, field: {"$gt": 0}},
+        {"$inc": {field: -1}, "$set": {"updated_at": datetime.utcnow()}},
+    )
+
+
+def send_auth_email_sync(recipient: str, code: str) -> None:
+    host = (os.environ.get("AUTH_SMTP_HOST") or "").strip()
+    sender = (os.environ.get("AUTH_EMAIL_FROM") or "").strip()
+    if not host or not sender:
+        raise RuntimeError("SMTP is not configured")
+    port = int(os.environ.get("AUTH_SMTP_PORT") or "587")
+    username = (os.environ.get("AUTH_SMTP_USERNAME") or "").strip()
+    password = os.environ.get("AUTH_SMTP_PASSWORD") or ""
+    use_ssl = os.environ.get("AUTH_SMTP_SSL", "").lower() == "true" or port == 465
+
+    message = EmailMessage()
+    message["Subject"] = "Код входа в bAIkov"
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(
+        f"Ваш код входа в bAIkov: {code}\n\n"
+        f"Код действует {AUTH_CODE_TTL_MINUTES} минут. "
+        "Если вы не запрашивали вход, просто проигнорируйте письмо."
+    )
+
+    smtp_class = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+    with smtp_class(host, port, timeout=15) as smtp:
+        if not use_ssl and os.environ.get("AUTH_SMTP_TLS", "true").lower() != "false":
+            smtp.starttls()
+        if username:
+            smtp.login(username, password)
+        smtp.send_message(message)
+
+
+async def send_auth_email(recipient: str, code: str) -> None:
+    await asyncio.to_thread(send_auth_email_sync, recipient, code)
+
+
+@api_router.post("/auth/request-code")
+async def request_auth_code(request: AuthRequestCodeRequest):
+    email = normalize_auth_email(str(request.email))
+    now = datetime.utcnow()
+    recent_requests = await db.auth_codes.count_documents({
+        "email": email,
+        "created_at": {"$gte": now - timedelta(hours=1)},
+    })
+    if recent_requests >= AUTH_REQUESTS_PER_HOUR:
+        raise HTTPException(
+            status_code=429,
+            detail="Слишком много запросов кода. Попробуйте позже.",
+        )
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    development_mode = os.environ.get("AUTH_DEV_RETURN_CODE", "").lower() == "true"
+    if not development_mode:
+        try:
+            await send_auth_email(email, code)
+        except Exception as error:
+            logger.error("Auth email failed: %s", type(error).__name__)
+            raise HTTPException(
+                status_code=503,
+                detail="Не удалось отправить код. Попробуйте ещё раз позже.",
+            )
+
+    await db.auth_codes.update_many(
+        {"email": email, "consumed_at": {"$exists": False}},
+        {"$set": {"consumed_at": now}},
+    )
+    document = {
+        "id": str(uuid.uuid4()),
+        "email": email,
+        "name": request.name.strip(),
+        "code_hash": hash_auth_code(email, code),
+        "attempts": 0,
+        "created_at": now,
+        "expires_at": now + timedelta(minutes=AUTH_CODE_TTL_MINUTES),
+    }
+    await db.auth_codes.insert_one(document)
+    response = {"sent": True, "expires_in_seconds": AUTH_CODE_TTL_MINUTES * 60}
+    if development_mode:
+        response["dev_code"] = code
+    return response
+
+
+@api_router.post("/auth/verify-code")
+async def verify_auth_code(request: AuthVerifyCodeRequest):
+    email = normalize_auth_email(str(request.email))
+    now = datetime.utcnow()
+    code_document = await db.auth_codes.find_one(
+        {
+            "email": email,
+            "consumed_at": {"$exists": False},
+            "expires_at": {"$gt": now},
+        },
+        sort=[("created_at", -1)],
+    )
+    if not code_document:
+        raise HTTPException(status_code=400, detail="Код истёк. Запросите новый.")
+    if code_document.get("attempts", 0) >= AUTH_CODE_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Слишком много попыток. Запросите новый код.")
+
+    expected_hash = code_document.get("code_hash") or ""
+    if not hmac.compare_digest(expected_hash, hash_auth_code(email, request.code)):
+        await db.auth_codes.update_one(
+            {"_id": code_document["_id"]},
+            {"$inc": {"attempts": 1}},
+        )
+        raise HTTPException(status_code=400, detail="Неверный код.")
+
+    await db.auth_codes.update_one(
+        {"_id": code_document["_id"]},
+        {"$set": {"consumed_at": now}},
+    )
+    user = await db.users.find_one({"email": email})
+    if user:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"name": request.name.strip(), "last_login_at": now}},
+        )
+        user["name"] = request.name.strip()
+        user["last_login_at"] = now
+    else:
+        user = {
+            "id": str(uuid.uuid4()),
+            "name": request.name.strip(),
+            "email": email,
+            "trial_started_at": now,
+            "trial_ends_at": now + timedelta(days=TRIAL_DURATION_DAYS),
+            "subscription_status": "inactive",
+            "created_at": now,
+            "last_login_at": now,
+        }
+        await db.users.insert_one(user)
+
+    if request.client_id:
+        client_id = normalize_ai_client_id(request.client_id)
+        await db.ai_chats.update_many(
+            {
+                "client_id": client_id,
+                "user_id": {"$exists": False},
+            },
+            {"$set": {"user_id": user["id"], "migrated_at": now}},
+        )
+
+    return {
+        "access_token": create_access_token(user["id"]),
+        "token_type": "bearer",
+        "user": serialize_user_account(user),
+    }
+
+
+@api_router.get("/auth/me")
+async def get_auth_account(current_user: Dict[str, Any] = Depends(require_current_user)):
+    return {"user": serialize_user_account(current_user)}
+
+
 def normalize_ai_client_id(value: str) -> str:
     client_id = (value or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", client_id):
@@ -2832,15 +3165,16 @@ def serialize_ai_chat(document: Dict[str, Any], include_messages: bool = True) -
     result = {
         key: value
         for key, value in document.items()
-        if key != "_id" and (include_messages or key != "messages")
+        if key not in {"_id", "user_id", "client_id"}
+        and (include_messages or key != "messages")
     }
     if include_messages:
         result["messages"] = document.get("messages", [])
     return result
 
 
-async def get_owned_ai_chat(chat_id: str, client_id: str) -> Dict[str, Any]:
-    chat = await db.ai_chats.find_one({"id": chat_id, "client_id": client_id})
+async def get_owned_ai_chat(chat_id: str, user_id: str) -> Dict[str, Any]:
+    chat = await db.ai_chats.find_one({"id": chat_id, "user_id": user_id})
     if not chat:
         raise HTTPException(status_code=404, detail="Чат не найден")
     return chat
@@ -3120,29 +3454,27 @@ async def get_ai_status():
 
 @api_router.get("/ai/chats")
 async def list_ai_chats(
-    x_client_id: str = Header(..., alias="X-Client-ID"),
     limit: int = Query(default=30, ge=1, le=100),
+    current_user: Dict[str, Any] = Depends(require_current_user),
 ):
-    client_id = normalize_ai_client_id(x_client_id)
     chats = await db.ai_chats.find(
-        {"client_id": client_id},
+        {"user_id": current_user["id"]},
         {"_id": 0, "messages": 0},
     ).sort("updated_at", -1).to_list(length=limit)
-    return chats
+    return [serialize_ai_chat(chat, include_messages=False) for chat in chats]
 
 
 @api_router.post("/ai/chats")
 async def create_ai_chat(
     request: AIChatCreateRequest,
-    x_client_id: str = Header(..., alias="X-Client-ID"),
+    current_user: Dict[str, Any] = Depends(require_current_user),
 ):
-    client_id = normalize_ai_client_id(x_client_id)
     now = datetime.utcnow()
     context = sanitize_ai_chat_context(request.context_type, request.context)
     default_title = "Новое сравнение" if request.context_type == "comparison" else "Новый вопрос"
     chat = {
         "id": str(uuid.uuid4()),
-        "client_id": client_id,
+        "user_id": current_user["id"],
         "title": (request.title or default_title).strip()[:120] or default_title,
         "context_type": request.context_type,
         "context": context,
@@ -3158,20 +3490,18 @@ async def create_ai_chat(
 @api_router.get("/ai/chats/{chat_id}")
 async def get_ai_chat(
     chat_id: str,
-    x_client_id: str = Header(..., alias="X-Client-ID"),
+    current_user: Dict[str, Any] = Depends(require_current_user),
 ):
-    client_id = normalize_ai_client_id(x_client_id)
-    chat = await get_owned_ai_chat(chat_id, client_id)
+    chat = await get_owned_ai_chat(chat_id, current_user["id"])
     return serialize_ai_chat(chat)
 
 
 @api_router.delete("/ai/chats/{chat_id}")
 async def delete_ai_chat(
     chat_id: str,
-    x_client_id: str = Header(..., alias="X-Client-ID"),
+    current_user: Dict[str, Any] = Depends(require_current_user),
 ):
-    client_id = normalize_ai_client_id(x_client_id)
-    result = await db.ai_chats.delete_one({"id": chat_id, "client_id": client_id})
+    result = await db.ai_chats.delete_one({"id": chat_id, "user_id": current_user["id"]})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Чат не найден")
     return {"deleted": True}
@@ -3181,18 +3511,25 @@ async def delete_ai_chat(
 async def send_ai_message(
     chat_id: str,
     request: AIMessageRequest,
-    x_client_id: str = Header(..., alias="X-Client-ID"),
+    current_user: Dict[str, Any] = Depends(require_current_user),
 ):
-    client_id = normalize_ai_client_id(x_client_id)
-    chat = await get_owned_ai_chat(chat_id, client_id)
+    chat = await get_owned_ai_chat(chat_id, current_user["id"])
     content = request.content.strip()
     scope_refusal = get_ai_scope_refusal(content)
-    if scope_refusal:
-        answer = scope_refusal
-    else:
-        context = await build_ai_chat_context(chat, content)
-        model_messages = build_ai_model_messages(chat.get("messages", []), content, context)
-        answer = await generate_ai_answer(model_messages, content)
+    reservation: Optional[Tuple[str, str]] = None
+    try:
+        if scope_refusal:
+            answer = scope_refusal
+        else:
+            use_web_search = should_use_ai_web_search(content)
+            reservation = await reserve_ai_usage(current_user, use_web_search)
+            context = await build_ai_chat_context(chat, content)
+            model_messages = build_ai_model_messages(chat.get("messages", []), content, context)
+            answer = await generate_ai_answer(model_messages, content)
+    except Exception:
+        if reservation:
+            await rollback_ai_usage(reservation)
+        raise
     now = datetime.utcnow()
     user_message = {
         "id": str(uuid.uuid4()),
@@ -3214,7 +3551,7 @@ async def send_ai_message(
         update_fields["title"] = content[:70]
 
     await db.ai_chats.update_one(
-        {"id": chat_id, "client_id": client_id},
+        {"id": chat_id, "user_id": current_user["id"]},
         {
             "$push": {"messages": {"$each": [user_message, assistant_message]}},
             "$set": update_fields,
@@ -4353,6 +4690,13 @@ app.add_middleware(
 async def prepare_ai_chat_storage():
     await db.ai_chats.create_index([("client_id", 1), ("updated_at", -1)])
     await db.ai_chats.create_index([("id", 1), ("client_id", 1)], unique=True)
+    await db.ai_chats.create_index([("user_id", 1), ("updated_at", -1)])
+    await db.ai_chats.create_index([("id", 1), ("user_id", 1)], unique=True)
+    await db.users.create_index("email", unique=True)
+    await db.users.create_index("id", unique=True)
+    await db.auth_codes.create_index("expires_at", expireAfterSeconds=0)
+    await db.auth_codes.create_index([("email", 1), ("created_at", -1)])
+    await db.ai_usage.create_index([("user_id", 1), ("period_key", 1)], unique=True)
 
 
 @app.on_event("shutdown")

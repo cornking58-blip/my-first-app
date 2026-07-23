@@ -16,8 +16,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import axios, { isAxiosError } from 'axios';
 import { AmbientBackground } from '../src/components/AmbientBackground';
 import { BrandLogo } from '../src/components/BrandLogo';
+import { AIAuthGate } from '../src/components/AIAuthGate';
+import { useAuth } from '../src/auth/AuthContext';
 import { colors, shadows } from '../src/theme/colors';
-import { getAIClientId } from '../src/utils/clientIdentity';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -53,6 +54,12 @@ const getOptionalNumber = (value?: string) => {
 
 export default function AIChatScreen() {
   const router = useRouter();
+  const {
+    loading: authLoading,
+    token,
+    user,
+    logout,
+  } = useAuth();
   const routeParams = useLocalSearchParams<{
     context_type?: string | string[];
     left_key?: string | string[];
@@ -66,7 +73,6 @@ export default function AIChatScreen() {
     crop?: string | string[];
   }>();
   const scrollRef = useRef<ScrollView>(null);
-  const [clientId, setClientId] = useState('');
   const [chats, setChats] = useState<AIChat[]>([]);
   const [activeChat, setActiveChat] = useState<AIChat | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -104,14 +110,14 @@ export default function AIChatScreen() {
     routeParams.crop,
   ]);
 
-  const requestHeaders = (id = clientId) => ({
-    headers: { 'X-Client-ID': id },
+  const requestHeaders = () => ({
+    headers: { Authorization: `Bearer ${token}` },
   });
 
-  const loadChats = async (id = clientId) => {
-    if (!id) return;
+  const loadChats = async () => {
+    if (!token) return;
     try {
-      const response = await axios.get(`${API_URL}/api/ai/chats`, requestHeaders(id));
+      const response = await axios.get(`${API_URL}/api/ai/chats`, requestHeaders());
       setChats(response.data);
       setError(null);
     } catch {
@@ -121,12 +127,15 @@ export default function AIChatScreen() {
 
   useEffect(() => {
     const initialize = async () => {
-      const id = await getAIClientId();
-      setClientId(id);
+      if (authLoading) return;
+      if (!token) {
+        setLoading(false);
+        return;
+      }
       try {
         const response = await axios.get(
           `${API_URL}/api/ai/chats`,
-          { headers: { 'X-Client-ID': id } },
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         setChats(response.data);
         setError(null);
@@ -136,7 +145,7 @@ export default function AIChatScreen() {
       setLoading(false);
     };
     initialize();
-  }, []);
+  }, [authLoading, token]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -198,7 +207,7 @@ export default function AIChatScreen() {
 
   const sendMessage = async () => {
     const content = input.trim();
-    if (!content || sending || !clientId) return;
+    if (!content || sending || !token) return;
 
     setSending(true);
     setError(null);
@@ -259,6 +268,26 @@ export default function AIChatScreen() {
         'Как сравнивать гербициды по действующим веществам?',
       ];
 
+  if (authLoading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <AmbientBackground />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primaryBright} />
+          <Text style={styles.loadingText}>Проверяем аккаунт...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!user || !token) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <AIAuthGate onBack={() => router.back()} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <AmbientBackground />
@@ -292,12 +321,21 @@ export default function AIChatScreen() {
             <View style={styles.historyTitleRow}>
               <View>
                 <Text style={styles.historyTitle}>История чатов</Text>
-                <Text style={styles.historySubtitle}>Сохраняется на этом устройстве</Text>
+                <Text style={styles.historySubtitle}>
+                  {user.access.plan === 'trial'
+                    ? 'Пробный доступ · чаты сохраняются в аккаунте'
+                    : 'Чаты сохраняются в вашем аккаунте'}
+                </Text>
               </View>
-              <TouchableOpacity style={styles.newChatButton} onPress={startNewChat}>
-                <Ionicons name="add" size={18} color={colors.white} />
-                <Text style={styles.newChatButtonText}>Новый</Text>
-              </TouchableOpacity>
+              <View style={styles.historyActions}>
+                <TouchableOpacity style={styles.logoutButton} onPress={logout}>
+                  <Ionicons name="log-out-outline" size={17} color={colors.textSecondary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.newChatButton} onPress={startNewChat}>
+                  <Ionicons name="add" size={18} color={colors.white} />
+                  <Text style={styles.newChatButtonText}>Новый</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {chats.length === 0 ? (
@@ -593,6 +631,17 @@ const styles = StyleSheet.create({
   historyTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   historyTitle: { color: colors.text, fontSize: 21, fontWeight: '800' },
   historySubtitle: { color: colors.textMuted, fontSize: 10, marginTop: 3 },
+  historyActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logoutButton: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 11,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   newChatButton: {
     flexDirection: 'row',
     alignItems: 'center',

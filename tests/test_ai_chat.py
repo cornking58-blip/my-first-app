@@ -69,6 +69,9 @@ def normalize_search_text(value: str) -> str:
 
 AI_HELPER_SOURCE = "AI_SYSTEM_PROMPT =" + SERVER_SOURCE.split(
     "AI_SYSTEM_PROMPT =", 1
+)[1].split("# ==================== AUTHENTICATION AND SUBSCRIPTIONS", 1)[0]
+AI_HELPER_SOURCE += "\ndef normalize_ai_client_id" + SERVER_SOURCE.split(
+    "def normalize_ai_client_id", 1
 )[1].split("# AI CHAT ENDPOINTS", 1)[0]
 namespace = {
     "Any": Any,
@@ -239,14 +242,15 @@ class AIChatBackendTest(unittest.TestCase):
 
 
 class AIChatFrontendStaticTest(unittest.TestCase):
-    def test_ai_routes_exist_and_chats_are_owned_by_client(self):
+    def test_ai_routes_exist_and_chats_are_owned_by_account(self):
         for route in (
             '"/ai/chats"',
             '"/ai/chats/{chat_id}"',
             '"/ai/chats/{chat_id}/messages"',
         ):
             self.assertIn(route, SERVER_SOURCE)
-        self.assertIn('"client_id": client_id', SERVER_SOURCE)
+        self.assertIn('"user_id": current_user["id"]', SERVER_SOURCE)
+        self.assertIn("Depends(require_current_user)", SERVER_SOURCE)
 
     def test_home_and_comparison_open_ai_screen(self):
         self.assertIn("onPress={() => router.push('/ai')}", HOME_SOURCE)
@@ -257,10 +261,11 @@ class AIChatFrontendStaticTest(unittest.TestCase):
     def test_product_card_does_not_offer_ai(self):
         self.assertNotIn("Спросить AI об этом препарате", PRODUCT_SOURCE)
 
-    def test_chat_screen_has_history_and_saved_device_identity(self):
+    def test_chat_screen_has_account_history_and_saved_identity(self):
         self.assertIn("История чатов", AI_SCREEN_SOURCE)
         self.assertIn("/api/ai/chats", AI_SCREEN_SOURCE)
         self.assertIn("window.localStorage", CLIENT_ID_SOURCE)
+        self.assertIn("SecureStore", CLIENT_ID_SOURCE)
         self.assertIn("baikov_ai_client_id", CLIENT_ID_SOURCE)
 
 
