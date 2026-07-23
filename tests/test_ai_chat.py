@@ -28,6 +28,39 @@ class LoggerStub:
         pass
 
 
+class FakeAIResponse:
+    output_text = "Проверенный ответ"
+
+    def model_dump(self):
+        return {
+            "output": [{
+                "action": {
+                    "sources": [{
+                        "title": "EPPO Global Database",
+                        "url": "https://gd.eppo.int/",
+                    }]
+                }
+            }]
+        }
+
+
+class FakeResponsesAPI:
+    def __init__(self):
+        self.last_request = None
+
+    async def create(self, **kwargs):
+        self.last_request = kwargs
+        return FakeAIResponse()
+
+
+class FakeAsyncOpenAI:
+    last_instance = None
+
+    def __init__(self, **_kwargs):
+        self.responses = FakeResponsesAPI()
+        FakeAsyncOpenAI.last_instance = self
+
+
 def normalize_search_text(value: str) -> str:
     normalized = (value or "").strip().lower().replace("ё", "е")
     normalized = re.sub(r"[^0-9a-zа-яе]+", " ", normalized, flags=re.IGNORECASE)
@@ -55,9 +88,14 @@ exec(AI_HELPER_SOURCE, namespace)
 AI_SYSTEM_PROMPT = namespace["AI_SYSTEM_PROMPT"]
 build_ai_model_messages = namespace["build_ai_model_messages"]
 extract_ai_search_tokens = namespace["extract_ai_search_tokens"]
+extract_ai_response_sources = namespace["extract_ai_response_sources"]
 generate_ai_answer = namespace["generate_ai_answer"]
+get_ai_scope_refusal = namespace["get_ai_scope_refusal"]
+get_ai_output_token_limit = namespace["get_ai_output_token_limit"]
+get_ai_reasoning_effort = namespace["get_ai_reasoning_effort"]
 normalize_ai_client_id = namespace["normalize_ai_client_id"]
 sanitize_ai_chat_context = namespace["sanitize_ai_chat_context"]
+should_use_ai_web_search = namespace["should_use_ai_web_search"]
 
 
 class AIChatBackendTest(unittest.TestCase):
@@ -106,13 +144,98 @@ class AIChatBackendTest(unittest.TestCase):
     def test_missing_model_key_returns_readable_service_error(self):
         with patch.dict(os.environ, {"AI_API_KEY": "", "OPENAI_API_KEY": ""}, clear=False):
             with self.assertRaises(HTTPException) as raised:
-                asyncio.run(generate_ai_answer([]))
+                asyncio.run(generate_ai_answer([], "вопрос"))
         self.assertEqual(raised.exception.status_code, 503)
         self.assertIn("ключ", raised.exception.detail.lower())
 
-    def test_system_prompt_forbids_invented_registration(self):
+    def test_system_prompt_enforces_scope_and_evidence(self):
         self.assertIn("Не придумывай регистрацию", AI_SYSTEM_PROMPT)
-        self.assertIn("актуальным регламентом", AI_SYSTEM_PROMPT)
+        self.assertIn("официальный регламент РФ обязателен", AI_SYSTEM_PROMPT)
+        self.assertIn("Я отвечаю только по защите растений и пестицидам", AI_SYSTEM_PROMPT)
+        self.assertIn("фитопатология", AI_SYSTEM_PROMPT)
+        self.assertIn("экотоксикология", AI_SYSTEM_PROMPT)
+        self.assertIn("Международный опыт; не является рекомендацией", AI_SYSTEM_PROMPT)
+        self.assertIn("600–1200 знаков", AI_SYSTEM_PROMPT)
+
+    def test_web_search_is_only_enabled_for_explicit_research_requests(self):
+        self.assertTrue(should_use_ai_web_search("Найди в сети последние исследования по флорасуламу"))
+        self.assertTrue(should_use_ai_web_search("Проверь актуальный регламент"))
+        self.assertFalse(should_use_ai_web_search("Как действует флорасулам?"))
+
+    def test_clear_out_of_scope_request_is_refused_without_model(self):
+        refusal = get_ai_scope_refusal("Кто победил в футбольном матче?")
+        self.assertEqual(
+            refusal,
+            "Я отвечаю только по защите растений и пестицидам. "
+            "Сформулируйте вопрос в этом контексте.",
+        )
+        self.assertIsNone(
+            get_ai_scope_refusal("Как погода влияет на опрыскивание пшеницы?")
+        )
+
+    def test_output_limit_expands_only_on_request(self):
+        with patch.dict(os.environ, {"AI_MAX_OUTPUT_TOKENS": ""}, clear=False):
+            self.assertEqual(get_ai_output_token_limit("Ответь кратко"), 1200)
+            self.assertEqual(get_ai_output_token_limit("Сделай подробный анализ"), 2400)
+
+    def test_invalid_reasoning_effort_falls_back_to_medium(self):
+        with patch.dict(os.environ, {"AI_REASONING_EFFORT": "invalid"}, clear=False):
+            self.assertEqual(get_ai_reasoning_effort(), "medium")
+
+    def test_web_sources_are_extracted_and_deduplicated(self):
+        response = {
+            "output": [
+                {"sources": [
+                    {"title": "EPPO", "url": "https://gd.eppo.int/taxon/FUSACU"},
+                    {"title": "EPPO duplicate", "url": "https://gd.eppo.int/taxon/FUSACU"},
+                    {"title": "FRAC", "url": "https://www.frac.info/"},
+                ]}
+            ]
+        }
+        self.assertEqual(
+            extract_ai_response_sources(response),
+            [
+                {"title": "EPPO", "url": "https://gd.eppo.int/taxon/FUSACU"},
+                {"title": "FRAC", "url": "https://www.frac.info/"},
+            ],
+        )
+
+    def test_responses_api_and_current_default_model_are_used(self):
+        self.assertIn("ai_client.responses.create", SERVER_SOURCE)
+        self.assertIn('(os.environ.get("AI_MODEL") or "gpt-5.6").strip()', SERVER_SOURCE)
+        self.assertIn('"allowed_domains": AI_WEB_ALLOWED_DOMAINS', SERVER_SOURCE)
+        self.assertIn('"tool_choice": "required"', SERVER_SOURCE)
+
+    def test_web_request_uses_domain_filter_and_returns_visible_sources(self):
+        function_globals = generate_ai_answer.__globals__
+        previous_client = function_globals.get("AsyncOpenAI")
+        function_globals["AsyncOpenAI"] = FakeAsyncOpenAI
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "AI_API_KEY": "test-key",
+                    "OPENAI_API_KEY": "",
+                    "AI_MODEL": "",
+                    "AI_MAX_OUTPUT_TOKENS": "",
+                },
+                clear=False,
+            ):
+                answer = asyncio.run(generate_ai_answer(
+                    [{"role": "user", "content": "Найди в сети данные EPPO"}],
+                    "Найди в сети данные EPPO",
+                ))
+        finally:
+            if previous_client is None:
+                function_globals.pop("AsyncOpenAI", None)
+            else:
+                function_globals["AsyncOpenAI"] = previous_client
+
+        request = FakeAsyncOpenAI.last_instance.responses.last_request
+        self.assertEqual(request["model"], "gpt-5.6")
+        self.assertEqual(request["tool_choice"], "required")
+        self.assertIn("eppo.int", request["tools"][0]["filters"]["allowed_domains"])
+        self.assertIn("https://gd.eppo.int/", answer)
 
 
 class AIChatFrontendStaticTest(unittest.TestCase):
