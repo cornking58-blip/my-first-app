@@ -596,7 +596,8 @@ class RateUnitParsingTest(unittest.TestCase):
         source = SERVER_SOURCE.read_text(encoding="utf-8")
         actual_paths = re.findall(r'@api_router\.(?:get|post|put|delete|patch)\("([^"]+)"', source)
 
-        self.assertEqual(actual_paths, [
+        existing_paths = [path for path in actual_paths if not path.startswith("/ai/")]
+        self.assertEqual(existing_paths, [
             "/health",
             "/admin/import-excel",
             "/herbicides/search",

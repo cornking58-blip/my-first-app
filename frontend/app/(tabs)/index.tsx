@@ -311,7 +311,11 @@ export default function HomeScreen() {
                 ) : null}
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.quickAction} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.quickAction}
+                activeOpacity={0.8}
+                onPress={() => router.push('/ai')}
+              >
                 <View style={styles.quickIcon}>
                   <Ionicons name="sparkles-outline" size={22} color={colors.primaryBright} />
                 </View>
