@@ -98,6 +98,8 @@ get_ai_output_token_limit = namespace["get_ai_output_token_limit"]
 get_ai_reasoning_effort = namespace["get_ai_reasoning_effort"]
 normalize_ai_client_id = namespace["normalize_ai_client_id"]
 sanitize_ai_chat_context = namespace["sanitize_ai_chat_context"]
+sanitize_ai_output = namespace["sanitize_ai_output"]
+should_force_product_web_search = namespace["should_force_product_web_search"]
 should_use_ai_web_search = namespace["should_use_ai_web_search"]
 
 
@@ -134,9 +136,9 @@ class AIChatBackendTest(unittest.TestCase):
             for index in range(30)
         ]
         messages = build_ai_model_messages(history, "current", {"products": []})
-        self.assertEqual(len(messages), 19)
+        self.assertEqual(len(messages), 11)
         self.assertEqual(messages[-1], {"role": "user", "content": "current"})
-        self.assertEqual(messages[2]["content"], "message 14")
+        self.assertEqual(messages[2]["content"], "message 22")
 
     def test_general_search_ignores_common_words(self):
         self.assertEqual(
@@ -158,7 +160,8 @@ class AIChatBackendTest(unittest.TestCase):
         self.assertIn("фитопатология", AI_SYSTEM_PROMPT)
         self.assertIn("экотоксикология", AI_SYSTEM_PROMPT)
         self.assertIn("Международный опыт; не является рекомендацией", AI_SYSTEM_PROMPT)
-        self.assertIn("600–1200 знаков", AI_SYSTEM_PROMPT)
+        self.assertIn("350–800 знаков", AI_SYSTEM_PROMPT)
+        self.assertIn("Не используй Markdown-разметку", AI_SYSTEM_PROMPT)
 
     def test_web_search_is_only_enabled_for_explicit_research_requests(self):
         self.assertTrue(should_use_ai_web_search("Найди в сети последние исследования по флорасуламу"))
@@ -178,12 +181,29 @@ class AIChatBackendTest(unittest.TestCase):
 
     def test_output_limit_expands_only_on_request(self):
         with patch.dict(os.environ, {"AI_MAX_OUTPUT_TOKENS": ""}, clear=False):
-            self.assertEqual(get_ai_output_token_limit("Ответь кратко"), 1200)
-            self.assertEqual(get_ai_output_token_limit("Сделай подробный анализ"), 2400)
+            self.assertEqual(get_ai_output_token_limit("Ответь кратко"), 800)
+            self.assertEqual(get_ai_output_token_limit("Сделай подробный анализ"), 1600)
 
-    def test_invalid_reasoning_effort_falls_back_to_medium(self):
+    def test_invalid_reasoning_effort_falls_back_to_low(self):
         with patch.dict(os.environ, {"AI_REASONING_EFFORT": "invalid"}, clear=False):
-            self.assertEqual(get_ai_reasoning_effort(), "medium")
+            self.assertEqual(get_ai_reasoning_effort(), "low")
+
+
+    def test_product_comparison_without_verified_data_forces_web_search(self):
+        self.assertTrue(should_force_product_web_search(
+            "Сравни Крестраж против Колосаль Про",
+            {"products": []},
+        ))
+        self.assertFalse(should_force_product_web_search(
+            "Сравни два найденных гербицида",
+            {"products": [{"product_name": "Балерина"}]},
+        ))
+
+    def test_markdown_is_removed_from_ai_output(self):
+        self.assertEqual(
+            sanitize_ai_output("**Крестраж**\n- первый пункт\n### Вывод"),
+            "Крестраж\n• первый пункт\nВывод",
+        )
 
     def test_web_sources_are_extracted_and_deduplicated(self):
         response = {
@@ -208,6 +228,7 @@ class AIChatBackendTest(unittest.TestCase):
         self.assertIn('(os.environ.get("AI_MODEL") or "gpt-5.6").strip()', SERVER_SOURCE)
         self.assertIn('"allowed_domains": AI_WEB_ALLOWED_DOMAINS', SERVER_SOURCE)
         self.assertIn('"tool_choice": "required"', SERVER_SOURCE)
+        self.assertIn("force_web_search=use_web_search", SERVER_SOURCE)
 
     def test_web_request_uses_domain_filter_and_returns_visible_sources(self):
         function_globals = generate_ai_answer.__globals__
@@ -240,6 +261,35 @@ class AIChatBackendTest(unittest.TestCase):
         self.assertIn("eppo.int", request["tools"][0]["filters"]["allowed_domains"])
         self.assertIn("https://gd.eppo.int/", answer)
 
+    def test_forced_product_verification_enables_web_tool(self):
+        function_globals = generate_ai_answer.__globals__
+        previous_client = function_globals.get("AsyncOpenAI")
+        function_globals["AsyncOpenAI"] = FakeAsyncOpenAI
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "AI_API_KEY": "test-key",
+                    "OPENAI_API_KEY": "",
+                    "AI_MODEL": "",
+                    "AI_MAX_OUTPUT_TOKENS": "",
+                },
+                clear=False,
+            ):
+                asyncio.run(generate_ai_answer(
+                    [{"role": "user", "content": "Сравни Крестраж и Колосаль Про"}],
+                    "Сравни Крестраж и Колосаль Про",
+                    force_web_search=True,
+                ))
+        finally:
+            if previous_client is None:
+                function_globals.pop("AsyncOpenAI", None)
+            else:
+                function_globals["AsyncOpenAI"] = previous_client
+
+        request = FakeAsyncOpenAI.last_instance.responses.last_request
+        self.assertEqual(request["tool_choice"], "required")
+
 
 class AIChatFrontendStaticTest(unittest.TestCase):
     def test_ai_routes_exist_and_chats_are_owned_by_account(self):
@@ -267,6 +317,7 @@ class AIChatFrontendStaticTest(unittest.TestCase):
         self.assertIn("window.localStorage", CLIENT_ID_SOURCE)
         self.assertIn("SecureStore", CLIENT_ID_SOURCE)
         self.assertIn("baikov_ai_client_id", CLIENT_ID_SOURCE)
+        self.assertIn("formatMessageText(message.content)", AI_SCREEN_SOURCE)
 
 
 if __name__ == "__main__":

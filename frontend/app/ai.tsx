@@ -52,6 +52,15 @@ const getOptionalNumber = (value?: string) => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const formatMessageText = (value: string) => value
+  .replace(/\*\*([\s\S]*?)\*\*/g, '$1')
+  .replace(/__([\s\S]*?)__/g, '$1')
+  .replace(/^\s*#{1,6}\s*/gm, '')
+  .replace(/`/g, '')
+  .replace(/^\s*[-*]\s+/gm, '• ')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
 export default function AIChatScreen() {
   const router = useRouter();
   const {
@@ -421,7 +430,7 @@ export default function AIChatScreen() {
                         <Text style={styles.assistantLabelText}>bAIkov AI</Text>
                       </View>
                     ) : null}
-                    <Text style={styles.messageText}>{message.content}</Text>
+                    <Text style={styles.messageText}>{formatMessageText(message.content)}</Text>
                   </View>
                 ))
               )}
