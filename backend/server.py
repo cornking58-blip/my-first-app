@@ -3471,6 +3471,7 @@ def sanitize_ai_output(answer: str) -> str:
 async def generate_ai_answer(
     messages: List[Dict[str, str]],
     current_message: str = "",
+    force_web_search: bool = False,
 ) -> str:
     api_key = os.environ.get("AI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -3485,7 +3486,7 @@ async def generate_ai_answer(
         client_options["base_url"] = base_url
 
     ai_client = AsyncOpenAI(**client_options)
-    use_web_search = should_use_ai_web_search(current_message)
+    use_web_search = should_use_ai_web_search(current_message) or force_web_search
     request_options: Dict[str, Any] = {
         "model": (os.environ.get("AI_MODEL") or "gpt-5.6").strip(),
         "input": messages,
@@ -3613,7 +3614,11 @@ async def send_ai_message(
             )
             reservation = await reserve_ai_usage(current_user, use_web_search)
             model_messages = build_ai_model_messages(chat.get("messages", []), content, context)
-            answer = await generate_ai_answer(model_messages, content)
+            answer = await generate_ai_answer(
+                model_messages,
+                content,
+                force_web_search=use_web_search,
+            )
     except Exception:
         if reservation:
             await rollback_ai_usage(reservation)

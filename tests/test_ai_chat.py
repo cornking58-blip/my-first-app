@@ -228,6 +228,7 @@ class AIChatBackendTest(unittest.TestCase):
         self.assertIn('(os.environ.get("AI_MODEL") or "gpt-5.6").strip()', SERVER_SOURCE)
         self.assertIn('"allowed_domains": AI_WEB_ALLOWED_DOMAINS', SERVER_SOURCE)
         self.assertIn('"tool_choice": "required"', SERVER_SOURCE)
+        self.assertIn("force_web_search=use_web_search", SERVER_SOURCE)
 
     def test_web_request_uses_domain_filter_and_returns_visible_sources(self):
         function_globals = generate_ai_answer.__globals__
@@ -259,6 +260,35 @@ class AIChatBackendTest(unittest.TestCase):
         self.assertEqual(request["tool_choice"], "required")
         self.assertIn("eppo.int", request["tools"][0]["filters"]["allowed_domains"])
         self.assertIn("https://gd.eppo.int/", answer)
+
+    def test_forced_product_verification_enables_web_tool(self):
+        function_globals = generate_ai_answer.__globals__
+        previous_client = function_globals.get("AsyncOpenAI")
+        function_globals["AsyncOpenAI"] = FakeAsyncOpenAI
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "AI_API_KEY": "test-key",
+                    "OPENAI_API_KEY": "",
+                    "AI_MODEL": "",
+                    "AI_MAX_OUTPUT_TOKENS": "",
+                },
+                clear=False,
+            ):
+                asyncio.run(generate_ai_answer(
+                    [{"role": "user", "content": "Сравни Крестраж и Колосаль Про"}],
+                    "Сравни Крестраж и Колосаль Про",
+                    force_web_search=True,
+                ))
+        finally:
+            if previous_client is None:
+                function_globals.pop("AsyncOpenAI", None)
+            else:
+                function_globals["AsyncOpenAI"] = previous_client
+
+        request = FakeAsyncOpenAI.last_instance.responses.last_request
+        self.assertEqual(request["tool_choice"], "required")
 
 
 class AIChatFrontendStaticTest(unittest.TestCase):
