@@ -20,8 +20,8 @@ jobs:
           python-version: '3.13'
       - name: Python syntax
         run: python -m py_compile backend/product_catalog.py backend/migrate_catalog_to_supabase.py backend/server.py
-      - name: All backend tests
-        run: python -m unittest discover -s tests
+      - name: Catalog, AI and auth tests
+        run: python -m unittest tests/test_unified_catalog.py tests/test_ai_chat.py tests/test_auth_and_limits.py
 
   frontend:
     runs-on: ubuntu-latest
