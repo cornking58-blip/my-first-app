@@ -23,7 +23,20 @@ jobs:
         with:
           python-version: '3.13'
       - name: Apply patch
-        run: python scripts/apply_catalog_polish.py
+        id: patch
+        continue-on-error: true
+        run: python scripts/apply_catalog_polish.py > patch.log 2>&1
+      - name: Upload patch log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-polish-patch-log
+          path: patch.log
+      - name: Stop after patch error
+        if: steps.patch.outcome == 'failure'
+        run: |
+          cat patch.log
+          exit 1
       - name: Validate Python syntax
         run: python -m py_compile backend/catalog_quality.py backend/product_catalog.py backend/migrate_catalog_to_supabase.py backend/server.py
       - name: Run focused tests
