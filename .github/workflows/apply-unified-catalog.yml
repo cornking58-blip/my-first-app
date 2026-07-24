@@ -29,7 +29,7 @@ jobs:
       - name: Apply final database-first patch when needed
         run: |
           if ! grep -q "build_direct_catalog_answer(context)" backend/server.py; then
-            python scripts/finalize_unified_catalog.py
+            python scripts/finalize_unified_catalog_v2.py
           fi
       - name: Validate Python syntax
         id: validate
