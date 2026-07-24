@@ -95,6 +95,54 @@ def extract_single_product_candidate(message: str) -> Optional[str]:
     return candidate
 
 
+def _is_within_one_edit(left: str, right: str) -> bool:
+    """Return True only for an unambiguous one-character typo."""
+    left = canonical_product_name(left)
+    right = canonical_product_name(right)
+    if not left or not right or left == right or abs(len(left) - len(right)) > 1:
+        return False
+
+    if len(left) == len(right):
+        return sum(a != b for a, b in zip(left, right)) == 1
+
+    shorter, longer = (left, right) if len(left) < len(right) else (right, left)
+    short_index = 0
+    long_index = 0
+    skipped = False
+    while short_index < len(shorter) and long_index < len(longer):
+        if shorter[short_index] == longer[long_index]:
+            short_index += 1
+            long_index += 1
+            continue
+        if skipped:
+            return False
+        skipped = True
+        long_index += 1
+    return True
+
+
+def select_unambiguous_catalog_match(
+    results: List[Dict[str, Any]],
+    product_name: str,
+) -> Optional[Dict[str, Any]]:
+    """Prefer exact name; accept one-character typo only when exactly one row matches."""
+    target = canonical_product_name(product_name)
+    exact_matches = [
+        item for item in results
+        if canonical_product_name(str(item.get("product_name") or "")) == target
+    ]
+    if exact_matches:
+        return exact_matches[0]
+
+    if len(target) < 5:
+        return None
+    close_matches = [
+        item for item in results
+        if _is_within_one_edit(product_name, str(item.get("product_name") or ""))
+    ]
+    return close_matches[0] if len(close_matches) == 1 else None
+
+
 async def get_supabase_product(group: str, product_key: str) -> Optional[Dict[str, Any]]:
     import os
 
@@ -144,7 +192,6 @@ async def get_supabase_product(group: str, product_key: str) -> Optional[Dict[st
 
 
 async def find_catalog_product(db: Any, product_name: str) -> Tuple[Optional[Dict[str, Any]], List[str]]:
-    target = canonical_product_name(product_name)
     mode = catalog_backend_mode()
 
     if mode in {"supabase", "auto"} and supabase_configured():
@@ -155,26 +202,23 @@ async def find_catalog_product(db: Any, product_name: str) -> Tuple[Optional[Dic
         results = await search_catalog_products(db, query=product_name, limit=12)
 
     suggestions: List[str] = []
-    exact = None
     for item in results:
         name = str(item.get("product_name") or "").strip()
         if name and name not in suggestions:
             suggestions.append(name)
-        if name and canonical_product_name(name) == target:
-            exact = item
-            break
 
-    if exact:
-        group = str(exact.get("product_group") or "")
-        key = str(exact.get("product_key") or "")
+    matched = select_unambiguous_catalog_match(results, product_name)
+    if matched:
+        group = str(matched.get("product_group") or "")
+        key = str(matched.get("product_key") or "")
         if mode in {"supabase", "auto"} and supabase_configured():
             full = await get_supabase_product(group, key)
             if full:
                 return full, suggestions[:5]
-        mongo_product = await find_mongo_product(db, product_name)
+        mongo_product = await find_mongo_product(db, str(matched.get("product_name") or product_name))
         if mongo_product:
             return mongo_product, suggestions[:5]
-        return dict(exact), suggestions[:5]
+        return dict(matched), suggestions[:5]
 
     return None, suggestions[:5]
 
