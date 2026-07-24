@@ -32,10 +32,25 @@ jobs:
             python scripts/finalize_unified_catalog.py
           fi
       - name: Validate Python syntax
+        id: validate
+        continue-on-error: true
         run: |
-          python -m py_compile backend/product_catalog.py
-          python -m py_compile backend/migrate_catalog_to_supabase.py
-          python -m py_compile backend/server.py
+          {
+            python -m py_compile backend/product_catalog.py
+            python -m py_compile backend/migrate_catalog_to_supabase.py
+            python -m py_compile backend/server.py
+          } > validation.log 2>&1
+      - name: Upload validation log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-catalog-validation-log
+          path: validation.log
+      - name: Stop after validation error
+        if: steps.validate.outcome == 'failure'
+        run: |
+          cat validation.log
+          exit 1
       - name: Run focused tests
         run: python -m unittest tests/test_unified_catalog.py
       - name: Commit generated changes
