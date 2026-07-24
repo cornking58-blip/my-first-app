@@ -8,6 +8,11 @@ from typing import Any, Dict, Iterable, List
 import httpx
 from motor.motor_asyncio import AsyncIOMotorClient
 
+try:
+    from .catalog_quality import clean_catalog_product_name, should_exclude_product
+except ImportError:
+    from catalog_quality import clean_catalog_product_name, should_exclude_product
+
 COLLECTIONS = {
     "herbicide": "herbicide_records",
     "fungicide": "fungicide_records",
@@ -96,6 +101,8 @@ async def migrate_collection(db: Any, group: str, collection_name: str, client: 
     applications: List[Dict[str, Any]] = []
 
     for product_key, rows in grouped.items():
+        if should_exclude_product(group, rows):
+            continue
         first = rows[0]
         pid = product_uuid(group, product_key)
         composition = next((text(row.get("active_substances_raw")) for row in rows if text(row.get("active_substances_raw"))), None)
@@ -106,7 +113,7 @@ async def migrate_collection(db: Any, group: str, collection_name: str, client: 
             "product_group": group,
             "source_collection": collection_name,
             "source_product_key": product_key,
-            "product_name": text(first.get("product_name")),
+            "product_name": clean_catalog_product_name(first.get("product_name")),
             "formulation": text(first.get("formulation")),
             "active_substances_raw": composition,
             "manufacturer": first_value(first, MANUFACTURER_FIELDS),

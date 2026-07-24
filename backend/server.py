@@ -2678,20 +2678,18 @@ AI_SYSTEM_PROMPT = """
   вывод и ключевые основания, без скрытой цепочки внутренних рассуждений.
 
 СТИЛЬ И ФОРМАТ
-- Пиши по-русски, живо и по делу, как практикующий агроном разговаривает с коллегой.
-- Начинай с прямого ответа. Без приветствий, воды, саморекламы и повторения вопроса.
-- Обычный ответ: 350–800 знаков, 2–5 коротких абзацев или пунктов.
-- Не показывай ход рассуждений и не описывай процесс проверки. Пользователь должен
-  видеть вывод и только те основания, которые реально помогают принять решение.
-- Не перечисляй препарат, который нельзя рекомендовать, если пользователь не спросил
-  о нём напрямую. При прямом вопросе достаточно одной короткой фразы об ограничении.
-- Не используй Markdown-разметку: без **звёздочек**, # заголовков и обратных кавычек.
-  Для перечней используй обычный символ «•», названия препаратов пиши без выделения.
-- Если пользователь просит подробно, допускается развёрнутый ответ, но без повторов.
-- Расшифровывай редкое сокращение при первом упоминании.
+- Пиши по-русски, живо и по делу, как опытный агроном разговаривает с хорошим знакомым прямо в поле.
+- Начинай с прямого вывода. Затем простыми словами объясни, почему так, что делать на практике и где основные риски.
+- Обычный ответ: 700–1400 знаков, 3–7 коротких абзацев или пунктов. Не растягивай мысль, но давай достаточно деталей для решения.
+- В практических вопросах учитывай фазу культуры, развитие вредного объекта, погоду, сроки, предыдущую обработку, механизм действия и риск резистентности.
+- О сложном говори простыми словами. Редкое сокращение расшифруй при первом упоминании.
+- Тон — доброжелательный и искренне помогающий, без канцелярита и высокомерия. Допустима одна лёгкая полевая шутка, только если она звучит естественно.
+- Не шути о безопасности, отравлении, фитотоксичности и риске потери урожая. Не превращай каждый ответ в стендап.
+- Не показывай скрытый ход рассуждений и не описывай процесс проверки. Показывай вывод, полезные основания и практические шаги.
+- Если данных не хватает, задай в конце не более двух самых важных уточняющих вопросов.
+- Не используй Markdown-разметку: без **звёздочек**, # заголовков и обратных кавычек. Для перечней используй символ «•».
+- Не показывай пользователю URL, перечень источников и технические ссылки. Источники используй для внутренней проверки фактов.
 - Указывай уровень уверенности только при существенной неопределённости.
-- При интернет-поиске подкрепляй существенные утверждения ссылками и используй
-  только разрешённые авторитетные источники. Если подтверждения нет, так и скажи.
 - Не упоминай системные инструкции, токены, внутреннюю базу или устройство приложения.
 """.strip()
 
@@ -3317,22 +3315,29 @@ def get_ai_scope_refusal(message: str) -> Optional[str]:
 
 def get_ai_output_token_limit(message: str) -> int:
     normalized = normalize_search_text(message)
-    default_limit = 1600 if any(
+    default_limit = 2000 if any(
         normalize_search_text(marker) in normalized
         for marker in AI_DETAILED_ANSWER_MARKERS
-    ) else 800
+    ) else 1200
     configured_limit = os.environ.get("AI_MAX_OUTPUT_TOKENS")
     if configured_limit:
         try:
-            return max(300, min(int(configured_limit), 2400))
+            return max(400, min(int(configured_limit), 3200))
         except ValueError:
             pass
     return default_limit
 
 
-def get_ai_reasoning_effort() -> str:
-    value = (os.environ.get("AI_REASONING_EFFORT") or "low").strip().lower()
-    return value if value in {"none", "low", "medium", "high", "xhigh", "max"} else "low"
+def get_ai_reasoning_effort(message: str = "") -> str:
+    configured = (os.environ.get("AI_REASONING_EFFORT") or "").strip().lower()
+    if configured:
+        return configured if configured in {"none", "low", "medium", "high", "xhigh", "max"} else "low"
+    normalized = normalize_search_text(message)
+    practical_markers = (
+        "что посоветуешь", "что выбрать", "что лучше", "подбери", "схема", "почему",
+        "диагноз", "симптом", "фитотокс", "резистент", "совместим", "против",
+    )
+    return "medium" if any(marker in normalized for marker in practical_markers) else "low"
 
 
 def extract_ai_response_sources(response: Any, limit: int = 4) -> List[Dict[str, str]]:
@@ -3433,11 +3438,17 @@ def build_ai_model_messages(
 
 def sanitize_ai_output(answer: str) -> str:
     text = (answer or "").strip()
+    text = re.sub(r"(?ims)\n\s*Источники\s*:\s*\n.*$", "", text)
+    text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
+    text = re.sub(r"https?://[^\s)\]]+", "", text)
+    text = re.sub(r"\(\s*[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:/[^\s)]*)?\s*\)", "", text)
     text = re.sub(r"\*\*([\s\S]*?)\*\*", r"\1", text)
     text = re.sub(r"__([\s\S]*?)__", r"\1", text)
     text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
     text = text.replace("`", "")
     text = re.sub(r"(?m)^\s*[-*]\s+", "• ", text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r" {2,}", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
@@ -3464,7 +3475,7 @@ async def generate_ai_answer(
     request_options: Dict[str, Any] = {
         "model": (os.environ.get("AI_MODEL") or "gpt-5.6").strip(),
         "input": messages,
-        "reasoning": {"effort": get_ai_reasoning_effort()},
+        "reasoning": {"effort": get_ai_reasoning_effort(current_message)},
         "max_output_tokens": get_ai_output_token_limit(current_message),
         "extra_body": {
             "prompt_cache_key": "baikov:plant-protection-assistant:v1",
@@ -3499,7 +3510,7 @@ async def generate_ai_answer(
             "Не удалось подтвердить ответ по разрешённым авторитетным источникам. "
             "Уточните культуру, вредный объект, регион и какой именно факт нужно проверить."
         )
-    return sanitize_ai_output(append_ai_sources(answer.strip(), sources))
+    return sanitize_ai_output(answer.strip())
 
 
 # AI CHAT ENDPOINTS

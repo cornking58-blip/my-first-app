@@ -7,6 +7,19 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 
+try:
+    from .catalog_quality import (
+        clean_catalog_product_name,
+        filter_and_deduplicate_products,
+        should_exclude_product,
+    )
+except ImportError:
+    from catalog_quality import (
+        clean_catalog_product_name,
+        filter_and_deduplicate_products,
+        should_exclude_product,
+    )
+
 logger = logging.getLogger(__name__)
 
 PRODUCT_GROUPS: Dict[str, Dict[str, str]] = {
@@ -188,7 +201,7 @@ def _serialize_grouped_product(group: str, rows: Sequence[Dict[str, Any]]) -> Di
         "product_key": first.get("product_key"),
         "product_group": group,
         "product_group_title": PRODUCT_GROUPS[group]["title"],
-        "product_name": first.get("product_name"),
+        "product_name": clean_catalog_product_name(first.get("product_name")),
         "formulation": first.get("formulation"),
         "active_substances_raw": composition,
         "manufacturer": _first_nonempty(first, MANUFACTURER_FIELDS),
@@ -273,7 +286,7 @@ async def search_supabase_products(
         row["product_group_title"] = PRODUCT_GROUPS.get(
             row.get("product_group"), {}
         ).get("title", row.get("product_group"))
-    return rows
+    return filter_and_deduplicate_products(rows)[:limit]
 
 
 async def _search_mongo_group(
@@ -316,7 +329,12 @@ async def _search_mongo_group(
         if not key:
             continue
         grouped.setdefault(key, []).append(row)
-    products = [_serialize_grouped_product(group, product_rows) for product_rows in grouped.values()]
+    products = []
+    for product_rows in grouped.values():
+        if should_exclude_product(group, product_rows):
+            continue
+        products.append(_serialize_grouped_product(group, product_rows))
+    products = filter_and_deduplicate_products(products)
     products.sort(key=lambda item: normalize_text(str(item.get("product_name") or "")))
     return products[:limit]
 
@@ -346,7 +364,9 @@ async def search_mongo_products(
         )
         for current_group in groups
     ])
-    merged = [item for group_items in results for item in group_items]
+    merged = filter_and_deduplicate_products(
+        item for group_items in results for item in group_items
+    )
     merged.sort(key=lambda item: (
         normalize_text(str(item.get("product_name") or "")),
         str(item.get("product_group") or ""),
@@ -397,6 +417,8 @@ async def find_mongo_product(db: Any, product_name: str) -> Optional[Dict[str, A
             continue
         product_key = row.get("product_key")
         rows = await collection.find({"product_key": product_key}).to_list(length=5000)
+        if should_exclude_product(group, rows):
+            continue
         product = _serialize_grouped_product(group, rows)
         product["applications"] = [_application(item) for item in rows]
         return product
@@ -408,7 +430,7 @@ async def get_mongo_product(db: Any, group: str, product_key: str) -> Optional[D
         return None
     collection = db[PRODUCT_GROUPS[group]["collection"]]
     rows = await collection.find({"product_key": product_key}).to_list(length=5000)
-    if not rows:
+    if not rows or should_exclude_product(group, rows):
         return None
     product = _serialize_grouped_product(group, rows)
     product["applications"] = [_application(row) for row in rows]
