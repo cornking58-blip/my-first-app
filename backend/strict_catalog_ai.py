@@ -12,6 +12,7 @@ try:
         build_catalog_ai_context,
         build_direct_catalog_answer,
         extract_comparison_names,
+        is_catalog_request,
         find_mongo_product,
         search_catalog_products,
         search_supabase_products,
@@ -25,6 +26,7 @@ except ImportError:
         build_catalog_ai_context,
         build_direct_catalog_answer,
         extract_comparison_names,
+        is_catalog_request,
         find_mongo_product,
         search_catalog_products,
         search_supabase_products,
@@ -58,6 +60,18 @@ def _clean_candidate(value: str) -> str:
     value = re.sub(r"\s+(?:что\s+думаешь|что\s+скажешь).*$", "", value, flags=re.IGNORECASE)
     value = re.sub(
         r"\s+(?:тогда\s+)?(?:для\s+чего|зачем|как\s+работает|что\s+делает|какую\s+роль\s+играет)\s*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(
+        r"^(?:(?:расскажи|напиши|покажи)\s+(?:о|про)\s+|дай\s+информацию\s+(?:о|про)\s+)",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(
+        r"^(?:препарат(?:е|а|ом)?|торгов(?:ое|ого)\s+названи(?:е|я)|фунгицид(?:е|а|ом)?|гербицид(?:е|а|ом)?|инсектицид(?:е|а|ом)?|протравител(?:е|я|ем)?)\s+",
         "",
         value,
         flags=re.IGNORECASE,
@@ -304,6 +318,13 @@ async def build_strict_catalog_ai_context(db: Any, message: str) -> Dict[str, An
             "catalog_lookup_attempted": True,
             "allow_web_fallback": False,
         }
+
+    if is_catalog_request(message):
+        catalog_context = await build_catalog_ai_context(db, message)
+        if catalog_context.get("intent") == "manufacturer_catalog":
+            catalog_context["catalog_lookup_attempted"] = True
+            catalog_context["allow_web_fallback"] = False
+            return catalog_context
 
     candidate = extract_single_product_candidate(message)
     if candidate:

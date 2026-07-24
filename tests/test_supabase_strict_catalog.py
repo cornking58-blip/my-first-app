@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 
+from backend.product_catalog import detect_group, extract_manufacturer, is_catalog_request
 from backend.strict_catalog_ai import (
     build_strict_direct_answer,
     extract_single_product_candidate,
@@ -11,6 +12,7 @@ from backend.strict_catalog_ai import (
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = (ROOT / "backend" / "server.py").read_text(encoding="utf-8")
 CATALOG = (ROOT / "backend" / "product_catalog.py").read_text(encoding="utf-8")
+STRICT_AI_SOURCE = (ROOT / "backend" / "strict_catalog_ai.py").read_text(encoding="utf-8")
 MIGRATION = (ROOT / "backend" / "catalog_auto_migrate.py").read_text(encoding="utf-8")
 
 
@@ -19,6 +21,23 @@ class SupabaseStrictCatalogTest(unittest.TestCase):
         self.assertEqual(extract_single_product_candidate("а Ронилан? что думаешь?"), "Ронилан")
         self.assertEqual(extract_single_product_candidate("Что скажешь про Ронилан?"), "Ронилан")
         self.assertEqual(extract_single_product_candidate("Ронилан"), "Ронилан")
+
+    def test_manufacturer_catalog_command_is_recognized_before_product_lookup(self):
+        message = "выпиши протравители щёлковоагрохим"
+        self.assertTrue(is_catalog_request(message))
+        self.assertEqual(detect_group(message), "seed_treatment")
+        self.assertEqual(extract_manufacturer(message), "щёлковоагрохим")
+        self.assertLess(
+            STRICT_AI_SOURCE.index("if is_catalog_request(message):"),
+            STRICT_AI_SOURCE.index("candidate = extract_single_product_candidate(message)"),
+        )
+
+    def test_product_prefix_is_removed_before_lookup(self):
+        self.assertEqual(extract_single_product_candidate("препарат Цепелин"), "Цепелин")
+        self.assertEqual(
+            extract_single_product_candidate("расскажи про препарат Цепелин"),
+            "Цепелин",
+        )
 
     def test_active_substance_follow_up_is_cleaned(self):
         self.assertEqual(
