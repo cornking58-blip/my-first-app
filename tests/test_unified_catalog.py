@@ -24,6 +24,13 @@ class UnifiedCatalogStaticTest(unittest.TestCase):
         self.assertIn("return await build_catalog_ai_context(db, message)", SERVER)
         self.assertIn('"verified_from_catalog": len(found) == 2', CATALOG)
         self.assertIn("Интернет-поиск не требуется", CATALOG)
+        self.assertIn("build_direct_catalog_answer(context)", SERVER)
+        self.assertIn("def build_direct_catalog_answer", CATALOG)
+
+    def test_product_names_are_found_with_inflection_and_context(self):
+        self.assertIn("_product_name_regex(product_name)", CATALOG)
+        self.assertIn("_clean_product_phrase", CATALOG)
+        self.assertIn("loose=True", CATALOG)
 
     def test_universal_api_is_connected(self):
         self.assertIn('router.get("/products/search")', CATALOG)

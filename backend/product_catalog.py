@@ -3,7 +3,6 @@ import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
-from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -96,6 +95,17 @@ def extract_manufacturer(message: str) -> str:
     return ""
 
 
+def _clean_product_phrase(value: str) -> str:
+    value = (value or "").strip(" «»\".,!?-")
+    value = re.split(
+        r"\s+(?:на|по|для|при|против)\s+",
+        value,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return value.strip(" «»\".,!?-")
+
+
 def extract_comparison_names(message: str) -> Optional[Tuple[str, str]]:
     text = (message or "").strip()
     patterns = (
@@ -106,8 +116,8 @@ def extract_comparison_names(message: str) -> Optional[Tuple[str, str]]:
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
-            left = match.group(1).strip(" «»\".,!?-")
-            right = match.group(2).strip(" «»\".,!?-")
+            left = _clean_product_phrase(match.group(1))
+            right = _clean_product_phrase(match.group(2))
             if left and right:
                 return left, right
     return None
@@ -125,10 +135,33 @@ def is_catalog_request(message: str) -> bool:
     ))
 
 
-def _regex(value: str, exact: bool = False) -> Dict[str, Any]:
-    escaped = re.escape((value or "").strip())
-    pattern = rf"^\s*{escaped}\s*$" if exact else escaped
+def _loose_pattern(value: str) -> str:
+    compact = re.sub(r"[^0-9A-Za-zА-Яа-яЁё]+", "", (value or "").strip())
+    if not compact:
+        return ""
+    separator = r"[\s._&\-]*"
+    return separator.join(re.escape(char) for char in compact)
+
+
+def _regex(value: str, exact: bool = False, loose: bool = False) -> Dict[str, Any]:
+    pattern = _loose_pattern(value) if loose else re.escape((value or "").strip())
+    if exact:
+        pattern = rf"^\s*{pattern}\s*$"
     return {"$regex": pattern, "$options": "i"}
+
+
+def _product_name_regex(value: str) -> Dict[str, Any]:
+    normalized = normalize_text(value)
+    compact = normalized.replace(" ", "")
+    if re.search(r"[а-я]", compact, flags=re.IGNORECASE) and len(compact) >= 5:
+        for ending in ("иями", "ями", "ами", "ого", "ему", "ыми", "ими", "ом", "ем", "ах", "ях", "ов", "ев", "ей", "ам", "ям", "ою", "ею", "а", "я", "ы", "и", "у", "ю", "е", "о", "ь"):
+            if compact.endswith(ending) and len(compact) - len(ending) >= 4:
+                compact = compact[:-len(ending)]
+                break
+        pattern = _loose_pattern(compact) + r"[а-яё]*"
+    else:
+        pattern = _loose_pattern(normalized)
+    return {"$regex": rf"^\s*{pattern}(?:\s*[,(/\-].*)?\s*$", "$options": "i"}
 
 
 def _first_nonempty(record: Dict[str, Any], fields: Sequence[str]) -> Optional[str]:
@@ -266,7 +299,7 @@ async def _search_mongo_group(
             })
     if manufacturer.strip():
         filters.append({
-            "$or": [{field: _regex(manufacturer)} for field in MANUFACTURER_FIELDS]
+            "$or": [{field: _regex(manufacturer, loose=True)} for field in MANUFACTURER_FIELDS]
         })
     if culture.strip():
         filters.append({"crop": _regex(culture)})
@@ -359,7 +392,7 @@ async def search_catalog_products(
 async def find_mongo_product(db: Any, product_name: str) -> Optional[Dict[str, Any]]:
     for group, config in PRODUCT_GROUPS.items():
         collection = db[config["collection"]]
-        row = await collection.find_one({"product_name": _regex(product_name, exact=True)})
+        row = await collection.find_one({"product_name": _product_name_regex(product_name)})
         if not row:
             continue
         product_key = row.get("product_key")
@@ -435,6 +468,27 @@ async def build_catalog_ai_context(db: Any, message: str) -> Dict[str, Any]:
             else "В базе не найдено релевантных препаратов."
         ),
     }
+
+
+def build_direct_catalog_answer(context: Dict[str, Any]) -> Optional[str]:
+    if context.get("intent") != "manufacturer_catalog":
+        return None
+    products = context.get("products")
+    if not isinstance(products, list) or not products:
+        return None
+
+    group = str(context.get("product_group") or "")
+    group_title = PRODUCT_GROUPS.get(group, {}).get("title", "Препараты")
+    manufacturer = str(context.get("manufacturer") or "").strip()
+    heading = f"{group_title} {manufacturer}".strip()
+    lines = [f"{heading} — найдено {len(products)}:"]
+    for product in products:
+        name = str(product.get("product_name") or "Без названия").strip()
+        composition = str(product.get("active_substances_raw") or "").strip()
+        formulation = str(product.get("formulation") or "").strip()
+        details = " · ".join(value for value in (composition, formulation) if value)
+        lines.append(f"• {name}" + (f" — {details}" if details else ""))
+    return "\n".join(lines)
 
 
 def create_products_router(db: Any) -> APIRouter:

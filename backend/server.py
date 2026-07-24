@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import io
 from collections import Counter, defaultdict
-from product_catalog import build_catalog_ai_context, create_products_router
+from product_catalog import build_catalog_ai_context, build_direct_catalog_answer, create_products_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -2781,6 +2781,8 @@ def is_product_specific_question(message: str) -> bool:
 
 
 def context_has_verified_product_data(context: Dict[str, Any]) -> bool:
+    if "verified_from_catalog" in context:
+        return bool(context.get("verified_from_catalog"))
     if context.get("comparison"):
         return True
     products = context.get("products")
@@ -3577,17 +3579,21 @@ async def send_ai_message(
             answer = scope_refusal
         else:
             context = await build_ai_chat_context(chat, content)
-            use_web_search = (
-                should_use_ai_web_search(content)
-                or should_force_product_web_search(content, context)
-            )
-            reservation = await reserve_ai_usage(current_user, use_web_search)
-            model_messages = build_ai_model_messages(chat.get("messages", []), content, context)
-            answer = await generate_ai_answer(
-                model_messages,
-                content,
-                force_web_search=use_web_search,
-            )
+            direct_answer = build_direct_catalog_answer(context)
+            if direct_answer:
+                answer = direct_answer
+            else:
+                use_web_search = (
+                    should_use_ai_web_search(content)
+                    or should_force_product_web_search(content, context)
+                )
+                reservation = await reserve_ai_usage(current_user, use_web_search)
+                model_messages = build_ai_model_messages(chat.get("messages", []), content, context)
+                answer = await generate_ai_answer(
+                    model_messages,
+                    content,
+                    force_web_search=use_web_search,
+                )
     except Exception:
         if reservation:
             await rollback_ai_usage(reservation)
