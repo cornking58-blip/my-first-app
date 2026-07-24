@@ -24,6 +24,10 @@ from datetime import datetime, timedelta
 import pandas as pd
 import io
 from collections import Counter, defaultdict
+try:
+    from .product_catalog import build_catalog_ai_context, build_direct_catalog_answer, create_products_router
+except ImportError:
+    from product_catalog import build_catalog_ai_context, build_direct_catalog_answer, create_products_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -35,7 +39,7 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'herbicides_db')]
 
 # Create the main app
-app = FastAPI(title="Herbicides API", version="1.0.0")
+app = FastAPI(title="Pesticides API", version="1.0.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -2780,6 +2784,8 @@ def is_product_specific_question(message: str) -> bool:
 
 
 def context_has_verified_product_data(context: Dict[str, Any]) -> bool:
+    if "verified_from_catalog" in context:
+        return bool(context.get("verified_from_catalog"))
     if context.get("comparison"):
         return True
     products = context.get("products")
@@ -3370,67 +3376,7 @@ def append_ai_sources(answer: str, sources: Sequence[Dict[str, str]]) -> str:
 
 
 async def build_general_ai_context(message: str) -> Dict[str, Any]:
-    tokens = extract_ai_search_tokens(message)
-    if not tokens:
-        return {
-            "source": "Справочник гербицидов РФ",
-            "notice": "По формулировке вопроса не удалось выделить конкретный препарат, культуру или действующее вещество.",
-            "products": [],
-        }
-
-    searchable_fields = [
-        "product_name",
-        "active_substances_raw",
-        "crop",
-        "target_object",
-        *MANUFACTURER_FIELD_PRIORITY,
-    ]
-    query = {
-        "$or": [
-            build_flexible_field_match(field, token)
-            for token in tokens
-            for field in searchable_fields
-        ]
-    }
-    records = await db.herbicide_records.find(query).to_list(length=120)
-    grouped_records: Dict[str, List[Dict[str, Any]]] = {}
-    for record in records:
-        product_key = record.get("product_key")
-        if product_key and product_key not in grouped_records and len(grouped_records) >= 6:
-            continue
-        if product_key:
-            grouped_records.setdefault(product_key, []).append(record)
-
-    products = []
-    for product_records in grouped_records.values():
-        canonical = with_canonical_composition(product_records[0], product_records, "herbicide")
-        products.append({
-            "product_name": canonical.get("product_name"),
-            "active_substances": canonical.get("active_substances_raw"),
-            "formulation": canonical.get("formulation"),
-            "manufacturer": get_records_display_manufacturer(product_records),
-            "registration_status": canonical.get("registration_status"),
-            "applications": [
-                {
-                    "crop": record.get("crop"),
-                    "target_object": record.get("target_object"),
-                    "rate": record.get("rate_raw"),
-                    "application_method": record.get("application_method"),
-                }
-                for record in product_records[:5]
-            ],
-        })
-
-    return {
-        "source": "Справочник гербицидов РФ",
-        "matched_tokens": tokens,
-        "products": products,
-        "notice": (
-            "Это выборка наиболее релевантных записей, а не полный перечень."
-            if products else
-            "В справочнике не найдено релевантных записей."
-        ),
-    }
+    return await build_catalog_ai_context(db, message)
 
 
 async def build_ai_chat_context(chat: Dict[str, Any], message: str) -> Dict[str, Any]:
@@ -3636,17 +3582,21 @@ async def send_ai_message(
             answer = scope_refusal
         else:
             context = await build_ai_chat_context(chat, content)
-            use_web_search = (
-                should_use_ai_web_search(content)
-                or should_force_product_web_search(content, context)
-            )
-            reservation = await reserve_ai_usage(current_user, use_web_search)
-            model_messages = build_ai_model_messages(chat.get("messages", []), content, context)
-            answer = await generate_ai_answer(
-                model_messages,
-                content,
-                force_web_search=use_web_search,
-            )
+            direct_answer = build_direct_catalog_answer(context)
+            if direct_answer:
+                answer = direct_answer
+            else:
+                use_web_search = (
+                    should_use_ai_web_search(content)
+                    or should_force_product_web_search(content, context)
+                )
+                reservation = await reserve_ai_usage(current_user, use_web_search)
+                model_messages = build_ai_model_messages(chat.get("messages", []), content, context)
+                answer = await generate_ai_answer(
+                    model_messages,
+                    content,
+                    force_web_search=use_web_search,
+                )
     except Exception:
         if reservation:
             await rollback_ai_usage(reservation)
@@ -4795,7 +4745,8 @@ async def get_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Include the router in the main app
+# Include the routers in the main app
+app.include_router(create_products_router(db))
 app.include_router(api_router)
 
 app.add_middleware(

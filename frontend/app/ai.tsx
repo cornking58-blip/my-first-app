@@ -400,7 +400,7 @@ export default function AIChatScreen() {
                   <Text style={styles.welcomeText}>
                     {contextType === 'comparison'
                       ? 'ИИ использует составы, нормы, HRAC, цены и итог текущего сравнения.'
-                      : 'Ответы опираются на данные справочника гербицидов РФ.'}
+                      : 'Ответы опираются на данные единого справочника пестицидов РФ.'}
                   </Text>
                   <View style={styles.suggestions}>
                     {promptSuggestions.map(suggestion => (

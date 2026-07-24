@@ -33,6 +33,8 @@ interface SearchResult {
   display_manufacturer: string | null;
   registration_status: string | null;
   applications_count: number;
+  product_group: 'herbicide' | 'fungicide' | 'insecticide' | 'seed_treatment';
+  product_group_title?: string;
 }
 
 export default function HomeScreen() {
@@ -63,9 +65,9 @@ export default function HomeScreen() {
       if (cropValue.trim()) params.append('culture', cropValue.trim());
       if (harmfulObjectValue.trim()) params.append('harmful_object', harmfulObjectValue.trim());
       if (active) params.append('only_active', 'true');
-      params.append('limit', '50');
+      params.append('limit', '100');
 
-      const response = await axios.get(`${API_URL}/api/herbicides/search?${params.toString()}`);
+      const response = await axios.get(`${API_URL}/api/products/search?${params.toString()}`);
       setResults(response.data);
       setRequestError(null);
     } catch (error) {
@@ -120,6 +122,16 @@ export default function HomeScreen() {
 
   const isActive = (status: string | null) => status?.toLowerCase().trim() === 'действует';
 
+  const openProduct = (item: SearchResult) => {
+    const routes = {
+      herbicide: '/product/',
+      fungicide: '/fungicide-product/',
+      insecticide: '/insecticide-product/',
+      seed_treatment: '/seed-treatment-product/',
+    } as const;
+    router.push(`${routes[item.product_group]}${encodeURIComponent(item.product_key)}` as never);
+  };
+
   const renderItem = ({ item }: { item: SearchResult }) => {
     const active = isActive(item.registration_status);
     const displayManufacturer = item.display_manufacturer?.trim() || '';
@@ -133,12 +145,15 @@ export default function HomeScreen() {
       <View style={[styles.card, isSelected && styles.cardSelected]}>
         <TouchableOpacity
           style={styles.cardContent}
-          onPress={() => router.push(`/product/${encodeURIComponent(item.product_key)}`)}
+          onPress={() => openProduct(item)}
           activeOpacity={0.76}
         >
           <View style={styles.cardHeader}>
             <View style={styles.cardTitleRow}>
-              <Text style={styles.productName} numberOfLines={1}>{item.product_name}</Text>
+              <View style={styles.productTitleBlock}>
+                <Text style={styles.productName} numberOfLines={1}>{item.product_name}</Text>
+                <Text style={styles.productGroupLabel}>{item.product_group_title || item.product_group}</Text>
+              </View>
               {(item.formulation?.trim().length ?? 0) > 0 ? (
                 <View style={styles.formulationBadge}>
                   <Text style={styles.formulationText}>{item.formulation}</Text>
@@ -170,28 +185,30 @@ export default function HomeScreen() {
             <Ionicons name="layers-outline" size={14} color={colors.textMuted} />
             <Text style={styles.applicationsText}>{item.applications_count} применений</Text>
           </View>
-          <TouchableOpacity
-            style={[
-              styles.compareSelectButton,
-              isSelected && styles.compareSelectButtonActive,
-              !canSelect && !isSelected && styles.compareSelectButtonDisabled,
-            ]}
-            onPress={() => toggleSelection(item.product_key)}
-            disabled={!canSelect && !isSelected}
-          >
-            <Ionicons
-              name={isSelected ? 'checkmark-circle' : 'add-circle-outline'}
-              size={18}
-              color={isSelected ? colors.white : (!canSelect ? colors.textMuted : colors.primaryBright)}
-            />
-            <Text style={[
-              styles.compareSelectText,
-              isSelected && styles.compareSelectTextActive,
-              !canSelect && !isSelected && styles.compareSelectTextDisabled,
-            ]}>
-              {isSelected ? 'Выбрано' : 'Сравнить'}
-            </Text>
-          </TouchableOpacity>
+          {item.product_group === 'herbicide' ? (
+            <TouchableOpacity
+              style={[
+                styles.compareSelectButton,
+                isSelected && styles.compareSelectButtonActive,
+                !canSelect && !isSelected && styles.compareSelectButtonDisabled,
+              ]}
+              onPress={() => toggleSelection(item.product_key)}
+              disabled={!canSelect && !isSelected}
+            >
+              <Ionicons
+                name={isSelected ? 'checkmark-circle' : 'add-circle-outline'}
+                size={18}
+                color={isSelected ? colors.white : (!canSelect ? colors.textMuted : colors.primaryBright)}
+              />
+              <Text style={[
+                styles.compareSelectText,
+                isSelected && styles.compareSelectTextActive,
+                !canSelect && !isSelected && styles.compareSelectTextDisabled,
+              ]}>
+                {isSelected ? 'Выбрано' : 'Сравнить'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
     );
@@ -208,7 +225,7 @@ export default function HomeScreen() {
           <View style={styles.topBar}>
             <View>
               <BrandLogo />
-              <Text style={styles.subtitle}>Справочник гербицидов РФ</Text>
+              <Text style={styles.subtitle}>Справочник пестицидов РФ</Text>
             </View>
             <TouchableOpacity style={styles.profileButton} activeOpacity={0.8}>
               <Ionicons name="person-outline" size={21} color={colors.text} />
@@ -226,7 +243,7 @@ export default function HomeScreen() {
             <TextInput
               testID="main-search-input"
               style={styles.searchInput}
-              placeholder="Название, действующее вещество..."
+              placeholder="Название, ДВ, производитель..."
               placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -274,7 +291,7 @@ export default function HomeScreen() {
               />
               <TextInput
                 style={styles.filterInput}
-                placeholder="Сорное растение / вредный объект"
+                placeholder="Вредный объект"
                 placeholderTextColor={colors.textMuted}
                 value={harmfulObject}
                 onChangeText={setHarmfulObject}
@@ -561,7 +578,9 @@ const styles = StyleSheet.create({
   cardContent: { flex: 1 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
   cardTitleRow: { flex: 1, flexDirection: 'row', alignItems: 'center', marginRight: 8 },
-  productName: { color: colors.text, fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  productTitleBlock: { flex: 1 },
+  productName: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  productGroupLabel: { color: colors.primaryBright, fontSize: 10, marginTop: 3 },
   formulationBadge: { backgroundColor: colors.surfaceSoft, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, marginLeft: 7 },
   formulationText: { color: colors.textSecondary, fontSize: 10, fontWeight: '600' },
   statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
