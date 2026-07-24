@@ -279,6 +279,7 @@ async def search_catalog_candidate_products(
 
 
 async def find_catalog_product(db: Any, product_name: str) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    mode = catalog_backend_mode()
     results = await search_catalog_candidate_products(db, product_name, limit=12)
 
     suggestions: List[str] = []
