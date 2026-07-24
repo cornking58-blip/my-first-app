@@ -24,7 +24,10 @@ from datetime import datetime, timedelta
 import pandas as pd
 import io
 from collections import Counter, defaultdict
-from product_catalog import build_catalog_ai_context, build_direct_catalog_answer, create_products_router
+try:
+    from .product_catalog import build_catalog_ai_context, build_direct_catalog_answer, create_products_router
+except ImportError:
+    from product_catalog import build_catalog_ai_context, build_direct_catalog_answer, create_products_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -36,7 +39,7 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'herbicides_db')]
 
 # Create the main app
-app = FastAPI(title="Herbicides API", version="1.0.0")
+app = FastAPI(title="Pesticides API", version="1.0.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
