@@ -374,6 +374,18 @@ async def search_mongo_products(
     return merged[:limit]
 
 
+def catalog_backend_mode() -> str:
+    value = (os.environ.get("CATALOG_BACKEND") or "").strip().lower()
+    if value in {"supabase", "mongo", "auto"}:
+        return value
+    return "supabase" if supabase_configured() else "mongo"
+
+
+def catalog_mongo_fallback_allowed() -> bool:
+    value = (os.environ.get("CATALOG_ALLOW_MONGO_FALLBACK") or "true").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 async def search_catalog_products(
     db: Any,
     query: str = "",
@@ -384,19 +396,28 @@ async def search_catalog_products(
     only_active: bool = False,
     limit: int = 100,
 ) -> List[Dict[str, Any]]:
-    if supabase_configured():
-        try:
-            return await search_supabase_products(
-                query=query,
-                group=group,
-                manufacturer=manufacturer,
-                culture=culture,
-                harmful_object=harmful_object,
-                only_active=only_active,
-                limit=limit,
-            )
-        except Exception as error:
-            logger.warning("Supabase catalog search failed, using MongoDB fallback: %s", type(error).__name__)
+    mode = catalog_backend_mode()
+    if mode in {"supabase", "auto"}:
+        if not supabase_configured():
+            if mode == "supabase":
+                raise HTTPException(status_code=503, detail="Каталог Supabase не настроен")
+        else:
+            try:
+                return await search_supabase_products(
+                    query=query,
+                    group=group,
+                    manufacturer=manufacturer,
+                    culture=culture,
+                    harmful_object=harmful_object,
+                    only_active=only_active,
+                    limit=limit,
+                )
+            except Exception as error:
+                if mode == "supabase" and not catalog_mongo_fallback_allowed():
+                    logger.error("Supabase catalog search failed without fallback: %s", type(error).__name__)
+                    raise HTTPException(status_code=503, detail="Каталог временно недоступен")
+                logger.warning("Supabase catalog search failed, using MongoDB fallback: %s", type(error).__name__)
+
     return await search_mongo_products(
         db,
         query=query,
