@@ -30,8 +30,21 @@ jobs:
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Apply source patch
+        id: patch
         if: steps.check.outputs.needed == 'true'
-        run: python scripts/apply_unified_catalog.py
+        continue-on-error: true
+        run: python scripts/apply_unified_catalog.py > patch.log 2>&1
+      - name: Upload patch log
+        if: always() && steps.check.outputs.needed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-catalog-patch-log
+          path: patch.log
+      - name: Stop after patch error
+        if: steps.patch.outcome == 'failure'
+        run: |
+          cat patch.log
+          exit 1
       - name: Validate Python syntax
         run: |
           python -m py_compile backend/product_catalog.py
