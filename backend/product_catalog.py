@@ -145,7 +145,11 @@ def is_catalog_request(message: str) -> bool:
     normalized = normalize_text(message)
     return any(marker in normalized for marker in (
         "выпиши все",
+        "выпиши",
         "покажи все",
+        "покажи",
+        "перечисли",
+        "дай список",
         "список препаратов",
         "все препараты",
         "полный список",
