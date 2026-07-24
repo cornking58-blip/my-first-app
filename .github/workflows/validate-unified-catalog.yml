@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/unified-pesticide-catalog
+  pull_request:
+    branches:
+      - main
 
 jobs:
   backend:
