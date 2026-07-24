@@ -25,9 +25,13 @@ import pandas as pd
 import io
 from collections import Counter, defaultdict
 try:
-    from .product_catalog import build_catalog_ai_context, build_direct_catalog_answer, create_products_router
+    from .product_catalog import create_products_router
+    from .strict_catalog_ai import build_strict_catalog_ai_context, build_strict_direct_answer
+    from .catalog_auto_migrate import schedule_catalog_migration
 except ImportError:
-    from product_catalog import build_catalog_ai_context, build_direct_catalog_answer, create_products_router
+    from product_catalog import create_products_router
+    from strict_catalog_ai import build_strict_catalog_ai_context, build_strict_direct_answer
+    from catalog_auto_migrate import schedule_catalog_migration
 
 
 ROOT_DIR = Path(__file__).parent
@@ -2791,6 +2795,8 @@ def context_has_verified_product_data(context: Dict[str, Any]) -> bool:
 
 
 def should_force_product_web_search(message: str, context: Dict[str, Any]) -> bool:
+    if context.get("allow_web_fallback") is False:
+        return False
     return is_product_specific_question(message) and not context_has_verified_product_data(context)
 
 
@@ -3381,7 +3387,7 @@ def append_ai_sources(answer: str, sources: Sequence[Dict[str, str]]) -> str:
 
 
 async def build_general_ai_context(message: str) -> Dict[str, Any]:
-    return await build_catalog_ai_context(db, message)
+    return await build_strict_catalog_ai_context(db, message)
 
 
 async def build_ai_chat_context(chat: Dict[str, Any], message: str) -> Dict[str, Any]:
@@ -3593,7 +3599,7 @@ async def send_ai_message(
             answer = scope_refusal
         else:
             context = await build_ai_chat_context(chat, content)
-            direct_answer = build_direct_catalog_answer(context)
+            direct_answer = build_strict_direct_answer(context)
             if direct_answer:
                 answer = direct_answer
             else:
@@ -4780,6 +4786,7 @@ async def prepare_ai_chat_storage():
     await db.auth_codes.create_index("expires_at", expireAfterSeconds=0)
     await db.auth_codes.create_index([("email", 1), ("created_at", -1)])
     await db.ai_usage.create_index([("user_id", 1), ("period_key", 1)], unique=True)
+    schedule_catalog_migration(db)
 
 
 @app.on_event("shutdown")
