@@ -56,6 +56,12 @@ def _clean_candidate(value: str) -> str:
     value = re.sub(r"^(?:а\s+)?(?:что\s+(?:думаешь|скажешь)\s+(?:о|про)\s+)", "", value, flags=re.IGNORECASE)
     value = re.sub(r"^(?:а\s+)?(?:как\s+насч[её]т|что\s+насч[её]т)\s+", "", value, flags=re.IGNORECASE)
     value = re.sub(r"\s+(?:что\s+думаешь|что\s+скажешь).*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(
+        r"\s+(?:тогда\s+)?(?:для\s+чего|зачем|как\s+работает|что\s+делает|какую\s+роль\s+играет)\s*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
     return value.strip(" \t\r\n«»\"'.,!?—–-")
 
 
@@ -141,6 +147,49 @@ def select_unambiguous_catalog_match(
         if _is_within_one_edit(product_name, str(item.get("product_name") or ""))
     ]
     return close_matches[0] if len(close_matches) == 1 else None
+
+
+def _normalize_substance_text(value: Any) -> str:
+    text = str(value or "").casefold().replace("ё", "е")
+    text = re.sub(r"[^0-9a-zа-я]+", " ", text, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _composition_contains_substance(composition: Any, substance_name: str) -> bool:
+    candidate = _normalize_substance_text(substance_name).replace(" ", "")
+    composition_text = _normalize_substance_text(composition).replace(" ", "")
+    return bool(len(candidate) >= 4 and candidate in composition_text)
+
+
+def select_catalog_substance_matches(
+    results: List[Dict[str, Any]],
+    substance_name: str,
+) -> List[Dict[str, Any]]:
+    matches: List[Dict[str, Any]] = []
+    seen = set()
+    for item in results:
+        if not _composition_contains_substance(item.get("active_substances_raw"), substance_name):
+            continue
+        key = (
+            str(item.get("product_group") or ""),
+            str(item.get("product_key") or item.get("product_name") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        matches.append(dict(item))
+    return matches
+
+
+async def find_catalog_substance(db: Any, substance_name: str) -> List[Dict[str, Any]]:
+    mode = catalog_backend_mode()
+    if mode in {"supabase", "auto"} and supabase_configured():
+        results = await search_supabase_products(query=substance_name, limit=50)
+    elif mode == "supabase":
+        return []
+    else:
+        results = await search_catalog_products(db, query=substance_name, limit=50)
+    return select_catalog_substance_matches(results, substance_name)[:20]
 
 
 async def get_supabase_product(group: str, product_key: str) -> Optional[Dict[str, Any]]:
@@ -263,6 +312,7 @@ async def build_strict_catalog_ai_context(db: Any, message: str) -> Dict[str, An
             return {
                 "source": "Единый справочник пестицидов РФ",
                 "intent": "single_product",
+                "entity_type": "product",
                 "requested_product": candidate,
                 "products": [product],
                 "verified_from_catalog": True,
@@ -270,6 +320,29 @@ async def build_strict_catalog_ai_context(db: Any, message: str) -> Dict[str, An
                 "allow_web_fallback": False,
                 "notice": "Препарат найден в каталоге. Используй только переданные данные.",
             }
+
+        substance_products = await find_catalog_substance(db, candidate)
+        if substance_products:
+            return {
+                "source": "Единый справочник пестицидов РФ",
+                "intent": "active_substance",
+                "entity_type": "active_substance",
+                "requested_substance": candidate,
+                "products": substance_products,
+                "verified_from_catalog": True,
+                "catalog_lookup_attempted": True,
+                "allow_web_fallback": False,
+                "notice": (
+                    "Термин найден в составах препаратов как действующее вещество, "
+                    "а не как торговое название."
+                ),
+                "answer_instruction": (
+                    "Объясни роль действующего вещества простыми словами: механизм действия, "
+                    "зачем оно нужно в смеси, сильные и слабые стороны, практическое применение "
+                    "и риск резистентности. Учитывай предыдущие сообщения диалога."
+                ),
+            }
+
         return {
             "source": "Единый справочник пестицидов РФ",
             "intent": "product_not_found",
