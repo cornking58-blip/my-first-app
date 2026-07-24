@@ -21,8 +21,8 @@ jobs:
           python-version: '3.13'
       - name: Install focused dependencies
         run: python -m pip install fastapi==0.110.1 python-dotenv motor==3.3.1 pymongo==4.5.0 httpx==0.28.1 openai==1.99.9 PyJWT==2.12.1 pandas==3.0.1 email-validator==2.3.0 python-multipart==0.0.22
-      - name: Apply patch
-        run: python scripts/apply_contextual_product_followups.py
+      - name: Apply fix
+        run: python scripts/fix_contextual_mode.py
       - name: Validate syntax
         run: python -m py_compile backend/strict_catalog_ai.py
       - name: Run focused tests
@@ -35,6 +35,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/strict_catalog_ai.py tests/test_supabase_strict_catalog.py
-          git diff --cached --quiet || git commit -m "Resolve short product follow-ups from chat context"
+          git add backend/strict_catalog_ai.py
+          git diff --cached --quiet || git commit -m "Restore catalog mode in contextual follow-ups"
           git push
