@@ -34,7 +34,20 @@ jobs:
       - name: Validate Python syntax
         run: python -m py_compile backend/catalog_quality.py backend/product_catalog.py backend/migrate_catalog_to_supabase.py backend/server.py
       - name: Run focused tests
-        run: python -m unittest tests/test_catalog_polish.py tests/test_unified_catalog.py tests/test_ai_chat.py tests/test_auth_and_limits.py
+        id: tests
+        continue-on-error: true
+        run: python -m unittest tests/test_catalog_polish.py tests/test_unified_catalog.py tests/test_ai_chat.py tests/test_auth_and_limits.py > tests.log 2>&1
+      - name: Upload tests log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-polish-final-tests-log
+          path: tests.log
+      - name: Stop after test error
+        if: steps.tests.outcome == 'failure'
+        run: |
+          cat tests.log
+          exit 1
       - name: Commit generated changes
         run: |
           git config user.name "github-actions[bot]"
