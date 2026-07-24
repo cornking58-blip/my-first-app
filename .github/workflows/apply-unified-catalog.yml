@@ -4,13 +4,15 @@ on:
   push:
     branches:
       - agent/unified-pesticide-catalog
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +21,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Check whether patch is already applied
+        id: check
+        run: |
+          if grep -q "create_products_router" backend/server.py; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Apply source patch
+        if: steps.check.outputs.needed == 'true'
         run: python scripts/apply_unified_catalog.py
       - name: Validate Python syntax
         run: |
@@ -29,6 +40,7 @@ jobs:
       - name: Run focused tests
         run: python -m unittest tests/test_unified_catalog.py
       - name: Commit generated changes
+        if: steps.check.outputs.needed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
