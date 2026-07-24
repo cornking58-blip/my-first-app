@@ -21,30 +21,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Check whether patch is already applied
-        id: check
+      - name: Apply initial source patch when needed
         run: |
-          if grep -q "create_products_router" backend/server.py; then
-            echo "needed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "needed=true" >> "$GITHUB_OUTPUT"
+          if ! grep -q "create_products_router" backend/server.py; then
+            python scripts/apply_unified_catalog.py
           fi
-      - name: Apply source patch
-        id: patch
-        if: steps.check.outputs.needed == 'true'
-        continue-on-error: true
-        run: python scripts/apply_unified_catalog.py > patch.log 2>&1
-      - name: Upload patch log
-        if: always() && steps.check.outputs.needed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: unified-catalog-patch-log
-          path: patch.log
-      - name: Stop after patch error
-        if: steps.patch.outcome == 'failure'
+      - name: Apply final database-first patch when needed
         run: |
-          cat patch.log
-          exit 1
+          if ! grep -q "build_direct_catalog_answer(context)" backend/server.py; then
+            python scripts/finalize_unified_catalog.py
+          fi
       - name: Validate Python syntax
         run: |
           python -m py_compile backend/product_catalog.py
@@ -53,10 +39,9 @@ jobs:
       - name: Run focused tests
         run: python -m unittest tests/test_unified_catalog.py
       - name: Commit generated changes
-        if: steps.check.outputs.needed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/server.py backend/requirements.txt frontend/app/'(tabs)'/index.tsx frontend/app/ai.tsx
-          git diff --cached --quiet || git commit -m "Connect unified pesticide catalog"
+          git add backend/server.py backend/product_catalog.py backend/requirements.txt frontend/app/'(tabs)'/index.tsx frontend/app/ai.tsx tests/test_unified_catalog.py
+          git diff --cached --quiet || git commit -m "Finalize database-first pesticide catalog"
           git push
