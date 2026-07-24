@@ -123,10 +123,12 @@ as $$
         p.active_substances_raw,
         p.manufacturer,
         p.registration_status,
-        count(a.id)::bigint
+        (
+            select count(*)::bigint
+            from public.catalog_applications a
+            where a.product_id = p.id
+        ) as applications_count
     from filtered p
-    left join public.catalog_applications a on a.product_id = p.id
-    group by p.id
     order by p.product_name
     limit greatest(1, least(coalesce(p_limit, 100), 500));
 $$;
