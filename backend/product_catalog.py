@@ -20,6 +20,11 @@ except ImportError:
         should_exclude_product,
     )
 
+try:
+    from .supabase_auth import build_supabase_headers, get_supabase_read_key
+except ImportError:
+    from supabase_auth import build_supabase_headers, get_supabase_read_key
+
 logger = logging.getLogger(__name__)
 
 PRODUCT_GROUPS: Dict[str, Dict[str, str]] = {
@@ -232,26 +237,11 @@ def _application(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def supabase_configured() -> bool:
-    return bool(
-        (os.environ.get("SUPABASE_URL") or "").strip()
-        and (
-            (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
-            or (os.environ.get("SUPABASE_ANON_KEY") or "").strip()
-        )
-    )
+    return bool((os.environ.get("SUPABASE_URL") or "").strip() and get_supabase_read_key())
 
 
 def _supabase_headers() -> Dict[str, str]:
-    key = (
-        os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-        or os.environ.get("SUPABASE_ANON_KEY")
-        or ""
-    ).strip()
-    return {
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-    }
+    return build_supabase_headers(get_supabase_read_key())
 
 
 async def search_supabase_products(
