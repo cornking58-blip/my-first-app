@@ -1,0 +1,39 @@
+name: Validate unified pesticide catalog
+
+on:
+  push:
+    branches:
+      - agent/unified-pesticide-catalog
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/unified-pesticide-catalog
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Python syntax
+        run: python -m py_compile backend/product_catalog.py backend/migrate_catalog_to_supabase.py backend/server.py
+      - name: All backend tests
+        run: python -m unittest discover -s tests
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/unified-pesticide-catalog
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - name: Install dependencies
+        working-directory: frontend
+        run: corepack enable && yarn install --frozen-lockfile
+      - name: TypeScript check
+        working-directory: frontend
+        run: yarn tsc --noEmit
