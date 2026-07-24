@@ -160,7 +160,9 @@ class AIChatBackendTest(unittest.TestCase):
         self.assertIn("фитопатология", AI_SYSTEM_PROMPT)
         self.assertIn("экотоксикология", AI_SYSTEM_PROMPT)
         self.assertIn("Международный опыт; не является рекомендацией", AI_SYSTEM_PROMPT)
-        self.assertIn("350–800 знаков", AI_SYSTEM_PROMPT)
+        self.assertIn("700–1400 знаков", AI_SYSTEM_PROMPT)
+        self.assertIn("О сложном говори простыми словами", AI_SYSTEM_PROMPT)
+        self.assertIn("Не показывай пользователю URL", AI_SYSTEM_PROMPT)
         self.assertIn("Не используй Markdown-разметку", AI_SYSTEM_PROMPT)
 
     def test_web_search_is_only_enabled_for_explicit_research_requests(self):
@@ -181,8 +183,8 @@ class AIChatBackendTest(unittest.TestCase):
 
     def test_output_limit_expands_only_on_request(self):
         with patch.dict(os.environ, {"AI_MAX_OUTPUT_TOKENS": ""}, clear=False):
-            self.assertEqual(get_ai_output_token_limit("Ответь кратко"), 800)
-            self.assertEqual(get_ai_output_token_limit("Сделай подробный анализ"), 1600)
+            self.assertEqual(get_ai_output_token_limit("Ответь кратко"), 1200)
+            self.assertEqual(get_ai_output_token_limit("Сделай подробный анализ"), 2000)
 
     def test_invalid_reasoning_effort_falls_back_to_low(self):
         with patch.dict(os.environ, {"AI_REASONING_EFFORT": "invalid"}, clear=False):
@@ -259,7 +261,8 @@ class AIChatBackendTest(unittest.TestCase):
         self.assertEqual(request["model"], "gpt-5.6")
         self.assertEqual(request["tool_choice"], "required")
         self.assertIn("eppo.int", request["tools"][0]["filters"]["allowed_domains"])
-        self.assertIn("https://gd.eppo.int/", answer)
+        self.assertEqual(answer, "Проверенный ответ")
+        self.assertNotIn("https://", answer)
 
     def test_forced_product_verification_enables_web_tool(self):
         function_globals = generate_ai_answer.__globals__
