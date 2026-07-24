@@ -17,8 +17,8 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 server = SERVER.read_text(encoding="utf-8")
 server = replace_once(
     server,
-    "from collections import Counter, defaultdict\n",
-    "from collections import Counter, defaultdict\nfrom product_catalog import build_catalog_ai_context, create_products_router\n",
+    "import io\nfrom collections import Counter, defaultdict\n",
+    "import io\nfrom collections import Counter, defaultdict\nfrom product_catalog import build_catalog_ai_context, create_products_router\n",
     "catalog import",
 )
 
