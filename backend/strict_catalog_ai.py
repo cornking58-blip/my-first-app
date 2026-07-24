@@ -254,15 +254,32 @@ async def get_supabase_product(group: str, product_key: str) -> Optional[Dict[st
     }
 
 
-async def find_catalog_product(db: Any, product_name: str) -> Tuple[Optional[Dict[str, Any]], List[str]]:
-    mode = catalog_backend_mode()
+def is_short_contextual_fragment(value: str) -> bool:
+    candidate = _clean_candidate(value)
+    normalized = canonical_product_name(candidate)
+    return bool(
+        normalized
+        and 1 <= len(candidate.split()) <= 2
+        and 3 <= len(normalized) <= 32
+        and not is_catalog_request(value)
+    )
 
+
+async def search_catalog_candidate_products(
+    db: Any,
+    query: str,
+    limit: int = 12,
+) -> List[Dict[str, Any]]:
+    mode = catalog_backend_mode()
     if mode in {"supabase", "auto"} and supabase_configured():
-        results = await search_supabase_products(query=product_name, limit=12)
-    elif mode == "supabase":
-        return None, []
-    else:
-        results = await search_catalog_products(db, query=product_name, limit=12)
+        return await search_supabase_products(query=query, limit=limit)
+    if mode == "supabase":
+        return []
+    return await search_catalog_products(db, query=query, limit=limit)
+
+
+async def find_catalog_product(db: Any, product_name: str) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    results = await search_catalog_candidate_products(db, product_name, limit=12)
 
     suggestions: List[str] = []
     for item in results:
@@ -341,6 +358,33 @@ async def build_strict_catalog_ai_context(db: Any, message: str) -> Dict[str, An
                 "allow_web_fallback": False,
                 "notice": "Препарат найден в каталоге. Используй только переданные данные.",
             }
+
+        if is_short_contextual_fragment(candidate) and suggestions:
+            candidate_products = await search_catalog_candidate_products(db, candidate, limit=12)
+            if candidate_products:
+                return {
+                    "source": "Единый справочник пестицидов РФ",
+                    "intent": "contextual_product_followup",
+                    "entity_type": "product_fragment",
+                    "requested_fragment": candidate,
+                    "products": candidate_products,
+                    "suggestions": suggestions,
+                    "verified_from_catalog": True,
+                    "catalog_lookup_attempted": True,
+                    "allow_web_fallback": False,
+                    "notice": (
+                        "Короткое уточнение найдено в названиях нескольких препаратов. "
+                        "Используй предыдущие сообщения диалога, чтобы выбрать только "
+                        "однозначно подходящее полное название."
+                    ),
+                    "answer_instruction": (
+                        "Свяжи короткий фрагмент с предыдущей репликой пользователя. "
+                        "Например, после «препарат Амистар» слово «Голд» означает "
+                        "«Амистар Голд», но только если такой вариант есть среди переданных "
+                        "кандидатов. Если контекст не даёт одного точного варианта, задай "
+                        "один короткий уточняющий вопрос. Не объявляй фрагмент новым препаратом."
+                    ),
+                }
 
         substance_products = await find_catalog_substance(db, candidate)
         if substance_products:
