@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import io
 from collections import Counter, defaultdict
+from product_catalog import build_catalog_ai_context, create_products_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -3370,67 +3371,7 @@ def append_ai_sources(answer: str, sources: Sequence[Dict[str, str]]) -> str:
 
 
 async def build_general_ai_context(message: str) -> Dict[str, Any]:
-    tokens = extract_ai_search_tokens(message)
-    if not tokens:
-        return {
-            "source": "Справочник гербицидов РФ",
-            "notice": "По формулировке вопроса не удалось выделить конкретный препарат, культуру или действующее вещество.",
-            "products": [],
-        }
-
-    searchable_fields = [
-        "product_name",
-        "active_substances_raw",
-        "crop",
-        "target_object",
-        *MANUFACTURER_FIELD_PRIORITY,
-    ]
-    query = {
-        "$or": [
-            build_flexible_field_match(field, token)
-            for token in tokens
-            for field in searchable_fields
-        ]
-    }
-    records = await db.herbicide_records.find(query).to_list(length=120)
-    grouped_records: Dict[str, List[Dict[str, Any]]] = {}
-    for record in records:
-        product_key = record.get("product_key")
-        if product_key and product_key not in grouped_records and len(grouped_records) >= 6:
-            continue
-        if product_key:
-            grouped_records.setdefault(product_key, []).append(record)
-
-    products = []
-    for product_records in grouped_records.values():
-        canonical = with_canonical_composition(product_records[0], product_records, "herbicide")
-        products.append({
-            "product_name": canonical.get("product_name"),
-            "active_substances": canonical.get("active_substances_raw"),
-            "formulation": canonical.get("formulation"),
-            "manufacturer": get_records_display_manufacturer(product_records),
-            "registration_status": canonical.get("registration_status"),
-            "applications": [
-                {
-                    "crop": record.get("crop"),
-                    "target_object": record.get("target_object"),
-                    "rate": record.get("rate_raw"),
-                    "application_method": record.get("application_method"),
-                }
-                for record in product_records[:5]
-            ],
-        })
-
-    return {
-        "source": "Справочник гербицидов РФ",
-        "matched_tokens": tokens,
-        "products": products,
-        "notice": (
-            "Это выборка наиболее релевантных записей, а не полный перечень."
-            if products else
-            "В справочнике не найдено релевантных записей."
-        ),
-    }
+    return await build_catalog_ai_context(db, message)
 
 
 async def build_ai_chat_context(chat: Dict[str, Any], message: str) -> Dict[str, Any]:
@@ -4795,7 +4736,8 @@ async def get_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Include the router in the main app
+# Include the routers in the main app
+app.include_router(create_products_router(db))
 app.include_router(api_router)
 
 app.add_middleware(

@@ -123,6 +123,3 @@ watchfiles==1.1.1
 websockets==16.0
 yarl==1.23.0
 zipp==3.23.0
-
-# Install the AI runtime loader from a commit that contains PRs 63 and 64.
-git+https://github.com/cornking58-blip/my-first-app.git@812b8c92dfe5ea901287096e99e444c5a002400d#subdirectory=backend
