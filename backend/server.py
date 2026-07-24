@@ -2874,6 +2874,24 @@ def normalize_auth_email(value: str) -> str:
     return (value or "").strip().lower()
 
 
+def get_owner_emails() -> set[str]:
+    raw_value = (
+        os.environ.get("OWNER_EMAILS")
+        or os.environ.get("OWNER_EMAIL")
+        or ""
+    )
+    return {
+        normalize_auth_email(value)
+        for value in re.split(r"[,;\s]+", raw_value)
+        if value.strip()
+    }
+
+
+def is_owner_user(user: Dict[str, Any]) -> bool:
+    email = normalize_auth_email(str(user.get("email") or ""))
+    return bool(email and email in get_owner_emails())
+
+
 def get_auth_secret() -> str:
     secret = (os.environ.get("AUTH_JWT_SECRET") or "").strip()
     if len(secret) < 32:
@@ -2916,6 +2934,8 @@ def decode_access_token(token: str) -> str:
 
 
 def get_user_access_plan(user: Dict[str, Any], now: Optional[datetime] = None) -> str:
+    if is_owner_user(user):
+        return "owner"
     now = now or datetime.utcnow()
     pro_until = user.get("pro_until")
     if user.get("subscription_status") == "active" and (
@@ -2939,8 +2959,12 @@ def serialize_user_account(user: Dict[str, Any]) -> Dict[str, Any]:
             "plan": plan,
             "trial_ends_at": user.get("trial_ends_at"),
             "pro_until": user.get("pro_until"),
-            "subscription_status": user.get("subscription_status") or "inactive",
-            "can_use_ai": plan in AI_USAGE_LIMITS,
+            "subscription_status": (
+                "owner" if plan == "owner"
+                else user.get("subscription_status") or "inactive"
+            ),
+            "can_use_ai": plan == "owner" or plan in AI_USAGE_LIMITS,
+            "is_owner": plan == "owner",
         },
     }
 
@@ -2966,6 +2990,8 @@ def get_usage_period_key(user: Dict[str, Any], plan: str) -> str:
 
 async def reserve_ai_usage(user: Dict[str, Any], use_web_search: bool) -> Tuple[str, str]:
     plan = get_user_access_plan(user)
+    if plan == "owner":
+        return "owner", "owner"
     if plan not in AI_USAGE_LIMITS:
         raise HTTPException(
             status_code=402,
@@ -3012,6 +3038,8 @@ async def reserve_ai_usage(user: Dict[str, Any], use_web_search: bool) -> Tuple[
 
 async def rollback_ai_usage(reservation: Tuple[str, str]) -> None:
     usage_id, field = reservation
+    if usage_id == "owner":
+        return
     await db.ai_usage.update_one(
         {"_id": usage_id, field: {"$gt": 0}},
         {"$inc": {field: -1}, "$set": {"updated_at": datetime.utcnow()}},

@@ -26,6 +26,13 @@ class AuthAndLimitsStaticTest(unittest.TestCase):
         self.assertIn('"pro": {"ai_requests": 80, "web_requests": 10, "photo_diagnostics": 15}', SERVER_SOURCE)
         self.assertIn("reserve_ai_usage(current_user, use_web_search)", SERVER_SOURCE)
 
+    def test_owner_access_is_unlimited_and_configured_by_environment(self):
+        self.assertIn('os.environ.get("OWNER_EMAILS")', SERVER_SOURCE)
+        self.assertIn('return "owner"', SERVER_SOURCE)
+        self.assertIn('if plan == "owner":', SERVER_SOURCE)
+        self.assertIn('return "owner", "owner"', SERVER_SOURCE)
+        self.assertIn('"is_owner": plan == "owner"', SERVER_SOURCE)
+
     def test_chats_migrate_from_device_to_account(self):
         self.assertIn('"client_id": client_id', SERVER_SOURCE)
         self.assertIn('"user_id": user["id"]', SERVER_SOURCE)
