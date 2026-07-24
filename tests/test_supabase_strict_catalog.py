@@ -5,6 +5,7 @@ from backend.product_catalog import detect_group, extract_manufacturer, is_catal
 from backend.strict_catalog_ai import (
     build_strict_direct_answer,
     extract_single_product_candidate,
+    is_short_contextual_fragment,
     select_catalog_substance_matches,
     select_unambiguous_catalog_match,
 )
@@ -38,6 +39,13 @@ class SupabaseStrictCatalogTest(unittest.TestCase):
             extract_single_product_candidate("расскажи про препарат Цепелин"),
             "Цепелин",
         )
+
+    def test_short_product_suffix_is_treated_as_contextual_fragment(self):
+        self.assertTrue(is_short_contextual_fragment("Голд"))
+        self.assertTrue(is_short_contextual_fragment("Амистар Голд"))
+        self.assertFalse(is_short_contextual_fragment("выпиши препараты Голд"))
+        self.assertIn("contextual_product_followup", STRICT_AI_SOURCE)
+        self.assertIn("Не объявляй фрагмент новым препаратом", STRICT_AI_SOURCE)
 
     def test_active_substance_follow_up_is_cleaned(self):
         self.assertEqual(
