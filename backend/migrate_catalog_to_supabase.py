@@ -13,6 +13,11 @@ try:
 except ImportError:
     from catalog_quality import clean_catalog_product_name, should_exclude_product
 
+try:
+    from .supabase_auth import build_supabase_headers, get_supabase_admin_key
+except ImportError:
+    from supabase_auth import build_supabase_headers, get_supabase_admin_key
+
 COLLECTIONS = {
     "herbicide": "herbicide_records",
     "fungicide": "fungicide_records",
@@ -63,15 +68,13 @@ def product_uuid(group: str, product_key: str) -> str:
 
 
 def supabase_headers() -> Dict[str, str]:
-    key = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+    key = get_supabase_admin_key()
     if not key:
-        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required")
-    return {
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates,return=minimal",
-    }
+        raise RuntimeError("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY is required")
+    return build_supabase_headers(
+        key,
+        prefer="resolution=merge-duplicates,return=minimal",
+    )
 
 
 async def upsert_rows(client: httpx.AsyncClient, table: str, rows: List[Dict[str, Any]], conflict: str) -> None:

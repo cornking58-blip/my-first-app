@@ -11,6 +11,11 @@ try:
 except ImportError:
     from migrate_catalog_to_supabase import COLLECTIONS, migrate_collection
 
+try:
+    from .supabase_auth import get_supabase_admin_key
+except ImportError:
+    from supabase_auth import get_supabase_admin_key
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,8 +30,8 @@ def migration_forced() -> bool:
 async def migrate_catalog_to_supabase(db: Any) -> Dict[str, Dict[str, int]]:
     if not (os.environ.get("SUPABASE_URL") or "").strip():
         raise RuntimeError("SUPABASE_URL is required")
-    if not (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or "").strip():
-        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is required")
+    if not get_supabase_admin_key():
+        raise RuntimeError("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY is required")
 
     totals: Dict[str, Dict[str, int]] = {}
     async with httpx.AsyncClient(timeout=120) as client:
