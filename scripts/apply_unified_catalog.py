@@ -143,7 +143,7 @@ index = index.replace("Название, действующее вещество
 index = index.replace("Сорное растение / вредный объект", "Вредный объект")
 index = replace_once(
     index,
-    "  productName: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '700' },",
+    "  productName: { color: colors.text, fontSize: 16, fontWeight: '700', flexShrink: 1 },",
     "  productTitleBlock: { flex: 1 },\n  productName: { color: colors.text, fontSize: 16, fontWeight: '700' },\n  productGroupLabel: { color: colors.primaryBright, fontSize: 10, marginTop: 3 },",
     "group styles",
 )
