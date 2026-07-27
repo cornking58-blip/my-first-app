@@ -1,0 +1,65 @@
+name: bAIkov regression
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  backend-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Install focused backend dependencies
+        run: >-
+          python -m pip install
+          fastapi==0.110.1
+          python-dotenv
+          motor==3.3.1
+          pymongo==4.5.0
+          httpx==0.28.1
+          openai==1.99.9
+          PyJWT==2.12.1
+          pandas==3.0.1
+          email-validator==2.3.0
+          python-multipart==0.0.22
+      - name: Validate backend syntax
+        run: python -m py_compile backend/product_catalog.py backend/strict_catalog_ai.py backend/server.py
+      - name: Run bAIkov regression suite
+        env:
+          MONGO_URL: mongodb://127.0.0.1:27017
+          DB_NAME: baikov_test
+          AUTH_JWT_SECRET: test-secret-with-at-least-thirty-two-characters
+        run: >-
+          python -m unittest
+          tests/test_baikov_regression_suite.py
+          tests/test_supabase_strict_catalog.py
+          tests/test_ai_chat.py
+          tests/test_unified_catalog.py
+
+  frontend-types:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Yarn 1
+        run: npm install --global yarn@1.22.22
+      - name: Install frontend dependencies
+        run: yarn install --frozen-lockfile
+      - name: TypeScript check
+        run: yarn exec tsc --noEmit
