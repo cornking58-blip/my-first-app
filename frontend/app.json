@@ -19,11 +19,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#070A16"
       },
-      "edgeToEdgeEnabled": true,
-      "navigationBar": {
-        "backgroundColor": "#070A16",
-        "barStyle": "light-content"
-      }
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "bundler": "metro",
