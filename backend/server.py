@@ -28,10 +28,12 @@ try:
     from .product_catalog import create_products_router
     from .strict_catalog_ai import build_strict_catalog_ai_context, build_strict_direct_answer
     from .catalog_auto_migrate import schedule_catalog_migration
+    from .photo_diagnosis import analyze_photo_with_ai
 except ImportError:
     from product_catalog import create_products_router
     from strict_catalog_ai import build_strict_catalog_ai_context, build_strict_direct_answer
     from catalog_auto_migrate import schedule_catalog_migration
+    from photo_diagnosis import analyze_photo_with_ai
 
 
 ROOT_DIR = Path(__file__).parent
@@ -176,6 +178,11 @@ class AIChatCreateRequest(BaseModel):
 
 class AIMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
+
+
+class PhotoDiagnosisRequest(BaseModel):
+    image_data_url: str = Field(min_length=100, max_length=9_000_000)
+    question: Optional[str] = Field(default=None, max_length=2000)
 
 
 class AuthRequestCodeRequest(BaseModel):
@@ -3046,6 +3053,51 @@ async def reserve_ai_usage(user: Dict[str, Any], use_web_search: bool) -> Tuple[
     return usage_id, field
 
 
+async def reserve_photo_usage(user: Dict[str, Any]) -> Tuple[str, str]:
+    plan = get_user_access_plan(user)
+    if plan == "owner":
+        return "owner", "owner"
+    if plan not in AI_USAGE_LIMITS:
+        raise HTTPException(
+            status_code=402,
+            detail="Пробный доступ завершён. Оформите bAIkov PRO за 740 ₽ в месяц.",
+        )
+
+    field = "photo_diagnostics"
+    limit = AI_USAGE_LIMITS[plan][field]
+    period_key = get_usage_period_key(user, plan)
+    usage_id = f"{user['id']}:{period_key}"
+    try:
+        usage = await db.ai_usage.find_one_and_update(
+            {
+                "_id": usage_id,
+                "$or": [
+                    {field: {"$lt": limit}},
+                    {field: {"$exists": False}},
+                ],
+            },
+            {
+                "$inc": {field: 1},
+                "$setOnInsert": {
+                    "user_id": user["id"],
+                    "period_key": period_key,
+                    "created_at": datetime.utcnow(),
+                },
+                "$set": {"updated_at": datetime.utcnow()},
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+    except DuplicateKeyError:
+        usage = None
+    if not usage:
+        raise HTTPException(
+            status_code=429,
+            detail="Лимит фотодиагностик на текущий период исчерпан.",
+        )
+    return usage_id, field
+
+
 async def rollback_ai_usage(reservation: Tuple[str, str]) -> None:
     usage_id, field = reservation
     if usage_id == "owner":
@@ -3650,6 +3702,25 @@ async def send_ai_message(
         "assistant_message": assistant_message,
         "chat_title": update_fields.get("title", chat.get("title")),
     }
+
+@api_router.post("/ai/photo-diagnosis")
+async def diagnose_photo(
+    request: PhotoDiagnosisRequest,
+    current_user: Dict[str, Any] = Depends(require_current_user),
+):
+    reservation: Optional[Tuple[str, str]] = None
+    try:
+        reservation = await reserve_photo_usage(current_user)
+        answer = await analyze_photo_with_ai(
+            request.image_data_url,
+            request.question,
+        )
+        return {"answer": sanitize_ai_output(answer)}
+    except Exception:
+        if reservation:
+            await rollback_ai_usage(reservation)
+        raise
+
 
 @api_router.get("/health")
 async def health_check():
