@@ -30,6 +30,14 @@
       "expo-router",
       "expo-secure-store",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "bAIkov использует фотографию для агрономической диагностики.",
+          "cameraPermission": "bAIkov использует камеру для съёмки растения или вредного объекта.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
