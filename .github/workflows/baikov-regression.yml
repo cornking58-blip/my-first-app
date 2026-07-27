@@ -26,7 +26,7 @@ jobs:
           cache: pip
       - name: Install focused backend dependencies
         run: >-
-          python -m pip install
+          python -m pip install --quiet
           fastapi==0.110.1
           python-dotenv
           motor==3.3.1
@@ -40,7 +40,15 @@ jobs:
       - name: Validate backend syntax
         run: python -m py_compile backend/product_catalog.py backend/strict_catalog_ai.py backend/server.py
       - name: Run permanent scenario suite
-        run: python -m unittest -v tests/test_baikov_regression_suite.py
+        id: permanent
+        continue-on-error: true
+        run: python -m unittest -v tests/test_baikov_regression_suite.py 2>&1 | tee /tmp/permanent.log
+      - name: Show permanent suite result
+        if: always()
+        run: cat /tmp/permanent.log
+      - name: Fail when permanent suite failed
+        if: steps.permanent.outcome == 'failure'
+        run: exit 1
       - name: Run strict catalog tests
         run: python -m unittest -v tests/test_supabase_strict_catalog.py
       - name: Run AI chat tests
@@ -59,8 +67,8 @@ jobs:
         with:
           node-version: '20'
       - name: Install Yarn 1
-        run: npm install --global yarn@1.22.22
+        run: npm install --global yarn@1.22.22 --silent
       - name: Install frontend dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --silent
       - name: TypeScript check
         run: yarn exec tsc --noEmit
