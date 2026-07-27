@@ -339,7 +339,11 @@ export default function HomeScreen() {
                 <Text style={styles.quickActionTitle}>Спросить AI</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.quickAction} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.quickAction}
+                activeOpacity={0.8}
+                onPress={() => router.push('/photo-diagnosis')}
+              >
                 <View style={styles.quickIcon}>
                   <Ionicons name="camera-outline" size={22} color={colors.primaryBright} />
                 </View>
