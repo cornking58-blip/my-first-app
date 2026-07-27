@@ -1,0 +1,32 @@
+name: Apply photo diagnosis MVP
+
+on:
+  push:
+    branches:
+      - agent/pr-79-photo-diagnosis-mvp
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/pr-79-photo-diagnosis-mvp
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply patch
+        run: python scripts/apply_photo_diagnosis_mvp.py
+      - name: Validate backend syntax
+        run: python -m py_compile backend/photo_diagnosis.py backend/server.py
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/server.py frontend/app/'(tabs)'/index.tsx
+          git diff --cached --quiet || git commit -m "Wire photo diagnosis into app"
+          git push
