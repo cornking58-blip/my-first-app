@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "baikov",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#070A16",
+    "backgroundColor": "#010203",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
@@ -17,7 +17,7 @@
       "package": "com.baikov.herbicides",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#070A16"
+        "backgroundColor": "#010203"
       },
       "edgeToEdgeEnabled": true
     },
@@ -35,10 +35,10 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#070A16",
+          "backgroundColor": "#010203",
           "dark": {
             "image": "./assets/images/splash-icon.png",
-            "backgroundColor": "#070A16"
+            "backgroundColor": "#010203"
           }
         }
       ]
