@@ -35,7 +35,7 @@ class BaikovRegressionSuite(unittest.TestCase):
             "выпиши фунгициды компании": "fungicide",
             "выпиши инсектициды компании": "insecticide",
             "выпиши протравители компании": "seed_treatment",
-            "покажи препараты для обработки семян": "seed_treatment",
+            "покажи препараты: обработка семян": "seed_treatment",
         }
         for phrase, expected in cases.items():
             with self.subTest(phrase=phrase):
