@@ -19,7 +19,13 @@ import { colors, shadows } from '../theme/colors';
 
 type Step = 'details' | 'code';
 
-export function AIAuthGate({ onBack }: { onBack: () => void }) {
+interface AIAuthGateProps {
+  onBack: () => void;
+  detailsTitle?: string;
+  detailsSubtitle?: string;
+}
+
+export function AIAuthGate({ onBack, detailsTitle, detailsSubtitle }: AIAuthGateProps) {
   const { requestCode, verifyCode } = useAuth();
   const [step, setStep] = useState<Step>('details');
   const [name, setName] = useState('');
@@ -89,11 +95,11 @@ export function AIAuthGate({ onBack }: { onBack: () => void }) {
             <Ionicons name="sparkles" size={28} color={colors.white} />
           </View>
           <Text style={styles.title}>
-            {step === 'details' ? 'Откройте bAIkov AI' : 'Введите код из письма'}
+            {step === 'details' ? (detailsTitle || 'Откройте bAIkov AI') : 'Введите код из письма'}
           </Text>
           <Text style={styles.subtitle}>
             {step === 'details'
-              ? '5 дней профессионального AI-доступа бесплатно. Банковская карта не нужна.'
+              ? (detailsSubtitle || '5 дней профессионального AI-доступа бесплатно. Банковская карта не нужна.')
               : `Мы отправили шестизначный код на ${email.trim().toLowerCase()}`}
           </Text>
 
