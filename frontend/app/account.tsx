@@ -76,7 +76,7 @@ function UsageRow({ itemKey, item, unlimited }: {
       </View>
       {!unlimited ? (
         <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+          <View style={[styles.progressFill, { width: `${progress * 100}%` as `${number}%` }]} />
         </View>
       ) : null}
       {!unlimited ? (
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: colors.primaryBright, fontSize: 20, fontWeight: '800' },
   accountInfo: { flex: 1, marginLeft: 13 },
-  userName: { color: colors.text, fontSize: 17, fontWeight: '750' },
+  userName: { color: colors.text, fontSize: 17, fontWeight: '700' },
   userEmail: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
   planCard: {
     marginTop: 12,
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   planDescription: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 12 },
-  periodText: { color: colors.primaryBright, fontSize: 12, fontWeight: '650', marginTop: 10 },
+  periodText: { color: colors.primaryBright, fontSize: 12, fontWeight: '600', marginTop: 10 },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 9,
   },
-  sectionTitle: { color: colors.text, fontSize: 17, fontWeight: '750' },
+  sectionTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
   limitsCard: {
     paddingHorizontal: 15,
     borderRadius: 18,
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  usageLabel: { color: colors.text, fontSize: 13, fontWeight: '650', marginLeft: 10 },
+  usageLabel: { color: colors.text, fontSize: 13, fontWeight: '600', marginLeft: 10 },
   usageValue: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
   progressTrack: {
     height: 4,
