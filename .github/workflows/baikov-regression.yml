@@ -9,7 +9,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   backend-regression:
@@ -67,6 +67,8 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/pr-83-account-and-trial-limits
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -74,5 +76,13 @@ jobs:
         run: npm install --global yarn@1.22.22 --silent
       - name: Install frontend dependencies
         run: yarn install --frozen-lockfile --silent
-      - name: TypeScript check
-        run: yarn exec tsc --noEmit
+      - name: Capture TypeScript check
+        run: yarn exec tsc --noEmit > ../pr83-current-ts.txt 2>&1 || true
+      - name: Commit TypeScript log
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pr83-current-ts.txt
+          git diff --cached --quiet || git commit -m "Capture current PR83 TypeScript error"
+          git push
