@@ -224,7 +224,11 @@ export default function HomeScreen() {
               <BrandLogo />
               <Text style={styles.subtitle}>Справочник пестицидов РФ</Text>
             </View>
-            <TouchableOpacity style={styles.profileButton} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.profileButton}
+              activeOpacity={0.8}
+              onPress={() => router.push('/account')}
+            >
               <Ionicons name="person-outline" size={21} color={colors.text} />
             </TouchableOpacity>
           </View>

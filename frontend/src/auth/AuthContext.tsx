@@ -9,7 +9,22 @@ import {
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
-export type AccessPlan = 'free' | 'trial' | 'pro';
+export type AccessPlan = 'free' | 'trial' | 'pro' | 'owner';
+
+export interface UsageItem {
+  label: string;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+}
+
+export interface UsageSummary {
+  plan: AccessPlan;
+  unlimited: boolean;
+  period_key: string | null;
+  period_ends_at?: string | null;
+  items: Record<'ai_requests' | 'web_requests' | 'photo_diagnostics', UsageItem>;
+}
 
 export interface AuthUser {
   id: string;
@@ -22,6 +37,7 @@ export interface AuthUser {
     pro_until?: string | null;
     subscription_status: string;
     can_use_ai: boolean;
+    is_owner?: boolean;
   };
 }
 
@@ -35,6 +51,7 @@ interface AuthContextValue {
   loading: boolean;
   token: string | null;
   user: AuthUser | null;
+  usage: UsageSummary | null;
   requestCode: (
     name: string,
     email: string,
@@ -51,11 +68,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
 
   const clearSession = async () => {
     await clearStoredAuthToken();
     setToken(null);
     setUser(null);
+    setUsage(null);
   };
 
   const loadAccount = async (nextToken: string) => {
@@ -64,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     setToken(nextToken);
     setUser(response.data.user);
+    setUsage(response.data.usage || null);
   };
 
   useEffect(() => {
@@ -104,8 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     const nextToken = response.data.access_token as string;
     await setStoredAuthToken(nextToken);
-    setToken(nextToken);
-    setUser(response.data.user);
+    await loadAccount(nextToken);
   };
 
   const logout = async () => {
@@ -121,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     token,
     user,
+    usage,
     requestCode,
     verifyCode,
     logout,

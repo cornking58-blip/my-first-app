@@ -2882,7 +2882,7 @@ AUTH_REQUESTS_PER_HOUR = 5
 MARKETING_CONSENT_VERSION = "2026-07-23-v1"
 
 AI_USAGE_LIMITS = {
-    "trial": {"ai_requests": 10, "web_requests": 2, "photo_diagnostics": 2},
+    "trial": {"ai_requests": 20, "web_requests": 4, "photo_diagnostics": 6},
     "pro": {"ai_requests": 80, "web_requests": 10, "photo_diagnostics": 15},
 }
 
@@ -3003,6 +3003,66 @@ def get_usage_period_key(user: Dict[str, Any], plan: str) -> str:
         started_at = user.get("trial_started_at") or user.get("created_at") or datetime.utcnow()
         return f"trial:{started_at.strftime('%Y-%m-%d')}"
     return f"pro:{datetime.utcnow().strftime('%Y-%m')}"
+
+
+USAGE_FIELD_LABELS = {
+    "ai_requests": "AI-запросы",
+    "web_requests": "Поиск в интернете",
+    "photo_diagnostics": "Фотодиагностика",
+}
+
+
+async def build_usage_snapshot(user: Dict[str, Any]) -> Dict[str, Any]:
+    plan = get_user_access_plan(user)
+    period_ends_at = (
+        user.get("trial_ends_at") if plan == "trial"
+        else user.get("pro_until") if plan == "pro"
+        else None
+    )
+
+    if plan == "owner":
+        return {
+            "plan": plan,
+            "unlimited": True,
+            "period_key": "owner",
+            "period_ends_at": None,
+            "items": {
+                field: {
+                    "label": label,
+                    "used": 0,
+                    "limit": None,
+                    "remaining": None,
+                }
+                for field, label in USAGE_FIELD_LABELS.items()
+            },
+        }
+
+    limits = AI_USAGE_LIMITS.get(plan, {field: 0 for field in USAGE_FIELD_LABELS})
+    usage: Dict[str, Any] = {}
+    period_key = None
+    if plan in AI_USAGE_LIMITS:
+        period_key = get_usage_period_key(user, plan)
+        usage_id = f"{user['id']}:{period_key}"
+        usage = await db.ai_usage.find_one({"_id": usage_id}) or {}
+
+    items = {}
+    for field, label in USAGE_FIELD_LABELS.items():
+        limit = int(limits.get(field, 0))
+        used = max(0, int(usage.get(field, 0) or 0))
+        items[field] = {
+            "label": label,
+            "used": used,
+            "limit": limit,
+            "remaining": max(0, limit - used),
+        }
+
+    return {
+        "plan": plan,
+        "unlimited": False,
+        "period_key": period_key,
+        "period_ends_at": period_ends_at,
+        "items": items,
+    }
 
 
 async def reserve_ai_usage(user: Dict[str, Any], use_web_search: bool) -> Tuple[str, str]:
@@ -3286,7 +3346,15 @@ async def verify_auth_code(request: AuthVerifyCodeRequest):
 
 @api_router.get("/auth/me")
 async def get_auth_account(current_user: Dict[str, Any] = Depends(require_current_user)):
-    return {"user": serialize_user_account(current_user)}
+    return {
+        "user": serialize_user_account(current_user),
+        "usage": await build_usage_snapshot(current_user),
+    }
+
+
+@api_router.get("/auth/usage")
+async def get_auth_usage(current_user: Dict[str, Any] = Depends(require_current_user)):
+    return {"usage": await build_usage_snapshot(current_user)}
 
 
 def normalize_ai_client_id(value: str) -> str:
