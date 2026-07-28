@@ -114,23 +114,7 @@ export default function HomeScreen() {
   };
 
   const openComparison = () => {
-    if (selectedForCompare.length === 2) {
-      router.push({
-        pathname: '/compare',
-        params: {
-          left_key: selectedForCompare[0],
-          right_key: selectedForCompare[1],
-        },
-      });
-      return;
-    }
-
-    setCompareMode(true);
-    setHasSearched(true);
-    setShowFilters(false);
-    setResults([]);
-    setRequestError(null);
-    setTimeout(() => searchInputRef.current?.focus(), 120);
+    router.push('/compare-select');
   };
 
   const isActive = (status: string | null) => status?.toLowerCase().trim() === 'действует';
