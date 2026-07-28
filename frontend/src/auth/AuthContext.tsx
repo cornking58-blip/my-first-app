@@ -41,6 +41,21 @@ export interface UsageSummary {
   items: Record<'ai_requests' | 'web_requests' | 'photo_diagnostics', UsageItem>;
 }
 
+export interface UsageItem {
+  label: string;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+}
+
+export interface UsageSummary {
+  plan: AccessPlan;
+  unlimited: boolean;
+  period_key: string | null;
+  period_ends_at?: string | null;
+  items: Record<'ai_requests' | 'web_requests' | 'photo_diagnostics', UsageItem>;
+}
+
 export interface AuthUser {
   id: string;
   name: string;
@@ -85,11 +100,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
 
   const clearSession = async () => {
     await clearStoredAuthToken();
     setToken(null);
     setUser(null);
+    setUsage(null);
     setUsage(null);
     setUsage(null);
   };
@@ -100,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     setToken(nextToken);
     setUser(response.data.user);
+    setUsage(response.data.usage || null);
     setUsage(response.data.usage || null);
     setUsage(response.data.usage || null);
   };

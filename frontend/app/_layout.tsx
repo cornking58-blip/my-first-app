@@ -35,6 +35,7 @@ export default function RootLayout() {
           <Stack.Screen name="photo-diagnosis" />
           <Stack.Screen name="account" />
           <Stack.Screen name="account" />
+          <Stack.Screen name="account" />
         </Stack>
         {showIntro ? <SplashIntro onFinish={finishIntro} /> : null}
       </AuthProvider>
