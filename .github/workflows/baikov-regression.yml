@@ -99,4 +99,18 @@ jobs:
       - name: Install frontend dependencies
         run: yarn install --frozen-lockfile --silent
       - name: TypeScript check
-        run: yarn exec tsc --noEmit
+        id: tsc
+        continue-on-error: true
+        run: yarn exec tsc --noEmit > ../ts-errors.txt 2>&1
+      - name: Save TypeScript errors
+        if: steps.tsc.outcome == 'failure'
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ts-errors.txt
+          git diff --cached --quiet || git commit -m "Capture PR83 TypeScript errors"
+          git push
+      - name: Fail when TypeScript failed
+        if: steps.tsc.outcome == 'failure'
+        run: exit 1
