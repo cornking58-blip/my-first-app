@@ -24,6 +24,8 @@ class AccountLimitsRegressionTest(unittest.TestCase):
         self.assertIn('async def build_usage_snapshot', SERVER)
         self.assertIn('@api_router.get("/auth/usage")', SERVER)
         self.assertIn('"usage": await build_usage_snapshot(current_user)', SERVER)
+        for label in ('AI-запросы', 'Поиск в интернете', 'Фотодиагностика'):
+            self.assertIn(label, SERVER)
 
     def test_frontend_supports_owner_and_usage(self):
         self.assertIn("'owner'", AUTH)
@@ -38,9 +40,9 @@ class AccountLimitsRegressionTest(unittest.TestCase):
         for text in (
             'Личный кабинет',
             'Текущий статус',
-            'AI-запросы',
-            'Поиск в интернете',
-            'Фотодиагностика',
+            'itemKey="ai_requests"',
+            'itemKey="web_requests"',
+            'itemKey="photo_diagnostics"',
             'Оформить bAIkov PRO',
             '740 ₽ в месяц',
             'Выйти из аккаунта',
