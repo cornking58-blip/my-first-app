@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -39,6 +39,7 @@ interface SearchResult {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const searchInputRef = useRef<TextInput>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [crop, setCrop] = useState('');
   const [harmfulObject, setHarmfulObject] = useState('');
@@ -49,6 +50,7 @@ export default function HomeScreen() {
   const [hasSearched, setHasSearched] = useState(false);
   const [onlyActive, setOnlyActive] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
   const { selectedForCompare, toggleSelection, clearSelection } = useHerbicideStore();
 
   const search = async (
@@ -64,6 +66,7 @@ export default function HomeScreen() {
       if (query.trim()) params.append('q', query.trim());
       if (cropValue.trim()) params.append('culture', cropValue.trim());
       if (harmfulObjectValue.trim()) params.append('harmful_object', harmfulObjectValue.trim());
+      if (compareMode) params.append('group', 'herbicide');
       if (active) params.append('only_active', 'true');
       params.append('limit', '100');
 
@@ -82,7 +85,7 @@ export default function HomeScreen() {
   const handleSearch = useCallback(() => {
     Keyboard.dismiss();
     search(searchQuery, onlyActive, crop, harmfulObject);
-  }, [searchQuery, onlyActive, crop, harmfulObject]);
+  }, [searchQuery, onlyActive, crop, harmfulObject, compareMode]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -107,17 +110,27 @@ export default function HomeScreen() {
     setResults([]);
     setRequestError(null);
     setHasSearched(false);
+    setCompareMode(false);
   };
 
   const openComparison = () => {
-    if (selectedForCompare.length !== 2) return;
-    router.push({
-      pathname: '/compare',
-      params: {
-        left_key: selectedForCompare[0],
-        right_key: selectedForCompare[1],
-      },
-    });
+    if (selectedForCompare.length === 2) {
+      router.push({
+        pathname: '/compare',
+        params: {
+          left_key: selectedForCompare[0],
+          right_key: selectedForCompare[1],
+        },
+      });
+      return;
+    }
+
+    setCompareMode(true);
+    setHasSearched(true);
+    setShowFilters(false);
+    setResults([]);
+    setRequestError(null);
+    setTimeout(() => searchInputRef.current?.focus(), 120);
   };
 
   const isActive = (status: string | null) => status?.toLowerCase().trim() === 'действует';
@@ -241,6 +254,7 @@ export default function HomeScreen() {
           <View style={styles.searchInputContainer}>
             <Ionicons name="search-outline" size={21} color={colors.primaryBright} />
             <TextInput
+              ref={searchInputRef}
               testID="main-search-input"
               style={styles.searchInput}
               placeholder="Название, ДВ, производитель..."
@@ -278,6 +292,16 @@ export default function HomeScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
+
+          {compareMode ? (
+            <View style={styles.compareModeNotice}>
+              <Ionicons name="git-compare-outline" size={17} color={colors.primaryBright} />
+              <View style={styles.compareModeTextBlock}>
+                <Text style={styles.compareModeTitle}>Выберите два гербицида</Text>
+                <Text style={styles.compareModeText}>Найдите первый препарат, нажмите «Сравнить», затем выберите второй.</Text>
+              </View>
+            </View>
+          ) : null}
 
           {showFilters ? (
             <View style={styles.expandedFilters}>
@@ -381,7 +405,7 @@ export default function HomeScreen() {
         {hasSearched ? (
           <View style={styles.resultsContainer}>
             <View style={styles.resultsHeader}>
-              <Text style={styles.resultsTitle}>Каталог препаратов</Text>
+              <Text style={styles.resultsTitle}>{compareMode ? 'Выбор для сравнения' : 'Каталог препаратов'}</Text>
               <Text style={styles.resultsCount}>{results.length} найдено</Text>
             </View>
             {loading ? (
@@ -407,8 +431,8 @@ export default function HomeScreen() {
                 ListEmptyComponent={(
                   <View style={styles.emptyContainer}>
                     <Ionicons name="leaf-outline" size={52} color={colors.borderStrong} />
-                    <Text style={styles.emptyTitle}>Ничего не найдено</Text>
-                    <Text style={styles.emptyText}>Попробуйте изменить запрос</Text>
+                    <Text style={styles.emptyTitle}>{compareMode ? 'Найдите первый гербицид' : 'Ничего не найдено'}</Text>
+                    <Text style={styles.emptyText}>{compareMode ? 'Введите название препарата в строке поиска' : 'Попробуйте изменить запрос'}</Text>
                   </View>
                 )}
               />
@@ -480,6 +504,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 12,
   },
+  compareModeNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 13,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primaryBorder,
+  },
+  compareModeTextBlock: { flex: 1, marginLeft: 9 },
+  compareModeTitle: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  compareModeText: { color: colors.textMuted, fontSize: 10, lineHeight: 14, marginTop: 2 },
   filtersToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 },
   filtersToggleText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
   returnHomeButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 5 },
