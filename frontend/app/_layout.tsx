@@ -23,13 +23,16 @@ export default function RootLayout() {
         >
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="product/[key]" />
+          <Stack.Screen name="fungicide-product/[key]" />
+          <Stack.Screen name="insecticide-product/[key]" />
+          <Stack.Screen name="seed-treatment-product/[key]" />
+          <Stack.Screen name="compare-select" />
           <Stack.Screen name="compare" />
+          <Stack.Screen name="fungicide-compare" />
+          <Stack.Screen name="insecticide-compare" />
+          <Stack.Screen name="seed-treatment-compare" />
           <Stack.Screen name="ai" />
           <Stack.Screen name="photo-diagnosis" />
-          <Stack.Screen name="insecticide-product/[key]" />
-          <Stack.Screen name="insecticide-compare" />
-          <Stack.Screen name="seed-treatment-product/[key]" />
-          <Stack.Screen name="seed-treatment-compare" />
         </Stack>
         {showIntro ? <SplashIntro onFinish={finishIntro} /> : null}
       </AuthProvider>
