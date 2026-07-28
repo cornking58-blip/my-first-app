@@ -75,8 +75,8 @@ replace_once(
 
 replace_once(
     "frontend/src/auth/AuthContext.tsx",
-    '''    setToken(nextToken);\n    setUser(response.data.user);''',
-    '''    setToken(nextToken);\n    setUser(response.data.user);\n    setUsage(response.data.usage || null);''',
+    '''    const response = await axios.get(`${API_URL}/api/auth/me`, {\n      headers: { Authorization: `Bearer ${nextToken}` },\n    });\n    setToken(nextToken);\n    setUser(response.data.user);''',
+    '''    const response = await axios.get(`${API_URL}/api/auth/me`, {\n      headers: { Authorization: `Bearer ${nextToken}` },\n    });\n    setToken(nextToken);\n    setUser(response.data.user);\n    setUsage(response.data.usage || null);''',
     "load usage",
 )
 
