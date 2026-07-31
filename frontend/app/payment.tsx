@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   noticeTextBlock: { flex: 1, marginLeft: 11 },
-  noticeTitle: { color: colors.text, fontSize: 14, fontWeight: '750' },
+  noticeTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
   noticeText: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 4 },
   tariffCard: {
     marginTop: 14,
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
   priceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   tariffName: { color: colors.text, fontSize: 19, fontWeight: '800' },
   tariffCaption: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
-  price: { color: colors.primaryBright, fontSize: 25, fontWeight: '850' },
+  price: { color: colors.primaryBright, fontSize: 25, fontWeight: '800' },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: 15 },
   feature: { color: colors.textSecondary, fontSize: 13, marginBottom: 9 },
   primaryButton: {
@@ -404,9 +404,9 @@ const styles = StyleSheet.create({
   },
   paymentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sectionTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
-  status: { color: colors.primaryBright, fontSize: 11, fontWeight: '750' },
+  status: { color: colors.primaryBright, fontSize: 11, fontWeight: '700' },
   statusSuccess: { color: colors.success },
-  statusCanceled: { color: colors.error },
+  statusCanceled: { color: colors.danger },
   paymentId: { color: colors.textMuted, fontSize: 10, marginTop: 12 },
   paymentMeta: { color: colors.textSecondary, fontSize: 12, marginTop: 5 },
   secondaryButton: {
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  secondaryButtonText: { color: colors.primaryBright, fontSize: 12, fontWeight: '750' },
+  secondaryButtonText: { color: colors.primaryBright, fontSize: 12, fontWeight: '700' },
   message: {
     color: colors.textSecondary,
     fontSize: 12,
@@ -441,11 +441,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  historyAmount: { color: colors.text, fontSize: 13, fontWeight: '750' },
+  historyAmount: { color: colors.text, fontSize: 13, fontWeight: '700' },
   historyDate: { color: colors.textMuted, fontSize: 10, marginTop: 4 },
   historyStatus: { color: colors.textSecondary, fontSize: 10, maxWidth: 130, textAlign: 'right' },
   backToAccount: { alignItems: 'center', marginTop: 24, paddingVertical: 12 },
-  backToAccountText: { color: colors.textSecondary, fontSize: 12, fontWeight: '650' },
+  backToAccountText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
   centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   muted: { color: colors.textMuted, fontSize: 12 },
 });

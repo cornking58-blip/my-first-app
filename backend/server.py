@@ -29,11 +29,13 @@ try:
     from .strict_catalog_ai import build_strict_catalog_ai_context, build_strict_direct_answer
     from .catalog_auto_migrate import schedule_catalog_migration
     from .photo_diagnosis import analyze_photo_with_ai
+    from .payments import create_payments_router, get_pro_usage_period_key
 except ImportError:
     from product_catalog import create_products_router
     from strict_catalog_ai import build_strict_catalog_ai_context, build_strict_direct_answer
     from catalog_auto_migrate import schedule_catalog_migration
     from photo_diagnosis import analyze_photo_with_ai
+    from payments import create_payments_router, get_pro_usage_period_key
 
 
 ROOT_DIR = Path(__file__).parent
@@ -3002,7 +3004,7 @@ def get_usage_period_key(user: Dict[str, Any], plan: str) -> str:
     if plan == "trial":
         started_at = user.get("trial_started_at") or user.get("created_at") or datetime.utcnow()
         return f"trial:{started_at.strftime('%Y-%m-%d')}"
-    return f"pro:{datetime.utcnow().strftime('%Y-%m')}"
+    return get_pro_usage_period_key(user, datetime.utcnow())
 
 
 USAGE_FIELD_LABELS = {
@@ -4903,6 +4905,14 @@ async def get_stats():
 
 # Include the routers in the main app
 app.include_router(create_products_router(db))
+app.include_router(
+    create_payments_router(
+        db,
+        require_current_user,
+        serialize_user_account,
+        build_usage_snapshot,
+    )
+)
 app.include_router(api_router)
 
 app.add_middleware(
@@ -4925,6 +4935,9 @@ async def prepare_ai_chat_storage():
     await db.auth_codes.create_index("expires_at", expireAfterSeconds=0)
     await db.auth_codes.create_index([("email", 1), ("created_at", -1)])
     await db.ai_usage.create_index([("user_id", 1), ("period_key", 1)], unique=True)
+    await db.payments.create_index("id", unique=True)
+    await db.payments.create_index([("user_id", 1), ("created_at", -1)])
+    await db.payments.create_index("provider_payment_id", sparse=True)
     schedule_catalog_migration(db)
 
 

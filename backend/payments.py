@@ -208,7 +208,7 @@ def create_payments_router(
 
     @router.post("/pro/create")
     async def create_pro_payment(current_user: Dict[str, Any] = Depends(require_current_user)):
-        if current_user.get("access", {}).get("plan") == "owner":
+        if serialize_user_account(current_user).get("access", {}).get("plan") == "owner":
             raise HTTPException(status_code=400, detail="Для владельца PRO уже доступен без ограничений.")
 
         now = datetime.utcnow()
