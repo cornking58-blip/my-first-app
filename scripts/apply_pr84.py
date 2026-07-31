@@ -73,6 +73,12 @@ replace_once(
     "price font weight",
 )
 
+payment_screen = Path("frontend/app/payment.tsx")
+payment_text = payment_screen.read_text(encoding="utf-8")
+payment_text = payment_text.replace("fontWeight: '750'", "fontWeight: '700'")
+payment_text = payment_text.replace("fontWeight: '650'", "fontWeight: '600'")
+payment_screen.write_text(payment_text, encoding="utf-8")
+
 replace_once(
     "backend/payments.py",
     "        if current_user.get(\"access\", {}).get(\"plan\") == \"owner\":",
