@@ -60,20 +60,6 @@ replace_once(
 )
 
 replace_once(
-    ".github/workflows/baikov-regression.yml",
-    "run: python -m py_compile backend/product_catalog.py backend/strict_catalog_ai.py backend/photo_diagnosis.py backend/server.py",
-    "run: python -m py_compile backend/product_catalog.py backend/strict_catalog_ai.py backend/photo_diagnosis.py backend/payments.py backend/server.py",
-    "payment syntax check",
-)
-
-replace_once(
-    ".github/workflows/baikov-regression.yml",
-    "      - name: Run account and limits tests\n        run: python -m unittest -v tests/test_account_limits.py",
-    "      - name: Run account and limits tests\n        run: python -m unittest -v tests/test_account_limits.py\n      - name: Run payment tests\n        run: python -m unittest -v tests/test_payments.py",
-    "payment tests",
-)
-
-replace_once(
     "frontend/app/payment.tsx",
     "color: colors.error",
     "color: colors.danger",
@@ -93,6 +79,82 @@ replace_once(
     "        if serialize_user_account(current_user).get(\"access\", {}).get(\"plan\") == \"owner\":",
     "owner payment protection",
 )
+
+final_workflow = """name: bAIkov regression
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  backend-regression:
+    runs-on: ubuntu-latest
+    env:
+      MONGO_URL: mongodb://127.0.0.1:27017
+      DB_NAME: baikov_test
+      AUTH_JWT_SECRET: test-secret-with-at-least-thirty-two-characters
+      PAYMENTS_MODE: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Install focused backend dependencies
+        run: >-
+          python -m pip install --quiet
+          fastapi==0.110.1
+          python-dotenv
+          motor==3.3.1
+          pymongo==4.5.0
+          httpx==0.28.1
+          openai==1.99.9
+          PyJWT==2.12.1
+          pandas==3.0.1
+          email-validator==2.3.0
+          python-multipart==0.0.22
+      - name: Validate backend syntax
+        run: python -m py_compile backend/product_catalog.py backend/strict_catalog_ai.py backend/photo_diagnosis.py backend/payments.py backend/server.py
+      - name: Run permanent scenario suite
+        run: python -m unittest -v tests/test_baikov_regression_suite.py
+      - name: Run strict catalog tests
+        run: python -m unittest -v tests/test_supabase_strict_catalog.py
+      - name: Run AI chat tests
+        run: python -m unittest -v tests/test_ai_chat.py
+      - name: Run unified catalog tests
+        run: python -m unittest -v tests/test_unified_catalog.py
+      - name: Run photo diagnosis tests
+        run: python -m unittest -v tests/test_photo_diagnosis.py
+      - name: Run account and limits tests
+        run: python -m unittest -v tests/test_account_limits.py
+      - name: Run payment tests
+        run: python -m unittest -v tests/test_payments.py
+
+  frontend-types:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Yarn 1
+        run: npm install --global yarn@1.22.22 --silent
+      - name: Install frontend dependencies
+        run: yarn install --frozen-lockfile --silent
+      - name: TypeScript check
+        run: yarn exec tsc --noEmit
+"""
+Path(".github/workflows/baikov-regression.yml").write_text(final_workflow, encoding="utf-8")
 
 Path("scripts/apply_pr84.py").unlink(missing_ok=True)
 Path(".github/workflows/apply-pr84.yml").unlink(missing_ok=True)
