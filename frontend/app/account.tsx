@@ -135,11 +135,7 @@ export default function AccountScreen() {
   };
 
   const handlePro = () => {
-    Alert.alert(
-      'bAIkov PRO — 740 ₽/месяц',
-      'Тариф и лимиты уже зафиксированы. Подключение оплаты — следующий этап разработки.',
-      [{ text: 'Понятно' }],
-    );
+    router.push('/payment');
   };
 
   return (
